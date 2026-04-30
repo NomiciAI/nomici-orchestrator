@@ -108,6 +108,8 @@ Security-sensitive areas include:
 - Install and update scripts
 - Debug bundles
 
+Use [Dangerous Changes](docs/security/dangerous-changes.md) as the checklist for these pull requests.
+
 ## Documentation Style
 
 - Be direct and precise.

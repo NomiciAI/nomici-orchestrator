@@ -104,6 +104,13 @@ Nomici is a control plane and must be conservative by default:
 
 See [SECURITY.md](SECURITY.md) and [RFC 0004](docs/rfcs/0004-security-model.md).
 
+Related guardrails:
+
+- [Threat model](docs/security/threat-model.md)
+- [Dangerous changes checklist](docs/security/dangerous-changes.md)
+- [Supply chain security](docs/security/supply-chain.md)
+- [Privacy](docs/privacy.md)
+
 ## Contributing
 
 Nomici is early. Contributions should start with small, clear changes or RFC discussion.

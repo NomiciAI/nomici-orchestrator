@@ -1,0 +1,31 @@
+# Replace these placeholders with the real GitHub team or maintainer handles
+# once the nomici-ai organization is configured.
+
+# Default ownership.
+* @nomici-ai/maintainers
+
+# Repository governance and automation.
+/.github/ @nomici-ai/maintainers
+/GOVERNANCE.md @nomici-ai/maintainers
+/SECURITY.md @nomici-ai/maintainers
+/CONTRIBUTING.md @nomici-ai/maintainers
+/CODE_OF_CONDUCT.md @nomici-ai/maintainers
+/LICENSE @nomici-ai/maintainers
+/NOTICE @nomici-ai/maintainers
+
+# Product and architecture decisions.
+/docs/rfcs/ @nomici-ai/maintainers
+
+# Security-sensitive docs.
+/docs/security/ @nomici-ai/maintainers
+
+# Future security-sensitive implementation areas.
+/internal/gateway/ @nomici-ai/maintainers
+/internal/policy/ @nomici-ai/maintainers
+/internal/secrets/ @nomici-ai/maintainers
+/internal/runtime/ @nomici-ai/maintainers
+/internal/trace/ @nomici-ai/maintainers
+
+# Install, release, and update scripts.
+/scripts/ @nomici-ai/maintainers
+/.github/workflows/ @nomici-ai/maintainers

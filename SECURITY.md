@@ -72,6 +72,13 @@ Nomici should be conservative by default:
 
 See `docs/rfcs/0004-security-model.md` for the detailed model.
 
+Additional security documents:
+
+- `docs/security/threat-model.md`
+- `docs/security/dangerous-changes.md`
+- `docs/security/supply-chain.md`
+- `docs/privacy.md`
+
 ## OpenAI-Compatible Endpoint Warning
 
 Nomici may expose OpenAI-compatible endpoints such as `/v1/chat/completions` and `/v1/responses`.
