@@ -117,13 +117,42 @@ Important:
 
 Configure:
 
-- Branch protection for `master` or `main`.
-- Require pull request review before merge.
-- Require CODEOWNERS review once the `NomiciAI/maintainers` team exists.
-- Disable force-pushes to the protected branch.
+- Branch protection for `main`.
+- Disable force-pushes to `main`.
+- Disable deletion of `main`.
 - Enable Dependabot alerts and security updates.
 - Enable private vulnerability reporting or GitHub Security Advisories.
 - Keep Actions workflow token permissions read-only by default.
+
+## Bootstrap Mode
+
+During private bootstrap, `main` may allow direct maintainer pushes so the project can move quickly before there are external contributors.
+
+Bootstrap mode may keep:
+
+- `main` as the default branch.
+- Force-push protection.
+- Branch deletion protection.
+- Dependabot alerts and security updates.
+- GitHub Actions default token permissions set to read-only.
+
+Bootstrap mode may temporarily disable:
+
+- Required pull request reviews.
+- Required CODEOWNERS reviews.
+- Admin enforcement.
+
+## Strict Mode Before Quiet Public
+
+Before changing the repository from private to quiet public, restore strict branch protection:
+
+- Require pull request review before merge.
+- Require CODEOWNERS review.
+- Dismiss stale reviews.
+- Require conversation resolution.
+- Enforce branch protection for admins.
+- Keep force-push protection enabled.
+- Keep branch deletion protection enabled.
 
 ## Naming Checks
 
