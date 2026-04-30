@@ -89,6 +89,7 @@ Current design documents:
 - [RFC 0003: AgentSpec v0.1](docs/rfcs/0003-agentspec-v0.1.md)
 - [RFC 0004: Security Model](docs/rfcs/0004-security-model.md)
 - [RFC 0005: Technology Stack Decision](docs/rfcs/0005-technology-stack.md)
+- [RFC 0006: Control Plane Architecture](docs/rfcs/0006-control-plane-architecture.md)
 
 ## Security Defaults
 
