@@ -90,6 +90,7 @@ Current design documents:
 - [RFC 0004: Security Model](docs/rfcs/0004-security-model.md)
 - [RFC 0005: Technology Stack Decision](docs/rfcs/0005-technology-stack.md)
 - [RFC 0006: Control Plane Architecture](docs/rfcs/0006-control-plane-architecture.md)
+- [RFC 0007: AgentGraph IR and Adapter Contract](docs/rfcs/0007-agentgraph-ir-adapter-contract.md)
 
 ## Security Defaults
 
