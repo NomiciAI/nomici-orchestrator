@@ -1,0 +1,6 @@
+{
+  "name": "@nomici/spec",
+  "private": true,
+  "type": "module",
+  "files": ["nomici.schema.json"]
+}

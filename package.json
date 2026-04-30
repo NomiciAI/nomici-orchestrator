@@ -1,0 +1,12 @@
+{
+  "name": "@nomici/orchestrator",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "pnpm --filter @nomici/web build",
+    "dev": "pnpm --filter @nomici/web dev",
+    "fmt": "pnpm --filter @nomici/web fmt",
+    "lint": "pnpm --filter @nomici/web lint",
+    "test": "pnpm --filter @nomici/web test"
+  }
+}
