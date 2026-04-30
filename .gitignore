@@ -1,0 +1,53 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Nomici local state
+.nomici/
+nomici.yaml.local
+
+# Logs and databases
+*.log
+*.pid
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Go
+bin/
+dist/
+coverage.out
+*.test
+
+# Node / pnpm
+node_modules/
+apps/*/dist/
+packages/*/dist/
+.turbo/
+.vite/
+coverage/
+
+# Python adapter artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build artifacts
+artifacts/
+tmp/
+temp/

@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a new capability or improvement.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or contributor problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should Nomici do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - AgentSpec
+        - CLI
+        - Gateway
+        - Web Console
+        - Runtime manager
+        - Model registry
+        - Adapter
+        - MCP
+        - A2A
+        - Policy and approvals
+        - Trace and replay
+        - Security
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or security considerations
+      description: Include possible misuse, secret exposure, permission, or remote-access concerns.
