@@ -1,6 +1,6 @@
 # Open Source Publication Checklist
 
-This checklist must be completed before making `NomiciAI/orchestrator` public.
+This checklist must be completed before making `NomiciAI/nomici-orchestrator` public.
 
 Nomici product code lives in a parent workspace that contains multiple sibling projects. Do not publish from the parent directory. The only intended public repository root for this project is:
 
@@ -16,7 +16,7 @@ Safe to do once local checks pass.
 
 Goal:
 
-- Create `NomiciAI/orchestrator` as a private GitHub repository.
+- Create `NomiciAI/nomici-orchestrator` as a private GitHub repository.
 - Push only this repository's tracked files.
 - Review GitHub contents in private.
 
@@ -61,7 +61,7 @@ Expected:
 
 - `git rev-parse --show-toplevel` prints the `nomici-orchestrator` directory.
 - `git status --short` is clean before publication.
-- `git remote -v` points only to `NomiciAI/orchestrator` once configured.
+- `git remote -v` points only to `NomiciAI/nomici-orchestrator` once configured.
 - `git ls-files` contains only intended open-source files.
 
 Never run publication commands from:
@@ -99,7 +99,7 @@ Create the private repository from the correct root:
 
 ```bash
 cd /Users/stephen/Documents/nomici/code/nomici-orchestrator
-gh repo create NomiciAI/orchestrator \
+gh repo create NomiciAI/nomici-orchestrator \
   --private \
   --source . \
   --remote origin \
@@ -130,13 +130,14 @@ Configure:
 Use:
 
 ```text
-NomiciAI/orchestrator
+NomiciAI/nomici-orchestrator
 ```
 
 Avoid old placeholder names:
 
 ```text
 nomici-ai/orchestrator
+NomiciAI/orchestrator
 nomici-ai
 ```
 
@@ -145,7 +146,7 @@ nomici-ai
 Before changing visibility to public, verify:
 
 ```bash
-gh repo view NomiciAI/orchestrator --json nameWithOwner,visibility,url
+gh repo view NomiciAI/nomici-orchestrator --json nameWithOwner,visibility,url
 git remote -v
 git ls-files | sort
 ```

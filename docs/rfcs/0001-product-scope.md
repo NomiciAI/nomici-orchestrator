@@ -18,7 +18,7 @@ Nomici should not be positioned as another multi-agent framework. It should be p
 
 Brand: Nomici Orchestrator
 Org: nomici.ai
-GitHub repo: NomiciAI/orchestrator
+GitHub repo: NomiciAI/nomici-orchestrator
 CLI: `nomici`
 Config file: `nomici.yaml`
 Gateway: Nomici Gateway
