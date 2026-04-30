@@ -1,31 +1,31 @@
 # Replace these placeholders with the real GitHub team or maintainer handles
-# once the nomici-ai organization is configured.
+# once the NomiciAI organization teams are configured.
 
 # Default ownership.
-* @nomici-ai/maintainers
+* @NomiciAI/maintainers
 
 # Repository governance and automation.
-/.github/ @nomici-ai/maintainers
-/GOVERNANCE.md @nomici-ai/maintainers
-/SECURITY.md @nomici-ai/maintainers
-/CONTRIBUTING.md @nomici-ai/maintainers
-/CODE_OF_CONDUCT.md @nomici-ai/maintainers
-/LICENSE @nomici-ai/maintainers
-/NOTICE @nomici-ai/maintainers
+/.github/ @NomiciAI/maintainers
+/GOVERNANCE.md @NomiciAI/maintainers
+/SECURITY.md @NomiciAI/maintainers
+/CONTRIBUTING.md @NomiciAI/maintainers
+/CODE_OF_CONDUCT.md @NomiciAI/maintainers
+/LICENSE @NomiciAI/maintainers
+/NOTICE @NomiciAI/maintainers
 
 # Product and architecture decisions.
-/docs/rfcs/ @nomici-ai/maintainers
+/docs/rfcs/ @NomiciAI/maintainers
 
 # Security-sensitive docs.
-/docs/security/ @nomici-ai/maintainers
+/docs/security/ @NomiciAI/maintainers
 
 # Future security-sensitive implementation areas.
-/internal/gateway/ @nomici-ai/maintainers
-/internal/policy/ @nomici-ai/maintainers
-/internal/secrets/ @nomici-ai/maintainers
-/internal/runtime/ @nomici-ai/maintainers
-/internal/trace/ @nomici-ai/maintainers
+/internal/gateway/ @NomiciAI/maintainers
+/internal/policy/ @NomiciAI/maintainers
+/internal/secrets/ @NomiciAI/maintainers
+/internal/runtime/ @NomiciAI/maintainers
+/internal/trace/ @NomiciAI/maintainers
 
 # Install, release, and update scripts.
-/scripts/ @nomici-ai/maintainers
-/.github/workflows/ @nomici-ai/maintainers
+/scripts/ @NomiciAI/maintainers
+/.github/workflows/ @NomiciAI/maintainers

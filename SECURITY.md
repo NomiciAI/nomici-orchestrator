@@ -14,7 +14,7 @@ Please report suspected vulnerabilities privately.
 
 Preferred reporting path:
 
-- GitHub Security Advisory for `nomici-ai/orchestrator`, once the repository is public.
+- GitHub Security Advisory for `NomiciAI/orchestrator`, once the repository is public.
 
 If that is unavailable, contact the maintainers privately through the security contact listed in the GitHub organization or project website.
 

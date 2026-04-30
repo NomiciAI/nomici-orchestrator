@@ -110,6 +110,7 @@ Related guardrails:
 - [Dangerous changes checklist](docs/security/dangerous-changes.md)
 - [Supply chain security](docs/security/supply-chain.md)
 - [Privacy](docs/privacy.md)
+- [Open source publication checklist](docs/release/open-source-checklist.md)
 
 ## Contributing
 
