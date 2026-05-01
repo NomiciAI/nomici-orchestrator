@@ -49,7 +49,7 @@ The target users for v0.1 are technical users who already use or evaluate agent 
 
 The user problem:
 
-> I already have tools like Hermes, OpenClaw, Ollama, vLLM, LangGraph, OpenAI Agents SDK, CrewAI, and MCP servers, but they are scattered across terminals, ports, configs, and dashboards. I need one local-first control plane to register them, connect them, govern them, and observe runs.
+> I already have tools like Claude Code, Codex, Hermes, OpenClaw, Ollama, vLLM, LangGraph, OpenAI Agents SDK, CrewAI, and MCP servers, but they are scattered across terminals, ports, configs, and dashboards. I need one local-first control plane to register them, connect them, govern them, and observe runs.
 
 ## Goals
 
@@ -99,6 +99,9 @@ Included:
 - Runtime registry
 - Local process runner
 - OpenAI-compatible endpoint adapter
+- Generic coding-agent CLI adapter
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint adapter
 - OpenClaw endpoint adapter
 - Ollama and vLLM through OpenAI-compatible or provider-specific configuration
@@ -175,7 +178,7 @@ Loopback bind, token auth, secret redaction, untrusted remote agents, and approv
 
 Adapter pragmatism:
 
-OpenAI-compatible endpoints are the v0.1 integration path. Deeper native adapters come only after the control plane is stable.
+OpenAI-compatible endpoints and generic CLI invocation are the v0.1 integration paths. Deeper native adapters come only after the control plane is stable.
 
 Observable by default:
 

@@ -269,6 +269,9 @@ The source of truth for validation behavior is the Gateway's `internal/spec` pac
 v0.1 adapters should be implemented in Go when they are simple HTTP adapters:
 
 - OpenAI-compatible endpoint adapter
+- generic coding-agent CLI adapter
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint adapter
 - OpenClaw endpoint adapter
 - Ollama or vLLM provider adapter

@@ -95,6 +95,8 @@ LLM Providers
   Ollama / vLLM / LM Studio / SGLang / llama.cpp
 
 Agent Runtimes
+  Claude Code
+  Codex
   Hermes
   OpenClaw
   LangGraph
@@ -335,6 +337,9 @@ Responsibilities:
 v0.1 adapters:
 
 - OpenAI-compatible endpoint
+- generic coding-agent CLI
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint
 - OpenClaw endpoint
 - Ollama/local provider
@@ -824,6 +829,9 @@ Phase 3: Runtime and Adapters
 - local process runtime manager
 - runtime observed state
 - OpenAI-compatible adapter
+- generic coding-agent CLI adapter
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint entry
 - OpenClaw endpoint entry
 - health/logs

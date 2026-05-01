@@ -46,10 +46,10 @@ The recommended v0.1 implementation stack is:
                 │               │              │
 ┌───────────────┴──────┐ ┌──────┴───────────┐ ┌┴────────────────┐
 │  External Agents     │ │  Tools / Data     │ │ Local Runtimes   │
-│  Hermes              │ │  Filesystem MCP   │ │ Ollama           │
-│  OpenClaw            │ │  GitHub MCP       │ │ vLLM             │
-│  LangGraph           │ │  Browser MCP      │ │ SGLang           │
-│  CrewAI              │ │  Slack MCP        │ │ local processes  │
+│  Claude Code         │ │  Filesystem MCP   │ │ Ollama           │
+│  Codex               │ │  GitHub MCP       │ │ vLLM             │
+│  Hermes / OpenClaw   │ │  Browser MCP      │ │ SGLang           │
+│  LangGraph / CrewAI  │ │  Slack MCP        │ │ local processes  │
 │  ADK                 │ │  Postgres MCP     │ │ Docker workers   │
 └──────────────────────┘ └──────────────────┘ └─────────────────┘
 ```
@@ -73,6 +73,7 @@ Control plane:
 
 Data plane:
 
+- Claude Code and Codex local coding agents
 - Hermes runtime
 - OpenClaw Gateway
 - LangGraph worker
@@ -206,6 +207,9 @@ Docker runner can be designed in the interface but does not need to be productio
 v0.1 adapters:
 
 - OpenAI-compatible endpoint adapter
+- generic coding-agent CLI adapter
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint adapter
 - OpenClaw endpoint adapter
 - Ollama provider adapter if direct support is needed
@@ -370,6 +374,7 @@ Phase 3:
 
 - Model and agent registry
 - OpenAI-compatible adapter
+- generic coding-agent CLI adapter
 - Basic `agent run`
 - Event log and trace export
 

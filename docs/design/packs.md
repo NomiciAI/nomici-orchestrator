@@ -63,6 +63,8 @@ trust:
   level: official
 ```
 
+The `developer-team` pack should treat Claude Code, Codex, Hermes, OpenClaw, and similar tools as optional external runtimes for implementer/reviewer roles. It should not require any one tool to be installed.
+
 Required:
 
 - `id`

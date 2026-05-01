@@ -34,6 +34,7 @@ The current implementation direction is:
 - Pack is the distribution and composition unit.
 - Provider setup is a v0.1 core feature.
 - Gateway is the only control plane.
+- Claude Code, Codex, and similar coding agents are high-priority data-plane runtimes through CLI adapters.
 - Run Engine is lightweight; durable execution belongs to data-plane runtimes.
 - Side-effecting tools go through Policy, Approval, and Trace.
 - Official pack trust requires a bundled pack or compiled official index until signatures exist.

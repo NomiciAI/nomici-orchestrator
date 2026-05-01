@@ -93,6 +93,8 @@ LLM Providers
   Ollama / vLLM / LM Studio / SGLang / llama.cpp
 
 Agent Runtimes
+  Claude Code
+  Codex
   Hermes
   OpenClaw
   LangGraph
@@ -226,6 +228,10 @@ Nomici does not own:
 Gateway Agent boundary:
 
 Nomici may run a minimal `gateway_agent` loop for first-run coordination. That loop may call a model, request handoffs, call agent-as-tool adapters, and request Nomici-mediated tools. It is not durable execution and should not grow into a full framework runtime.
+
+Coding Agent boundary:
+
+Claude Code, Codex, and similar local coding agents are data-plane runtimes. Nomici should register, invoke, observe, and govern them through adapters instead of trying to outperform them as individual coding agents.
 
 When a data-plane runtime has a stronger primitive, Nomici integrates it instead of reimplementing it.
 

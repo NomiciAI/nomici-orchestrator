@@ -24,7 +24,7 @@ Nomici should compile user intent from `nomici.yaml` and Nomici Console into a n
 - Distinguish desired state from observed state.
 - Make adapters small enough to implement quickly.
 - Keep trace events structured and append-only.
-- Leave room for LangGraph, CrewAI, Google ADK, OpenAI Agents SDK, Hermes, OpenClaw, and coding-agent fleets as data-plane runtimes.
+- Leave room for Claude Code, Codex, LangGraph, CrewAI, Google ADK, OpenAI Agents SDK, Hermes, OpenClaw, and coding-agent fleets as data-plane runtimes.
 - Avoid encoding framework-specific concepts into the core IR unless they generalize.
 
 ## Non-Goals
@@ -190,7 +190,7 @@ Node kinds:
 }
 ```
 
-Root agents are entry points for user runs. v0.1 may support only simple native invocation or delegation to an adapter-backed endpoint.
+Root agents are entry points for user runs. v0.1 may support only simple `gateway_agent` invocation or delegation to an adapter-backed endpoint.
 
 ### Subagent
 
@@ -207,7 +207,7 @@ Root agents are entry points for user runs. v0.1 may support only simple native 
 }
 ```
 
-Subagents may be native, model-backed, or adapter-backed.
+Subagents may be Gateway-run, model-backed, or adapter-backed.
 
 ### External Agent
 
@@ -419,6 +419,7 @@ v0.1 adapter goals:
 
 - Keep implementation small.
 - Support HTTP endpoint adapters first.
+- Support CLI invocation adapters for strong local coding agents.
 - Support local process observation where runtime manager starts the process.
 - Return structured capabilities and errors.
 - Emit trace events through Gateway, not directly to storage.
@@ -443,10 +444,15 @@ type Adapter interface {
 v0.1 adapters:
 
 - `openai_compatible`
+- `coding_agent_cli`
+- `codex_cli`
+- `claude_code_cli`
 - `hermes_endpoint`
 - `openclaw_endpoint`
 - `ollama`
 - `local_process` for runtime lifecycle, not agent invocation
+
+`codex_cli` and `claude_code_cli` should be profiles over the generic `coding_agent_cli` adapter where possible. The adapter must probe installed command capabilities instead of assuming a fixed CLI surface.
 
 ## Adapter Request Types
 
@@ -935,6 +941,7 @@ Phase 2:
 Phase 3:
 
 - Implement OpenAI-compatible adapter.
+- Implement generic coding-agent CLI adapter.
 - Implement local process runtime observed state.
 - Emit trace events for health and invoke.
 

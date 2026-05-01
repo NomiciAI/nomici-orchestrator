@@ -256,10 +256,12 @@ Kinds for v0.1:
 - `ollama`
 - `vllm`
 - `process`
+- `coding_agent_cli`
 
 Runner kinds for v0.1:
 
 - `local_process`
+- `cli_invoke`
 - `external`
 
 Future runner kinds:

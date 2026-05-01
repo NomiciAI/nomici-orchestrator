@@ -96,6 +96,31 @@ Responsibilities:
 
 Command should be structured as an array internally, even if CLI accepts a shell-like string.
 
+## CLI Invoke Runner
+
+Coding agents such as Claude Code, Codex, and similar tools should use a `cli_invoke` runner profile when Nomici is invoking a command rather than maintaining a long-lived server process.
+
+Responsibilities:
+
+- resolve executable
+- probe version and capabilities
+- set working directory
+- pass prompt/input through a controlled channel
+- capture stdout/stderr or structured stream output
+- capture exit code
+- support cancellation where possible
+- record pre/post workspace diff metadata where configured
+
+The runner should not assume full visibility into internal tool calls made by the coding agent.
+
+Safety rules:
+
+- explicit workspace required
+- no permission-bypass flags by default
+- sensitive env vars passed only by reference and only when configured
+- writes outside allowed workspace require approval or are blocked
+- publishing side effects such as push, PR creation, or deploy require policy gates
+
 ## Health Checks
 
 Kinds:

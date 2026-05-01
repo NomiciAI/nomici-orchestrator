@@ -8,6 +8,7 @@ Current deep dives:
 
 - [System Composition](system-composition.md)
 - [v0.1 Boundaries](v0.1-boundaries.md)
+- [Coding Agent Runtimes](coding-agent-runtimes.md)
 - [Provider Setup](provider-setup.md)
 - [Pack System](packs.md)
 - [AgentGraph Compiler](agentgraph-compiler.md)
@@ -46,3 +47,5 @@ Design rules:
 The composition rationale is documented in [System Composition](system-composition.md).
 
 Scope and naming clarifications are documented in [v0.1 Boundaries](v0.1-boundaries.md).
+
+Claude Code, Codex, and similar local coding agents are covered in [Coding Agent Runtimes](coding-agent-runtimes.md).

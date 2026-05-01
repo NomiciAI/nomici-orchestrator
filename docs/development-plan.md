@@ -67,6 +67,7 @@ Product delivery:
 - pack permission review
 - AgentGraph compile/validate
 - basic runtime observed state
+- generic coding-agent CLI adapter
 - run records and trace timeline
 - approval record model
 - first useful official bundled pack
@@ -180,6 +181,9 @@ Goals:
 - health checks
 - logs
 - OpenAI-compatible adapter
+- generic coding-agent CLI adapter
+- Codex CLI profile
+- Claude Code CLI profile
 - Hermes endpoint entry
 - OpenClaw endpoint entry
 
@@ -198,6 +202,8 @@ Exit criteria:
 - `nomici up` can start configured local process runtimes.
 - Runtime state records PID, endpoint, health, and logs.
 - OpenAI-compatible endpoint can be invoked through adapter contract.
+- At least one installed local coding agent can be represented as an external runtime when available.
+- Codex and Claude Code profiles degrade cleanly when their commands are not installed.
 - Hermes/OpenClaw can be represented as external runtimes.
 - Drift is visible through CLI and Gateway API.
 
