@@ -23,6 +23,9 @@ func (resolver *Resolver) Redact(value string) string {
 	if value == "" {
 		return ""
 	}
+	if !LooksSensitive(value) {
+		return value
+	}
 	return "[redacted]"
 }
 

@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS trace_events (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trace_run_sequence ON trace_events(run_id, sequence);
-CREATE INDEX IF NOT EXISTS idx_trace_run ON trace_events(run_id, sequence);
+`,
+	},
+	{
+		Version: 2,
+		SQL: `
+DROP INDEX IF EXISTS idx_trace_run;
 `,
 	},
 }

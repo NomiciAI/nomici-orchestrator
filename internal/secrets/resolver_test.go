@@ -27,6 +27,9 @@ func TestRedact(t *testing.T) {
 	if got := resolver.Redact("sk-test-value"); got != "[redacted]" {
 		t.Fatalf("expected redacted placeholder, got %q", got)
 	}
+	if got := resolver.Redact("localhost"); got != "localhost" {
+		t.Fatalf("expected non-sensitive value to pass through, got %q", got)
+	}
 }
 
 func TestRedactedEnv(t *testing.T) {
