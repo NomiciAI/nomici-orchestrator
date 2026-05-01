@@ -31,6 +31,7 @@ The project follows semantic versioning once the first public release is cut.
 - Policy and approval v0.1 for mutable `cli_agent` execution, including approval storage, `once` and `run` scopes, `policy check`, `approvals list/grant/deny`, critical workspace denial, and trace events.
 - Bundled `developer-team` pack with `pack list`, `pack inspect`, `pack install`, model-profile selection, clean AgentSpec generation, and a runnable `product_pm` entrypoint.
 - Read-only Console MVP backed by Gateway APIs for overview, models, packs, latest graph, runtimes, runs, and approvals.
+- GitHub Actions CI baseline with read-only workflow permissions.
 
 ### Changed
 

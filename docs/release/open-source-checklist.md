@@ -123,6 +123,8 @@ Configure:
 - Enable Dependabot alerts and security updates.
 - Enable private vulnerability reporting or GitHub Security Advisories.
 - Keep Actions workflow token permissions read-only by default.
+- Ensure `.github/workflows/ci.yml` passes on `main`.
+- Ensure `CODEOWNERS` references an existing GitHub team.
 
 ## Bootstrap Mode
 
@@ -141,6 +143,27 @@ Bootstrap mode may temporarily disable:
 - Required pull request reviews.
 - Required CODEOWNERS reviews.
 - Admin enforcement.
+
+Current private bootstrap verification commands:
+
+```bash
+gh api orgs/NomiciAI/teams --jq '.[].slug'
+gh api repos/NomiciAI/nomici-orchestrator/branches/main/protection \
+  --jq '{required_pull_request_reviews, enforce_admins, allow_force_pushes, allow_deletions}'
+gh api repos/NomiciAI/nomici-orchestrator/actions/permissions/workflow --jq .
+gh api repos/NomiciAI/nomici-orchestrator/vulnerability-alerts --method GET --include
+```
+
+Expected private bootstrap state:
+
+- `maintainers` exists as a real team in `NomiciAI`.
+- `main` disallows force-pushes.
+- `main` disallows branch deletion.
+- Required PR review, CODEOWNERS review, and admin enforcement may be disabled until quiet public.
+- Actions default workflow permissions are `read`.
+- Dependabot vulnerability alerts return `204 No Content`.
+
+If GitHub Advanced Security is not enabled for the private repository, GitHub secret scanning may be unavailable while private. Run local secret scans before every push and enable GitHub secret scanning if it becomes available before or after publication.
 
 ## Strict Mode Before Quiet Public
 
