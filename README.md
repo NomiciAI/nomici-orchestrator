@@ -15,13 +15,21 @@ Nomici aims to provide one local-first control plane for composing those pieces 
 ## Quickstart
 
 ```bash
+git clone https://github.com/NomiciAI/nomici-orchestrator.git
+cd nomici-orchestrator
+
+# Source installs build the bundled React Console, so pnpm is needed.
 corepack enable
+corepack prepare pnpm@10.33.2 --activate
 scripts/install.sh --from-source .
 nomici doctor
+
 cd examples/basic-local-agent
 nomici spec validate --config nomici.yaml
 nomici run local_assistant "Explain what this example demonstrates." --config nomici.yaml
+
 nomici up
+nomici gateway token show
 nomici gateway open
 ```
 
