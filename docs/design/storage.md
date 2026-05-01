@@ -105,14 +105,26 @@ metadata_json
 
 ```text
 context_id
+project_id
+run_id
+task_id
+agent_id
+agent_pair
+task_type
 scope
 kind
 title
 body
+tags_json
+subject_refs_json
+artifact_refs_json
 source_json
 confidence
 sensitivity
 status
+expires_at
+supersedes
+metadata_json
 created_at
 updated_at
 ```
@@ -121,11 +133,19 @@ updated_at
 
 ```text
 snapshot_id
+project_id
 run_id
+task_id
 from_agent
 to_agent
 summary
-payload_json
+decisions_json
+open_issues_json
+recommendations_json
+artifact_refs_json
+context_item_refs_json
+created_by_json
+supersedes
 created_at
 ```
 

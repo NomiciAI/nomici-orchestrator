@@ -136,6 +136,139 @@ Nomici does not need to understand each tool's internal model provider, prompt f
 
 Those are data-plane internals.
 
+## CLI Runner Contract v0.1
+
+The CLI Agent Runner is a process runner contract. It is not the same surface as an HTTP adapter, although Gateway normalizes its result into the same run/trace model.
+
+### Invoke Input
+
+Runner input:
+
+```json
+{
+  "run_id": "run_01H",
+  "task_id": "task_01H",
+  "agent_id": "implementer",
+  "workspace": "./workspace",
+  "prompt": "Implement login middleware.",
+  "shared_context": {
+    "project": [],
+    "run": [],
+    "handoff": {
+      "summary": "Architect selected stateless JWT auth."
+    }
+  },
+  "artifacts": [],
+  "timeout_seconds": 1800,
+  "env_refs": ["ANTHROPIC_API_KEY"]
+}
+```
+
+The runner renders this through the configured command template.
+
+Template variables:
+
+- `${INPUT}`: user/task prompt plus rendered task briefing
+- `${PROMPT}`: raw prompt only
+- `${BRIEFING}`: rendered Shared Context briefing only
+- `${RUN_ID}`
+- `${TASK_ID}`
+- `${WORKSPACE}`
+
+Rules:
+
+- Prefer argument arrays over shell strings.
+- Shell expansion is disabled unless `shell: true` is explicitly configured.
+- Environment variables are passed by allowlist or secret reference only.
+- Shared Context is injected as a bounded task briefing, not as hidden runtime memory.
+
+Recommended briefing shape:
+
+```text
+Task briefing:
+- Objective: ...
+- Project decisions: ...
+- Upstream handoff: ...
+- Artifacts to inspect: ...
+- Open issues: ...
+- Constraints: ...
+```
+
+### Output Collection
+
+Runner output:
+
+```json
+{
+  "status": "completed",
+  "exit_code": 0,
+  "stdout_ref": "artifact_stdout_01H",
+  "stderr_ref": "artifact_stderr_01H",
+  "summary": "Implemented login middleware and added tests.",
+  "changed_files": [
+    "server/auth/middleware.go",
+    "server/auth/middleware_test.go"
+  ],
+  "diff_ref": "artifact_diff_01H",
+  "context_snapshot": {
+    "summary": "Implementation is complete; refresh-token rotation remains out of scope.",
+    "open_issues": [
+      "Refresh-token rotation is not implemented."
+    ],
+    "artifact_refs": ["artifact_diff_01H"]
+  }
+}
+```
+
+Rules:
+
+- Exit code `0` maps to `completed` unless parsing or policy marks the result unsafe.
+- Non-zero exit codes map to `failed` with stdout/stderr artifacts preserved.
+- If the CLI emits declared structured JSON, parse it.
+- Otherwise, stdout is the agent response and stderr is diagnostic output.
+- Capture pre/post workspace diff when the workspace is a Git repo.
+- If the workspace is not a Git repo, capture a file manifest diff where feasible.
+- Store large stdout/stderr by artifact reference, not inline trace payload.
+
+### Timeout and Cancel
+
+Defaults:
+
+- timeout: 30 minutes unless runtime config overrides it
+- graceful cancel: send `SIGTERM` or platform equivalent
+- grace period: 10 seconds
+- forced cancel: send `SIGKILL` or platform equivalent
+
+Rules:
+
+- Cancellation must emit `adapter.cancelled` or `adapter.failed`.
+- Partial stdout/stderr and diffs should be preserved as artifacts when safe.
+- The runner should terminate the process group, not only the direct child, when supported by the OS.
+
+### Concurrency and Workspace Locks
+
+Default v0.1 behavior:
+
+- one mutable CLI agent invocation per workspace at a time
+- concurrent read-only invocations are allowed only when the runtime declares `files_write: false`
+- mutating parallel work should use isolated workspaces, branches, or worktrees
+
+Gateway should maintain a workspace lock for mutable CLI runs.
+
+If a second mutable invocation targets a locked workspace, policy should either queue it or fail clearly with remediation.
+
+### Normalization
+
+After process execution, Gateway normalizes the result into:
+
+- run/task status
+- adapter trace events
+- artifacts
+- context snapshot candidate
+- policy/audit records
+
+This keeps CLI agents first-class without pretending they implement the HTTP adapter contract internally.
+
 ## Adapter Modes
 
 The CLI Agent Runner should support modes, not one hard-coded command.

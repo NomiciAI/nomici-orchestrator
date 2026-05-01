@@ -408,6 +408,8 @@ The run engine should remain thin. It coordinates control-plane execution; it do
 
 `gateway_agent` is the v0.1 name for the minimal Gateway-run coordinator loop. `native_agent` is not a public v0.1 kind. The first compelling developer proof may use external `cli_agent` runtimes before the Gateway agent loop is featureful.
 
+The `gateway_agent` loop is a single-run coordinator. It may load a compiled graph, call one configured model, interpret a bounded response, invoke adapters or Nomici-mediated tools, attach Shared Context snapshots, and write trace events. It must not become durable execution, unbounded autonomous planning, private agent-native memory, or a hidden tool runtime.
+
 ### Shared Context
 
 Responsibilities:

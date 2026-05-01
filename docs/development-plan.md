@@ -82,7 +82,7 @@ Product delivery:
 - generic CLI agent runner
 - shared context items and handoff snapshots
 - run records and trace timeline
-- approval record model
+- approval record model with `once` and `run` scopes
 - first useful official bundled pack
 
 Degradable delivery:
@@ -90,7 +90,8 @@ Degradable delivery:
 - complete Console setup wizard
 - rich visual canvas editing
 - runtime auto-restart
-- non-trivial approval scopes
+- session/global approval scopes
+- learned policy exceptions
 - full MCP proxy
 - A2A sidecars
 - Office/browser packs

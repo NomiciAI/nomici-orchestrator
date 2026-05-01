@@ -16,6 +16,10 @@ The project follows semantic versioning once the first public release is cut.
 - v0.1 boundary clarifications for `gateway_agent`, scoped delivery tiers, IR convergence, Gateway health responses, pack trust roots, and Console bootstrap.
 - Generic CLI agent runtime strategy for Claude Code, Codex, opencode, Aider, custom commands, editor-native agents with automation surfaces, and developer-team pack integration.
 - Shared Context Layer strategy for agent-native memory boundaries, handoff briefings, and safe long-running autonomy.
+- Shared Context design for context item kinds, lifecycle, handoff snapshots, adapter injection, promotion, storage, and API shape.
+- Gateway agent loop boundary as a single-run coordinator rather than a durable or self-directed agent runtime.
+- CLI Agent Runner process contract for prompt/briefing injection, stdout/stderr artifacts, diff capture, cancellation, and workspace locks.
+- v0.1 approval scope policy: `once` and `run` only, with session/global scopes deferred.
 
 ### Changed
 

@@ -16,6 +16,12 @@ nomici.yaml
 
 AgentSpec v0.1 should define desired state only. Runtime observations such as PIDs, current health, active run IDs, pending approvals, and logs belong in Gateway state, not in `nomici.yaml`.
 
+Settled boundary note:
+
+- `gateway_agent` is the v0.1 public kind for the minimal Gateway-run coordinator.
+- `native_agent` is reserved for future discussion and should not appear in v0.1 examples.
+- Rich agent loops, durable execution, and framework-native behavior belong in external runtimes.
+
 ## Design Principles
 
 Human-readable:

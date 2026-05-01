@@ -202,19 +202,23 @@ Policy is not intended to make agents less capable. It is intended to make long-
 Default tiers:
 
 - low-risk actions are allowed and traced
-- medium-risk actions are allowed within scoped policy or approved once per run/session
-- high-risk actions require approval
+- medium-risk actions require approval unless explicit scoped policy allows them; v0.1 grants can be once or run scoped
+- high-risk actions require approval and default to once scoped grants
 - critical-risk actions are denied unless explicitly configured
 
 This keeps routine work moving while preserving human gates for publish, deploy, destructive changes, unknown network access, and secret exposure.
 
-Approval scopes:
+v0.1 approval scopes:
 
 - once
 - for run
-- for session
-- for workspace, future
-- always, future and dangerous
+
+Deferred approval scopes:
+
+- session
+- project or workspace
+- global or always
+- learned approval exceptions
 
 High-risk actions requiring approval by default:
 

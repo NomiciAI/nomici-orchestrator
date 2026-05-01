@@ -21,6 +21,8 @@ Shared Context Layer
 
 This is control-plane context, not agent-native memory.
 
+The implementation data model, lifecycle, handoff snapshot rules, and adapter contract are defined in [Shared Context](shared-context.md). This document explains why the layer exists and how it supports safe partial autonomy.
+
 ## Memory Taxonomy
 
 Agent-native memory:
@@ -232,7 +234,7 @@ Medium risk:
 - create local branches
 - use trusted MCP tools
 
-Default: allow within scoped policy, or require one approval per run/session.
+Default: require approval unless an explicit scoped policy allows it. v0.1 grants should support `once` and `run`; `session` is deferred.
 
 High risk:
 
@@ -256,6 +258,13 @@ Critical risk:
 - force push without explicit policy
 
 Default: deny unless explicitly configured.
+
+v0.1 approval posture:
+
+- low-risk actions are auto-allowed only inside declared scopes and always traced
+- medium-risk approvals support `once` and `run`
+- high-risk approvals default to `once`; `run` requires explicit policy opt-in
+- session/global approval scopes and learned policy exceptions are deferred
 
 ## Long-Running Work
 

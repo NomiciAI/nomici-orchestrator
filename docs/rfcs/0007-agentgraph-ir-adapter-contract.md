@@ -546,6 +546,34 @@ Statuses:
 - `requires_approval`
 - `unsupported`
 
+### CLI Agent Runner Contract
+
+The generic `cli_agent` runner is process-oriented, not HTTP-oriented.
+
+It should normalize to the same `InvokeResult`, trace events, artifacts, and context snapshot fields, but its native contract is:
+
+```text
+structured invoke request
+  -> prompt/briefing template
+  -> local process in explicit workspace
+  -> stdout/stderr artifacts
+  -> exit code
+  -> pre/post workspace diff
+  -> optional structured context_snapshot
+```
+
+v0.1 rules:
+
+- pass prompts through argument arrays or stdin, not shell-expanded strings by default
+- inject Shared Context as a bounded task briefing
+- pass environment only by allowlist or secret reference
+- capture stdout, stderr, exit code, and workspace diff
+- default timeout is 30 minutes
+- cancel with `SIGTERM`, wait 10 seconds, then `SIGKILL`, or use platform equivalents
+- lock mutable workspaces so two writing CLI agents do not run in the same workspace concurrently
+
+The detailed process contract is maintained in `docs/design/cli-agent-runtimes.md`.
+
 ### HealthResult
 
 ```json

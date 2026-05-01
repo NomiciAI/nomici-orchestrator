@@ -27,7 +27,7 @@ agent
   "risk": "high",
   "policy_refs": ["default.filesystem.write"],
   "approval": {
-    "scope_options": ["once", "run", "session"]
+    "scope_options": ["once", "run"]
   }
 }
 ```
@@ -66,7 +66,7 @@ Medium risk:
 - call known APIs
 - use trusted MCP tools
 
-Default: allow within scoped policy or ask once per run/session.
+Default: require approval unless an explicit scoped policy allows it.
 
 High risk:
 
@@ -87,6 +87,29 @@ Critical risk:
 - public remote access enablement
 
 Default: deny unless explicitly configured.
+
+## Approval Scopes
+
+v0.1 approval scopes:
+
+- `once`: grant exactly one requested action.
+- `run`: grant matching actions for the current run only.
+
+Deferred scopes:
+
+- `session`
+- `project`
+- `global`
+- learned approval exceptions
+
+Default scope behavior:
+
+- low-risk actions are auto-allowed within declared workspace/provider/tool scopes and traced
+- medium-risk actions require approval by default; the user may grant `once` or `run`
+- high-risk actions default to `once`; `run` requires explicit policy opt-in
+- critical-risk actions are denied unless explicitly configured by policy
+
+This is the initial safe partial autonomy posture: agents can keep working on low-risk steps, but write, publish, and deploy boundaries remain visible.
 
 ## Risk Classification
 
@@ -137,7 +160,8 @@ Scopes:
 
 - `once`
 - `run`
-- `session`
+
+`session` is reserved for a later release. It should not appear as a selectable v0.1 grant scope unless the policy engine implements revocation, expiry, and clear UI disclosure.
 
 ## Tool Broker Request
 

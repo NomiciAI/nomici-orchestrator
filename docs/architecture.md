@@ -38,6 +38,7 @@ Nomici should serve two audiences:
 - Run Engine stays lightweight. Durable execution belongs to external runtimes.
 - Nomici does not replace agent-native memory. It provides a Shared Context Layer for cross-agent handoff, project decisions, run summaries, and long-running task context.
 - Side-effecting tools go through Policy, Approval, and Trace when Nomici mediates execution.
+- v0.1 approval scopes are `once` and `run`; `session`, project/global grants, and learned policy exceptions are deferred.
 - Pack `official` trust in v0.1 requires a bundled pack or compiled official index. Local manifest claims are not authoritative.
 - Console setup requires a running Gateway. v0.1 can use CLI-first setup or a bootstrap `gateway run --setup` mode.
 - SQLite is the default local store. Postgres is later.
@@ -232,7 +233,7 @@ Nomici does not own:
 
 Gateway Agent boundary:
 
-Nomici may run a minimal `gateway_agent` loop for first-run coordination. That loop may call a model, request handoffs, call agent-as-tool adapters, and request Nomici-mediated tools. It is not durable execution and should not grow into a full framework runtime.
+Nomici may run a minimal `gateway_agent` loop for first-run coordination. It is a single-run coordinator: receive a request, load the compiled graph, call one model, interpret a bounded response, invoke adapters/tools through Gateway services, attach Shared Context snapshots, collect outputs, and write trace events. It must not own durable execution, hidden tool execution, private agent-native memory, unbounded self-directed loops, or framework-style task planning.
 
 Shared Context boundary:
 
