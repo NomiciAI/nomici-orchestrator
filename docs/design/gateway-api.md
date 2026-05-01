@@ -101,6 +101,15 @@ Reserved paths should not imply full compatibility.
 
 `/api/health` is for liveness/readiness only. It should not become the general system status API.
 
+Implemented private-bootstrap OpenAI-compatible routes:
+
+```text
+GET  /v1/models
+POST /v1/chat/completions
+```
+
+These routes require the Gateway token and are operator-level surfaces. Streaming chat completions, `/v1/responses`, `/v1/embeddings`, scoped tokens, and agent-name routing remain deferred.
+
 Implemented private-bootstrap query routes:
 
 ```text

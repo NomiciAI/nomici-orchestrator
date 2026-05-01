@@ -37,6 +37,7 @@ The project follows semantic versioning once the first public release is cut.
 - Minimal local lifecycle commands: `up`, `down`, `ps`, and `logs` for Gateway and `local_process` runtimes.
 - Top-level `doctor` and Gateway `start`, `stop`, `status`, `logs`, and `open` commands.
 - `scripts/install.sh` with no-sudo defaults, source install, future release download, checksum verification, backup, custom install dir, version selection, and uninstall.
+- Minimal OpenAI-compatible Gateway routes: `GET /v1/models` and non-streaming `POST /v1/chat/completions`.
 
 ### Changed
 

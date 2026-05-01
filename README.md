@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -49,6 +49,7 @@ nomici logs gateway --tail 50
 nomici gateway token show
 nomici gateway open
 # paste the token for the read-only Console overview
+curl -H "Authorization: Bearer $(nomici gateway token show)" http://127.0.0.1:8787/v1/models
 nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"

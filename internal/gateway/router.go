@@ -41,6 +41,13 @@ func NewRouter(options Options, services Services) *chi.Mux {
 			api.Post("/api/models/test", modelTestHandler(services))
 		}
 	})
+	router.Group(func(v1 chi.Router) {
+		if options.AuthToken != "" {
+			v1.Use(bearerAuthMiddleware(options.AuthToken))
+		}
+		v1.Get("/v1/models", v1ModelsHandler(services))
+		v1.Post("/v1/chat/completions", v1ChatCompletionsHandler(services))
+	})
 	router.Handle("/*", web.Handler())
 
 	return router
