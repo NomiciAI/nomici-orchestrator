@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -107,6 +108,7 @@ func Invoke(ctx context.Context, config Config, request Request) (*Result, error
 	result.CompletedAt = time.Now().UTC()
 	result.Stdout = stdout.String()
 	result.Stderr = stderr.String()
+	result.ContextSnapshot = parseContextSnapshot(stdout.Bytes())
 	result.StdoutRef = filepath.Join(artifactDir, "stdout.txt")
 	result.StderrRef = filepath.Join(artifactDir, "stderr.txt")
 
@@ -142,6 +144,25 @@ func Invoke(ctx context.Context, config Config, request Request) (*Result, error
 	}
 
 	return result, nil
+}
+
+type outputEnvelope struct {
+	ContextSnapshot *ContextSnapshotCandidate `json:"context_snapshot"`
+}
+
+func parseContextSnapshot(stdout []byte) *ContextSnapshotCandidate {
+	trimmed := bytes.TrimSpace(stdout)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
+	}
+	var envelope outputEnvelope
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
+		return nil
+	}
+	if envelope.ContextSnapshot == nil || strings.TrimSpace(envelope.ContextSnapshot.Summary) == "" {
+		return nil
+	}
+	return envelope.ContextSnapshot
 }
 
 func failedResult(workspace string, artifactDir string, exitCode int, message string) *Result {
@@ -226,13 +247,21 @@ func buildEnv(config Config) ([]string, error) {
 }
 
 func renderInput(request Request) string {
-	if strings.TrimSpace(request.Briefing) == "" {
+	briefing := strings.TrimSpace(request.Briefing)
+	sharedBriefing := strings.TrimSpace(request.SharedContext.Briefing)
+	if sharedBriefing != "" {
+		if briefing != "" {
+			briefing += "\n\n"
+		}
+		briefing += sharedBriefing
+	}
+	if briefing == "" {
 		return request.Prompt
 	}
 	if strings.TrimSpace(request.Prompt) == "" {
-		return request.Briefing
+		return briefing
 	}
-	return request.Briefing + "\n\nTask:\n" + request.Prompt
+	return briefing + "\n\nTask:\n" + request.Prompt
 }
 
 func templateValues(config Config, request Request, input string) map[string]string {

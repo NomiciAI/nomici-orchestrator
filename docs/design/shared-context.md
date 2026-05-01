@@ -189,6 +189,14 @@ v0.1 should avoid semantic vector retrieval. Selection can start with explicit r
 
 ## Snapshot Creation
 
+Private bootstrap implementation note:
+
+- The first executable path generates snapshots for `cli_agent` runs.
+- If a CLI agent prints structured JSON with a top-level `context_snapshot`, Nomici stores that candidate after validation and redaction.
+- Otherwise Nomici falls back to a deterministic snapshot from stdout, errors, changed files, and artifact refs.
+- The first supported handoff path is one `handoff` edge between two `cli_agent`-backed `external_agent` nodes.
+- Snapshot promotion into durable project context is still deferred.
+
 Nomici should support two snapshot creation paths.
 
 Adapter-provided snapshot:

@@ -27,14 +27,18 @@ type RunSummary struct {
 }
 
 const (
-	EventRunStarted       = "run.started"
-	EventRunCompleted     = "run.completed"
-	EventRunFailed        = "run.failed"
-	EventModelRequested   = "model.requested"
-	EventModelCompleted   = "model.completed"
-	EventModelFailed      = "model.failed"
-	EventAdapterInvoked   = "adapter.invoked"
-	EventAdapterCompleted = "adapter.completed"
-	EventAdapterFailed    = "adapter.failed"
-	EventArtifactCreated  = "artifact.created"
+	EventRunStarted             = "run.started"
+	EventRunCompleted           = "run.completed"
+	EventRunFailed              = "run.failed"
+	EventModelRequested         = "model.requested"
+	EventModelCompleted         = "model.completed"
+	EventModelFailed            = "model.failed"
+	EventAdapterInvoked         = "adapter.invoked"
+	EventAdapterCompleted       = "adapter.completed"
+	EventAdapterFailed          = "adapter.failed"
+	EventArtifactCreated        = "artifact.created"
+	EventContextSnapshotCreated = "context.snapshot.created"
+	EventHandoffCreated         = "handoff.created"
+	EventHandoffAccepted        = "handoff.accepted"
+	EventHandoffContextAttached = "handoff.context_attached"
 )

@@ -27,6 +27,7 @@ The project follows semantic versioning once the first public release is cut.
 - CLI commands for `model setup`, `model list`, `model doctor`, `model test`, `run model`, `trace list`, and `trace show`.
 - Minimal AgentSpec parser/validator, internal AgentGraph snapshot compiler/store, `spec validate`, `graph validate`, `graph export`, and single-node `nomici run <entrypoint>`.
 - Generic `cli_agent` runner with template rendering, env refs, workspace locks, stdout/stderr artifacts, manifest/Git diff capture, trace events, `runtime inspect`, and `agent run`.
+- Shared Context SQLite storage, snapshot redaction, `context list`, CLI runner `shared_context` briefing injection, structured `context_snapshot` candidates, fallback run snapshots, and one-step `cli_agent` handoff execution.
 
 ### Changed
 

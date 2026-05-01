@@ -14,6 +14,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	tracepkg "github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/spf13/cobra"
@@ -90,11 +91,7 @@ func runGraphEntrypoint(command *cobra.Command, configPath string, dbPath string
 			return fmt.Errorf("agent %q has kind %q, which is not executable in Gate 4; gateway_agent, model_agent, and external_agent backed by cli_agent are supported", entrypoint, agent.Kind)
 		}
 	}
-	for _, edge := range snapshot.IR.Edges {
-		if edge.From == entrypoint {
-			return fmt.Errorf("agent %q has outgoing %q edge to %q; multi-node graph execution is not implemented in Gate 4", entrypoint, edge.Mode, edge.To)
-		}
-	}
+	outgoing := outgoingEdges(snapshot, entrypoint)
 
 	db, err := openMigratedDB(dbPath)
 	if err != nil {
@@ -104,6 +101,13 @@ func runGraphEntrypoint(command *cobra.Command, configPath string, dbPath string
 
 	if err := graph.NewStore(db).Save(command.Context(), snapshot); err != nil {
 		return err
+	}
+
+	if len(outgoing) > 0 {
+		if agent.Kind == agentspec.AgentKindExternal && len(outgoing) == 1 && outgoing[0].Mode == "handoff" {
+			return runExternalCLIHandoff(command, snapshot, agent, outgoing[0], configPath, prompt, db)
+		}
+		return fmt.Errorf("agent %q has outgoing graph edges; Gate 5 only supports one handoff edge between cli_agent-backed external_agent nodes", entrypoint)
 	}
 
 	if agent.Kind == agentspec.AgentKindExternal {
@@ -142,6 +146,7 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 	}
 
 	traceStore := tracepkg.NewStore(db)
+	contextStore := sharedcontext.NewStore(db)
 	runID := ids.New("run")
 	taskID := ids.New("task")
 	ctx := command.Context()
@@ -159,70 +164,21 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 	}); err != nil {
 		return err
 	}
-	if err := traceStore.Append(ctx, &tracepkg.Event{
-		RunID:     runID,
-		Type:      tracepkg.EventAdapterInvoked,
-		NodeID:    agent.ID,
-		RuntimeID: runtime.ID,
-		Payload: jsonPayload(map[string]any{
-			"runtime_kind": runtime.Kind,
-			"runner":       runtime.Runner,
-			"workspace":    runtime.Workspace,
-			"executable":   runtime.Invoke.Executable,
-			"args_count":   len(runtime.Invoke.Args),
-			"env_from":     runtime.EnvFrom,
-		}),
-	}); err != nil {
-		return err
-	}
 
-	result, err := clirunner.Invoke(ctx, cliRunnerConfig(runtime, agent, configPath), clirunner.Request{
-		RunID:  runID,
-		TaskID: taskID,
-		Prompt: graphPrompt(agent, prompt),
-	})
+	result, err := invokeExternalCLIAgent(ctx, traceStore, runtime, agent, configPath, runID, taskID, graphPrompt(agent, prompt), nil)
 	if err != nil {
 		_ = appendExternalFailure(ctx, traceStore, runID, agent.ID, runtime.ID, err.Error())
 		return err
 	}
 
-	for _, artifact := range cliArtifacts(result) {
-		if err := traceStore.Append(ctx, &tracepkg.Event{
-			RunID:     runID,
-			Type:      tracepkg.EventArtifactCreated,
-			NodeID:    agent.ID,
-			RuntimeID: runtime.ID,
-			Payload:   jsonPayload(artifact),
-		}); err != nil {
-			return err
-		}
+	contextSnapshot, err := saveCLIContextSnapshot(ctx, contextStore, traceStore, snapshot.ProjectID, runID, taskID, agent.ID, "", result, sharedcontext.KindRunSummary)
+	if err != nil {
+		return err
 	}
 
-	completionPayload := map[string]any{
-		"status":        result.Status,
-		"exit_code":     result.ExitCode,
-		"changed_files": result.ChangedFiles,
-		"stdout_ref":    result.StdoutRef,
-		"stderr_ref":    result.StderrRef,
-		"diff_ref":      result.DiffRef,
-	}
-	if result.Error != "" {
-		completionPayload["error"] = result.Error
-	}
-	eventType := tracepkg.EventAdapterCompleted
 	runType := tracepkg.EventRunCompleted
 	if result.Status != clirunner.StatusCompleted {
-		eventType = tracepkg.EventAdapterFailed
 		runType = tracepkg.EventRunFailed
-	}
-	if err := traceStore.Append(ctx, &tracepkg.Event{
-		RunID:     runID,
-		Type:      eventType,
-		NodeID:    agent.ID,
-		RuntimeID: runtime.ID,
-		Payload:   jsonPayload(completionPayload),
-	}); err != nil {
-		return err
 	}
 	if err := traceStore.Append(ctx, &tracepkg.Event{
 		RunID:     runID,
@@ -238,11 +194,14 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 	fmt.Fprintf(command.OutOrStdout(), "Runtime:   %s\n", runtime.ID)
 	fmt.Fprintf(command.OutOrStdout(), "Run ID:    %s\n", runID)
 	fmt.Fprintf(command.OutOrStdout(), "Status:    %s\n", result.Status)
+	if contextSnapshot != nil {
+		fmt.Fprintf(command.OutOrStdout(), "Context:   %s\n", contextSnapshot.SnapshotID)
+	}
 	if result.Error != "" {
 		fmt.Fprintf(command.OutOrStdout(), "Error:     %s\n", result.Error)
 	}
 	if strings.TrimSpace(result.Stdout) != "" {
-		fmt.Fprintf(command.OutOrStdout(), "Response:  %s\n", oneLine(result.Stdout, 500))
+		fmt.Fprintf(command.OutOrStdout(), "Response:  %s\n", displayOutput(result.Stdout, 500))
 	}
 	if result.DiffRef != "" {
 		fmt.Fprintf(command.OutOrStdout(), "Diff:      %s\n", result.DiffRef)
@@ -254,6 +213,383 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 		return fmt.Errorf("cli_agent run failed: %s", result.Error)
 	}
 	return nil
+}
+
+func runExternalCLIHandoff(command *cobra.Command, snapshot *graph.Snapshot, fromAgent graph.Agent, edge graph.Edge, configPath string, prompt string, db *sql.DB) error {
+	toAgent, ok := snapshot.IR.Agents[edge.To]
+	if !ok {
+		return fmt.Errorf("handoff target %q was not found in compiled graph", edge.To)
+	}
+	if toAgent.Kind != agentspec.AgentKindExternal {
+		return fmt.Errorf("Gate 5 handoff target %q has kind %q; only external_agent targets are supported", toAgent.ID, toAgent.Kind)
+	}
+	fromRuntime, err := cliRuntimeForAgent(snapshot, fromAgent)
+	if err != nil {
+		return err
+	}
+	toRuntime, err := cliRuntimeForAgent(snapshot, toAgent)
+	if err != nil {
+		return err
+	}
+
+	traceStore := tracepkg.NewStore(db)
+	contextStore := sharedcontext.NewStore(db)
+	runID := ids.New("run")
+	taskID := ids.New("task")
+	ctx := command.Context()
+
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      tracepkg.EventRunStarted,
+		NodeID:    fromAgent.ID,
+		RuntimeID: fromRuntime.ID,
+		Payload: jsonPayload(map[string]any{
+			"graph_id": snapshot.SnapshotID,
+			"agent_id": fromAgent.ID,
+			"task_id":  taskID,
+		}),
+	}); err != nil {
+		return err
+	}
+
+	first, err := invokeExternalCLIAgent(ctx, traceStore, fromRuntime, fromAgent, configPath, runID, taskID, graphPrompt(fromAgent, prompt), nil)
+	if err != nil {
+		_ = appendExternalFailure(ctx, traceStore, runID, fromAgent.ID, fromRuntime.ID, err.Error())
+		return err
+	}
+	handoffSnapshot, err := saveCLIContextSnapshot(ctx, contextStore, traceStore, snapshot.ProjectID, runID, taskID, fromAgent.ID, toAgent.ID, first, sharedcontext.KindHandoffBriefing)
+	if err != nil {
+		return err
+	}
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      tracepkg.EventHandoffCreated,
+		NodeID:    fromAgent.ID,
+		RuntimeID: fromRuntime.ID,
+		Payload: jsonPayload(map[string]any{
+			"from":        fromAgent.ID,
+			"to":          toAgent.ID,
+			"edge_id":     edge.ID,
+			"mode":        edge.Mode,
+			"snapshot_id": handoffSnapshot.SnapshotID,
+		}),
+	}); err != nil {
+		return err
+	}
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      tracepkg.EventHandoffContextAttached,
+		NodeID:    toAgent.ID,
+		RuntimeID: toRuntime.ID,
+		Payload: jsonPayload(map[string]any{
+			"from":        fromAgent.ID,
+			"to":          toAgent.ID,
+			"snapshot_id": handoffSnapshot.SnapshotID,
+		}),
+	}); err != nil {
+		return err
+	}
+
+	runType := tracepkg.EventRunCompleted
+	second := (*clirunner.Result)(nil)
+	if first.Status == clirunner.StatusCompleted {
+		if err := traceStore.Append(ctx, &tracepkg.Event{
+			RunID:     runID,
+			Type:      tracepkg.EventHandoffAccepted,
+			NodeID:    toAgent.ID,
+			RuntimeID: toRuntime.ID,
+			Payload: jsonPayload(map[string]any{
+				"from":        fromAgent.ID,
+				"to":          toAgent.ID,
+				"snapshot_id": handoffSnapshot.SnapshotID,
+			}),
+		}); err != nil {
+			return err
+		}
+		second, err = invokeExternalCLIAgent(ctx, traceStore, toRuntime, toAgent, configPath, runID, taskID, graphPrompt(toAgent, prompt), handoffSnapshot)
+		if err != nil {
+			_ = appendExternalFailure(ctx, traceStore, runID, toAgent.ID, toRuntime.ID, err.Error())
+			return err
+		}
+		if _, err := saveCLIContextSnapshot(ctx, contextStore, traceStore, snapshot.ProjectID, runID, taskID, toAgent.ID, "", second, sharedcontext.KindRunSummary); err != nil {
+			return err
+		}
+		if second.Status != clirunner.StatusCompleted {
+			runType = tracepkg.EventRunFailed
+		}
+	} else {
+		runType = tracepkg.EventRunFailed
+	}
+
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID: runID,
+		Type:  runType,
+	}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(command.OutOrStdout(), "Graph:     %s\n", snapshot.SnapshotID)
+	fmt.Fprintf(command.OutOrStdout(), "Handoff:   %s -> %s\n", fromAgent.ID, toAgent.ID)
+	fmt.Fprintf(command.OutOrStdout(), "Run ID:    %s\n", runID)
+	fmt.Fprintf(command.OutOrStdout(), "Context:   %s\n", handoffSnapshot.SnapshotID)
+	fmt.Fprintf(command.OutOrStdout(), "Status:    %s\n", handoffRunStatus(first, second))
+	if strings.TrimSpace(first.Stdout) != "" {
+		fmt.Fprintf(command.OutOrStdout(), "Upstream:  %s\n", displayOutput(first.Stdout, 500))
+	}
+	if second != nil && strings.TrimSpace(second.Stdout) != "" {
+		fmt.Fprintf(command.OutOrStdout(), "Downstream:%s\n", padValue(displayOutput(second.Stdout, 500)))
+	}
+	if first.Status != clirunner.StatusCompleted {
+		return fmt.Errorf("upstream cli_agent run failed: %s", first.Error)
+	}
+	if second != nil && second.Status != clirunner.StatusCompleted {
+		return fmt.Errorf("downstream cli_agent run failed: %s", second.Error)
+	}
+	return nil
+}
+
+func invokeExternalCLIAgent(ctx context.Context, traceStore *tracepkg.Store, runtime graph.Runtime, agent graph.Agent, configPath string, runID string, taskID string, prompt string, upstream *sharedcontext.Snapshot) (*clirunner.Result, error) {
+	briefing := sharedcontext.RenderBriefing(upstream)
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      tracepkg.EventAdapterInvoked,
+		NodeID:    agent.ID,
+		RuntimeID: runtime.ID,
+		Payload: jsonPayload(map[string]any{
+			"runtime_kind":       runtime.Kind,
+			"runner":             runtime.Runner,
+			"workspace":          runtime.Workspace,
+			"executable":         runtime.Invoke.Executable,
+			"args_count":         len(runtime.Invoke.Args),
+			"env_from":           runtime.EnvFrom,
+			"shared_context_ref": briefing.SnapshotID,
+		}),
+	}); err != nil {
+		return nil, err
+	}
+
+	result, err := clirunner.Invoke(ctx, cliRunnerConfig(runtime, agent, configPath), clirunner.Request{
+		RunID:  runID,
+		TaskID: taskID,
+		Prompt: prompt,
+		SharedContext: clirunner.SharedContext{
+			SnapshotID: briefing.SnapshotID,
+			Briefing:   briefing.Text,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, artifact := range cliArtifacts(result) {
+		if err := traceStore.Append(ctx, &tracepkg.Event{
+			RunID:     runID,
+			Type:      tracepkg.EventArtifactCreated,
+			NodeID:    agent.ID,
+			RuntimeID: runtime.ID,
+			Payload:   jsonPayload(artifact),
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	completionPayload := map[string]any{
+		"status":        result.Status,
+		"exit_code":     result.ExitCode,
+		"changed_files": result.ChangedFiles,
+		"stdout_ref":    result.StdoutRef,
+		"stderr_ref":    result.StderrRef,
+		"diff_ref":      result.DiffRef,
+	}
+	if result.Error != "" {
+		completionPayload["error"] = result.Error
+	}
+	eventType := tracepkg.EventAdapterCompleted
+	if result.Status != clirunner.StatusCompleted {
+		eventType = tracepkg.EventAdapterFailed
+	}
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      eventType,
+		NodeID:    agent.ID,
+		RuntimeID: runtime.ID,
+		Payload:   jsonPayload(completionPayload),
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func saveCLIContextSnapshot(ctx context.Context, contextStore *sharedcontext.Store, traceStore *tracepkg.Store, projectID string, runID string, taskID string, fromAgent string, toAgent string, result *clirunner.Result, kind string) (*sharedcontext.Snapshot, error) {
+	snapshot := &sharedcontext.Snapshot{
+		ProjectID:       projectID,
+		RunID:           runID,
+		TaskID:          taskID,
+		FromAgent:       fromAgent,
+		ToAgent:         toAgent,
+		Summary:         cliContextSummary(result),
+		Decisions:       cliContextDecisions(result),
+		OpenIssues:      cliOpenIssues(result),
+		Recommendations: cliRecommendations(toAgent, result),
+		ArtifactRefs:    cliArtifactRefs(result),
+		CreatedBy:       sharedcontext.CreatedBy{Kind: "gateway_generated", AgentID: fromAgent},
+	}
+	if kind == sharedcontext.KindHandoffBriefing && toAgent != "" {
+		snapshot.ContextItemRefs = []string{}
+	}
+	if err := contextStore.SaveSnapshot(ctx, snapshot); err != nil {
+		return nil, err
+	}
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:   runID,
+		Type:    tracepkg.EventContextSnapshotCreated,
+		NodeID:  fromAgent,
+		Payload: jsonPayload(contextSnapshotPayload(snapshot, kind)),
+	}); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func contextSnapshotPayload(snapshot *sharedcontext.Snapshot, kind string) map[string]any {
+	return map[string]any{
+		"snapshot_id":   snapshot.SnapshotID,
+		"kind":          kind,
+		"from_agent":    snapshot.FromAgent,
+		"to_agent":      snapshot.ToAgent,
+		"summary":       snapshot.Summary,
+		"artifact_refs": snapshot.ArtifactRefs,
+	}
+}
+
+func cliContextSummary(result *clirunner.Result) string {
+	if result == nil {
+		return "No CLI result was produced."
+	}
+	if result.ContextSnapshot != nil && strings.TrimSpace(result.ContextSnapshot.Summary) != "" {
+		return sharedcontext.RedactText(result.ContextSnapshot.Summary)
+	}
+	if strings.TrimSpace(result.Stdout) != "" {
+		return oneLine(sharedcontext.RedactText(result.Stdout), 1000)
+	}
+	if result.Error != "" {
+		return sharedcontext.RedactText(result.Error)
+	}
+	if len(result.ChangedFiles) > 0 {
+		return "Changed files: " + strings.Join(result.ChangedFiles, ", ")
+	}
+	return "CLI agent completed without stdout."
+}
+
+func cliContextDecisions(result *clirunner.Result) []sharedcontext.Note {
+	if result == nil || result.ContextSnapshot == nil {
+		return nil
+	}
+	decisions := make([]sharedcontext.Note, 0, len(result.ContextSnapshot.Decisions))
+	for _, decision := range result.ContextSnapshot.Decisions {
+		decisions = append(decisions, sharedcontext.Note{
+			Title: sharedcontext.RedactText(decision.Title),
+			Body:  sharedcontext.RedactText(decision.Body),
+		})
+	}
+	return decisions
+}
+
+func cliOpenIssues(result *clirunner.Result) []string {
+	if result == nil {
+		return nil
+	}
+	if result.ContextSnapshot != nil && len(result.ContextSnapshot.OpenIssues) > 0 {
+		openIssues := make([]string, 0, len(result.ContextSnapshot.OpenIssues))
+		for _, issue := range result.ContextSnapshot.OpenIssues {
+			openIssues = append(openIssues, sharedcontext.RedactText(issue))
+		}
+		return openIssues
+	}
+	if result.Status == clirunner.StatusCompleted {
+		return nil
+	}
+	if result.Error == "" {
+		return []string{"Upstream CLI agent failed without a structured error."}
+	}
+	return []string{sharedcontext.RedactText(result.Error)}
+}
+
+func cliRecommendations(toAgent string, result *clirunner.Result) []string {
+	if result == nil {
+		return nil
+	}
+	if result.ContextSnapshot != nil && len(result.ContextSnapshot.Recommendations) > 0 {
+		recommendations := make([]string, 0, len(result.ContextSnapshot.Recommendations))
+		for _, recommendation := range result.ContextSnapshot.Recommendations {
+			recommendations = append(recommendations, sharedcontext.RedactText(recommendation))
+		}
+		return recommendations
+	}
+	if toAgent == "" || result.Status != clirunner.StatusCompleted {
+		return nil
+	}
+	return []string{"Use the upstream summary and artifacts as the handoff context."}
+}
+
+func cliArtifactRefs(result *clirunner.Result) []string {
+	if result == nil {
+		return nil
+	}
+	refs := []string{}
+	if result.ContextSnapshot != nil {
+		for _, ref := range result.ContextSnapshot.ArtifactRefs {
+			if ref != "" {
+				refs = append(refs, sharedcontext.RedactText(ref))
+			}
+		}
+	}
+	for _, artifact := range cliArtifacts(result) {
+		if path := artifact["path"]; path != "" {
+			refs = append(refs, path)
+		}
+	}
+	return refs
+}
+
+func cliRuntimeForAgent(snapshot *graph.Snapshot, agent graph.Agent) (graph.Runtime, error) {
+	runtime, ok := snapshot.IR.Runtimes[agent.Runtime]
+	if !ok {
+		return graph.Runtime{}, fmt.Errorf("agent %q references missing compiled runtime %q", agent.ID, agent.Runtime)
+	}
+	if runtime.Kind != agentspec.RuntimeKindCLIAgent {
+		return graph.Runtime{}, fmt.Errorf("agent %q uses runtime %q with kind %q; only cli_agent external runtimes are executable in Gate 5 handoff execution", agent.ID, runtime.ID, runtime.Kind)
+	}
+	return runtime, nil
+}
+
+func outgoingEdges(snapshot *graph.Snapshot, agentID string) []graph.Edge {
+	var outgoing []graph.Edge
+	for _, edge := range snapshot.IR.Edges {
+		if edge.From == agentID {
+			outgoing = append(outgoing, edge)
+		}
+	}
+	return outgoing
+}
+
+func handoffRunStatus(first *clirunner.Result, second *clirunner.Result) string {
+	if first == nil {
+		return clirunner.StatusFailed
+	}
+	if first.Status != clirunner.StatusCompleted {
+		return first.Status
+	}
+	if second == nil {
+		return clirunner.StatusFailed
+	}
+	return second.Status
+}
+
+func padValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	return " " + value
 }
 
 func graphModelToProvider(model graph.Model) *providers.Profile {
@@ -384,4 +720,8 @@ func oneLine(value string, max int) string {
 		return value[:max]
 	}
 	return value[:max-3] + "..."
+}
+
+func displayOutput(value string, max int) string {
+	return oneLine(sharedcontext.RedactText(value), max)
 }

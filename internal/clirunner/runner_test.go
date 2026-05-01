@@ -87,6 +87,39 @@ func TestInvokeRejectsMissingEnvFrom(t *testing.T) {
 	}
 }
 
+func TestInvokeParsesContextSnapshotCandidate(t *testing.T) {
+	workspace := t.TempDir()
+	script := writeScript(t, `
+#!/bin/sh
+cat <<'JSON'
+{
+  "context_snapshot": {
+    "summary": "Implementation complete.",
+    "open_issues": ["Review edge cases."],
+    "recommendations": ["Ask reviewer to inspect tests."]
+  }
+}
+JSON
+`)
+	result, err := Invoke(context.Background(), Config{
+		Workspace:  workspace,
+		Executable: script,
+		FilesWrite: true,
+	}, Request{RunID: "run_context", Prompt: "task"})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if result.ContextSnapshot == nil {
+		t.Fatal("expected context snapshot candidate")
+	}
+	if result.ContextSnapshot.Summary != "Implementation complete." {
+		t.Fatalf("unexpected summary %q", result.ContextSnapshot.Summary)
+	}
+	if len(result.ContextSnapshot.OpenIssues) != 1 || result.ContextSnapshot.OpenIssues[0] != "Review edge cases." {
+		t.Fatalf("unexpected open issues %+v", result.ContextSnapshot.OpenIssues)
+	}
+}
+
 func TestInvokePreventsMutableWorkspaceConcurrency(t *testing.T) {
 	workspace := t.TempDir()
 	lockDir := filepath.Join(workspace, ".nomici", "locks")

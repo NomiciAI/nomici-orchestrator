@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, and trace inspection commands are implemented. Packs, multi-agent graph execution, approvals, and Console workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, and trace inspection commands are implemented. Packs, general multi-agent graph execution, approvals, and Console workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -41,13 +41,15 @@ nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"
 nomici agent run implementer "Use a configured cli_agent runtime"
+nomici run implementer "Run one supported cli_agent handoff"
+nomici context list
 nomici trace list
 nomici trace show <run_id>
 ```
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
-The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, or a single `external_agent` backed by a configured `cli_agent` runtime. Multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
+The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or one `handoff` edge between two `cli_agent`-backed `external_agent` nodes. General multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 
 The intended v0.1 flow:
 

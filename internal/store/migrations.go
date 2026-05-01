@@ -58,4 +58,58 @@ CREATE TABLE IF NOT EXISTS graph_snapshots (
 CREATE INDEX IF NOT EXISTS idx_graph_snapshots_created_at ON graph_snapshots(created_at DESC);
 `,
 	},
+	{
+		Version: 4,
+		SQL: `
+CREATE TABLE IF NOT EXISTS context_items (
+	context_id TEXT PRIMARY KEY,
+	project_id TEXT NOT NULL,
+	run_id TEXT NOT NULL DEFAULT '',
+	task_id TEXT NOT NULL DEFAULT '',
+	agent_id TEXT NOT NULL DEFAULT '',
+	agent_pair TEXT NOT NULL DEFAULT '',
+	task_type TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	title TEXT NOT NULL,
+	body TEXT NOT NULL,
+	tags_json TEXT NOT NULL DEFAULT '[]',
+	subject_refs_json TEXT NOT NULL DEFAULT '[]',
+	artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+	source_json TEXT NOT NULL DEFAULT '{}',
+	confidence TEXT NOT NULL DEFAULT 'generated',
+	sensitivity TEXT NOT NULL DEFAULT 'normal',
+	status TEXT NOT NULL DEFAULT 'active',
+	expires_at TEXT NOT NULL DEFAULT '',
+	supersedes TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_context_items_project ON context_items(project_id, scope, kind);
+CREATE INDEX IF NOT EXISTS idx_context_items_run ON context_items(run_id);
+
+CREATE TABLE IF NOT EXISTS context_snapshots (
+	snapshot_id TEXT PRIMARY KEY,
+	project_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	from_agent TEXT NOT NULL DEFAULT '',
+	to_agent TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL,
+	decisions_json TEXT NOT NULL DEFAULT '[]',
+	open_issues_json TEXT NOT NULL DEFAULT '[]',
+	recommendations_json TEXT NOT NULL DEFAULT '[]',
+	artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+	context_item_refs_json TEXT NOT NULL DEFAULT '[]',
+	created_by_json TEXT NOT NULL DEFAULT '{}',
+	supersedes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_context_snapshots_run ON context_snapshots(run_id);
+CREATE INDEX IF NOT EXISTS idx_context_snapshots_project ON context_snapshots(project_id, created_at DESC);
+`,
+	},
 }
