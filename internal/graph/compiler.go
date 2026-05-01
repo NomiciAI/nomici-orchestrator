@@ -52,6 +52,11 @@ func Compile(loaded *agentspec.LoadedSpec) (*Snapshot, []agentspec.ValidationErr
 			Kind:      runtime.Kind,
 			Runner:    runtime.Runner,
 			Workspace: runtime.Workspace,
+			Start: RuntimeStart{
+				Command:    runtime.Start.Command,
+				Executable: runtime.Start.Executable,
+				Args:       runtime.Start.Args,
+			},
 			Invoke: RuntimeInvoke{
 				Executable: runtime.Invoke.Executable,
 				Args:       runtime.Invoke.Args,

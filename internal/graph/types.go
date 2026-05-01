@@ -48,6 +48,7 @@ type Runtime struct {
 	Kind           string            `json:"kind"`
 	Runner         string            `json:"runner,omitempty"`
 	Workspace      string            `json:"workspace,omitempty"`
+	Start          RuntimeStart      `json:"start,omitempty"`
 	Invoke         RuntimeInvoke     `json:"invoke,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	EnvFrom        []string          `json:"env_from,omitempty"`
@@ -55,6 +56,12 @@ type Runtime struct {
 	Trust          string            `json:"trust,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 	Source         agentspec.Source  `json:"source"`
+}
+
+type RuntimeStart struct {
+	Command    string   `json:"command,omitempty"`
+	Executable string   `json:"executable,omitempty"`
+	Args       []string `json:"args,omitempty"`
 }
 
 type RuntimeInvoke struct {

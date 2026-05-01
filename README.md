@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -19,7 +19,7 @@ curl -fsSL https://nomici.ai/install.sh | bash
 nomici doctor              # planned
 nomici model setup
 nomici pack install developer-team
-nomici up                  # planned
+nomici up
 nomici gateway open        # planned
 nomici run product_pm "Plan and implement a small web app"
 ```
@@ -41,7 +41,9 @@ nomici spec validate --config nomici.yaml
 nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
-nomici gateway run
+nomici up
+nomici ps
+nomici logs gateway --tail 50
 nomici gateway token show
 # open http://127.0.0.1:8787 manually and paste the token for the read-only Console overview
 nomici model test gpt "Say hello from Nomici"
@@ -56,6 +58,7 @@ nomici approvals grant <approval_id> --scope once
 nomici approvals deny <approval_id>
 nomici trace list
 nomici trace show <run_id>
+nomici down
 ```
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
@@ -77,7 +80,7 @@ The intended v0.1 flow:
 - Run a real task.
 - Inspect traces, logs, approvals, artifacts, and policy decisions.
 
-In the current private bootstrap, use `nomici model doctor` instead of the planned top-level `nomici doctor`, and use `nomici gateway run` plus a browser opened to `http://127.0.0.1:8787` instead of the planned `nomici up` and `nomici gateway open`.
+In the current private bootstrap, use `nomici model doctor` instead of the planned top-level `nomici doctor`, and use `nomici up` plus a browser opened to `http://127.0.0.1:8787` instead of the planned `nomici gateway open`.
 
 `NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. CLI commands authenticate with `NOMICI_GATEWAY_TOKEN` when set, otherwise they read `.nomici/gateway.token` next to the local state database. Treat the token as an operator credential and do not point the CLI at a shared or public Gateway unless that Gateway is explicitly trusted.
 

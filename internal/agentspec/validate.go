@@ -14,7 +14,8 @@ const (
 	AgentKindModel    = "model_agent"
 	AgentKindTool     = "tool_agent"
 
-	RuntimeKindCLIAgent = "cli_agent"
+	RuntimeKindCLIAgent     = "cli_agent"
+	RuntimeKindLocalProcess = "local_process"
 )
 
 func Validate(loaded *LoadedSpec) []ValidationError {
@@ -61,10 +62,14 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 			if runtime.Invoke.Executable == "" {
 				errors = append(errors, validationError(loaded, "missing_required", path+".invoke.executable", "cli_agent runtime requires invoke.executable", "Set invoke.executable to the command to run."))
 			}
+		case RuntimeKindLocalProcess:
+			if strings.TrimSpace(runtime.Start.Executable) == "" && strings.TrimSpace(runtime.Start.Command) == "" {
+				errors = append(errors, validationError(loaded, "missing_required", path+".start", "local_process runtime requires start.executable or start.command", "Set start.executable and optional start.args for the process to manage."))
+			}
 		case "":
 			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "runtime kind is required", "Set kind to cli_agent for the current proof slice."))
 		default:
-			errors = append(errors, validationError(loaded, "unsupported_runtime_kind", path+".kind", "runtime kind "+quote(runtime.Kind)+" is not executable in v0.1 yet", "Use cli_agent for Gate 4 external agent execution."))
+			errors = append(errors, validationError(loaded, "unsupported_runtime_kind", path+".kind", "runtime kind "+quote(runtime.Kind)+" is not executable in v0.1 yet", "Use cli_agent for invoke-only agents or local_process for managed long-running processes."))
 		}
 	}
 

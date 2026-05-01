@@ -34,12 +34,19 @@ type Runtime struct {
 	Kind           string            `yaml:"kind" json:"kind"`
 	Runner         string            `yaml:"runner,omitempty" json:"runner,omitempty"`
 	Workspace      string            `yaml:"workspace,omitempty" json:"workspace,omitempty"`
+	Start          RuntimeStart      `yaml:"start,omitempty" json:"start,omitempty"`
 	Invoke         RuntimeInvoke     `yaml:"invoke,omitempty" json:"invoke,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 	EnvFrom        []string          `yaml:"env_from,omitempty" json:"env_from,omitempty"`
 	Capabilities   map[string]any    `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 	Trust          string            `yaml:"trust,omitempty" json:"trust,omitempty"`
 	TimeoutSeconds int               `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+}
+
+type RuntimeStart struct {
+	Command    string   `yaml:"command,omitempty" json:"command,omitempty"`
+	Executable string   `yaml:"executable,omitempty" json:"executable,omitempty"`
+	Args       []string `yaml:"args,omitempty" json:"args,omitempty"`
 }
 
 type RuntimeInvoke struct {

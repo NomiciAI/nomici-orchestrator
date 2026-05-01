@@ -155,3 +155,49 @@ agents:
 		t.Fatalf("expected runtime executable source, got %s", errors[0].Source.Path)
 	}
 }
+
+func TestValidateLocalProcessRuntime(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+runtimes:
+  worker:
+    kind: local_process
+    workspace: ./workspace
+    start:
+      executable: sleep
+      args: ["30"]
+agents: {}
+`)
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	if errors := Validate(loaded); len(errors) != 0 {
+		t.Fatalf("expected no validation errors, got %+v", errors)
+	}
+}
+
+func TestValidateLocalProcessRequiresStart(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+runtimes:
+  worker:
+    kind: local_process
+agents: {}
+`)
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	errors := Validate(loaded)
+	if len(errors) != 1 {
+		t.Fatalf("expected one validation error, got %+v", errors)
+	}
+	if errors[0].Source.Path != "runtimes.worker.start" {
+		t.Fatalf("expected runtime start source, got %s", errors[0].Source.Path)
+	}
+}

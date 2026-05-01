@@ -34,12 +34,14 @@ The project follows semantic versioning once the first public release is cut.
 - GitHub Actions CI baseline with read-only workflow permissions.
 - CI secret-pattern scan for docs, workflows, and source paths.
 - Default Gateway bearer-token auth for non-health API endpoints, with local token file creation, CLI token forwarding, Console token entry, and `gateway token show/rotate`.
+- Minimal local lifecycle commands: `up`, `down`, `ps`, and `logs` for Gateway and `local_process` runtimes.
 
 ### Changed
 
 - Split the private bootstrap run command implementation into smaller files for graph execution, external CLI agents, policy, shared context, and display helpers.
 - Marked planned README commands explicitly so the bootstrap path does not overstate `nomici up`, `nomici doctor`, or `nomici gateway open`.
 - Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for private bootstrap.
+- AgentSpec and internal AgentGraph now accept `local_process` runtimes with `start` commands for managed long-running processes.
 
 ### Deprecated
 

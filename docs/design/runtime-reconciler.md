@@ -165,11 +165,21 @@ If desired runtime port is occupied:
 nomici up
 nomici down
 nomici ps
+nomici logs <runtime>
 nomici runtime start <runtime>
 nomici runtime stop <runtime>
 nomici runtime logs <runtime>
 nomici runtime inspect <runtime>
 ```
+
+Private bootstrap implementation:
+
+- `nomici up` starts Nomici Gateway as a background process and starts `local_process` runtimes from `nomici.yaml`.
+- `nomici down` stops processes recorded in `.nomici/runtimes/*.json`.
+- `nomici ps` shows recorded Gateway/runtime pid, status, and log paths.
+- `nomici logs [runtime]` prints the Gateway log by default or a named managed runtime log.
+- `cli_agent` runtimes remain invoke-only; `nomici up` reports them as configured but does not start them.
+- Full desired/observed reconciliation, restart policies, health checks, and per-runtime start/stop subcommands remain deferred.
 
 ## Tests
 
