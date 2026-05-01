@@ -35,6 +35,7 @@ The project follows semantic versioning once the first public release is cut.
 - CI secret-pattern scan for docs, workflows, and source paths.
 - Default Gateway bearer-token auth for non-health API endpoints, with local token file creation, CLI token forwarding, Console token entry, and `gateway token show/rotate`.
 - Minimal local lifecycle commands: `up`, `down`, `ps`, and `logs` for Gateway and `local_process` runtimes.
+- Top-level `doctor` and Gateway `start`, `stop`, `status`, `logs`, and `open` commands.
 
 ### Changed
 

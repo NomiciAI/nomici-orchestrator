@@ -13,6 +13,7 @@ func NewRootCommand(version string) *cobra.Command {
 	}
 
 	root.SetVersionTemplate("nomici {{.Version}}\n")
+	root.AddCommand(newDoctorCommand())
 	root.AddCommand(newUpCommand(version))
 	root.AddCommand(newDownCommand())
 	root.AddCommand(newPSCommand())

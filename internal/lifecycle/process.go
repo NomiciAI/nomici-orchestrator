@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,12 @@ func StartGateway(ctx context.Context, options StartGatewayOptions) (State, erro
 		StartedAt: time.Now().UTC(),
 	}
 	if err := SaveState(paths, state); err != nil {
+		return State{}, err
+	}
+	if err := waitForGatewayHealth(options.Host, options.Port); err != nil {
+		state.Status = StatusStartFailed
+		state.LastError = err.Error()
+		_ = SaveState(paths, state)
 		return State{}, err
 	}
 	return state, nil
@@ -277,4 +284,23 @@ func detach(command *exec.Cmd) {
 	if runtime.GOOS != "windows" {
 		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
+}
+
+func waitForGatewayHealth(host string, port int) error {
+	url := fmt.Sprintf("http://%s:%d/api/health", host, port)
+	var lastErr error
+	for i := 0; i < 50; i++ {
+		response, err := http.Get(url)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				return nil
+			}
+			lastErr = fmt.Errorf("health returned HTTP %d", response.StatusCode)
+		} else {
+			lastErr = err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("Gateway did not become healthy at %s: %w", url, lastErr)
 }

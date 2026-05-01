@@ -16,15 +16,15 @@ Nomici aims to provide one local-first control plane for composing those pieces 
 
 ```bash
 curl -fsSL https://nomici.ai/install.sh | bash
-nomici doctor              # planned
+nomici doctor
 nomici model setup
 nomici pack install developer-team
 nomici up
-nomici gateway open        # planned
+nomici gateway open
 nomici run product_pm "Plan and implement a small web app"
 ```
 
-The commands marked `planned` are part of the intended v0.1 UX but are not implemented in the private bootstrap yet. Use the implemented bootstrap commands below for the current runnable path.
+The install script itself is still planned; the CLI commands shown after installation are implemented in the private bootstrap.
 
 ## Implemented Bootstrap Commands
 
@@ -42,10 +42,12 @@ nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
 nomici up
+nomici gateway status
 nomici ps
 nomici logs gateway --tail 50
 nomici gateway token show
-# open http://127.0.0.1:8787 manually and paste the token for the read-only Console overview
+nomici gateway open
+# paste the token for the read-only Console overview
 nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"
@@ -80,7 +82,7 @@ The intended v0.1 flow:
 - Run a real task.
 - Inspect traces, logs, approvals, artifacts, and policy decisions.
 
-In the current private bootstrap, use `nomici model doctor` instead of the planned top-level `nomici doctor`, and use `nomici up` plus a browser opened to `http://127.0.0.1:8787` instead of the planned `nomici gateway open`.
+In the current private bootstrap, `nomici doctor` performs local checks and `nomici gateway open` opens the read-only Console. The install script remains planned, so run the built `nomici` binary directly during development.
 
 `NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. CLI commands authenticate with `NOMICI_GATEWAY_TOKEN` when set, otherwise they read `.nomici/gateway.token` next to the local state database. Treat the token as an operator credential and do not point the CLI at a shared or public Gateway unless that Gateway is explicitly trusted.
 
