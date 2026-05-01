@@ -2,19 +2,24 @@
 
 This quickstart uses the current alpha bootstrap build. It does not require a hosted installer or release artifact.
 
+For now, installation means "build Nomici from this source checkout and copy the `nomici` binary to `~/.local/bin`." A normal one-line installer and release binaries are still planned.
+
 ## Prerequisites
 
 - Go
 - Node.js
-- pnpm through Corepack
 - macOS or Linux shell for the local CLI-agent example
 
-From the repository root:
+Why Node.js? The `nomici` CLI and Gateway are written in Go, but the bundled Console is a React app. The source installer builds that Console before compiling the Go binary. If `pnpm` is missing, the installer tries to activate it through Node.js Corepack and prints a fix command if that fails.
+
+Clone the repo and install from source:
 
 ```bash
-corepack enable
+git clone https://github.com/NomiciAI/nomici-orchestrator.git
+cd nomici-orchestrator
 scripts/install.sh --from-source .
-nomici --version
+nomici doctor
+nomici run local_assistant "Explain what this example demonstrates." --config examples/basic-local-agent/nomici.yaml
 ```
 
 If `nomici` is not on your `PATH`, add `~/.local/bin` or run `./bin/nomici` from the repository root.

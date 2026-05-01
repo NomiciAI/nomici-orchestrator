@@ -159,12 +159,12 @@ Bootstrap mode may temporarily disable:
 - Required CODEOWNERS reviews.
 - Admin enforcement.
 
-Current alpha bootstrap verification commands:
+Alpha bootstrap verification commands:
 
 ```bash
 gh api orgs/NomiciAI/teams --jq '.[].slug'
 gh api repos/NomiciAI/nomici-orchestrator/branches/main/protection \
-  --jq '{required_pull_request_reviews, enforce_admins, allow_force_pushes, allow_deletions}'
+  --jq '{required_status_checks, required_pull_request_reviews, enforce_admins, allow_force_pushes, allow_deletions, required_conversation_resolution}'
 gh api repos/NomiciAI/nomici-orchestrator/actions/permissions/workflow --jq .
 gh api repos/NomiciAI/nomici-orchestrator/vulnerability-alerts --method GET --include
 ```
@@ -180,17 +180,28 @@ Expected alpha bootstrap state:
 
 If GitHub Advanced Security is not enabled for the private repository, GitHub secret scanning may be unavailable while private. Run local secret scans before every push and enable GitHub secret scanning if it becomes available before or after publication.
 
-## Strict Mode Before Quiet Public
+## Solo Maintainer Public Mode
 
-Before changing the repository from private to quiet public, restore strict branch protection:
+For quiet public with one active maintainer, use a lighter public protection mode:
 
-- Require pull request review before merge.
-- Require CODEOWNERS review.
-- Dismiss stale reviews.
+- Require the CI status check before merge.
 - Require conversation resolution.
 - Enforce branch protection for admins.
 - Keep force-push protection enabled.
 - Keep branch deletion protection enabled.
+- Keep required pull request review disabled.
+- Keep required CODEOWNERS review disabled.
+
+This keeps direct pushes to `main` blocked and keeps CI mandatory, but allows the solo maintainer to merge their own PR after CI passes.
+
+## Team Strict Mode Later
+
+When Nomici has at least two active maintainers or begins receiving external contributions, restore stricter review rules:
+
+- Require pull request review before merge.
+- Require CODEOWNERS review.
+- Dismiss stale reviews.
+- Keep required CI, conversation resolution, admin enforcement, force-push protection, and branch deletion protection enabled.
 
 ## Naming Checks
 

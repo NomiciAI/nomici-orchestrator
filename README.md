@@ -15,17 +15,14 @@ Nomici aims to provide one local-first control plane for composing those pieces 
 ## Quickstart
 
 ```bash
-corepack enable
+git clone https://github.com/NomiciAI/nomici-orchestrator.git
+cd nomici-orchestrator
 scripts/install.sh --from-source .
 nomici doctor
-cd examples/basic-local-agent
-nomici spec validate --config nomici.yaml
-nomici run local_assistant "Explain what this example demonstrates." --config nomici.yaml
-nomici up
-nomici gateway open
+nomici run local_assistant "Explain what this example demonstrates." --config examples/basic-local-agent/nomici.yaml
 ```
 
-The hosted `curl` install endpoint and release artifacts are still planned. For this alpha, install from a local checkout with `scripts/install.sh --from-source .`.
+The source installer checks the required build tools and activates `pnpm` through Corepack when needed. The hosted `curl` install endpoint and release artifacts are still planned.
 
 See [Quickstart](docs/quickstart.md) for a no-API-key local example and an optional model-provider path.
 
