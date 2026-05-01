@@ -29,6 +29,7 @@ The project follows semantic versioning once the first public release is cut.
 - Generic `cli_agent` runner with template rendering, env refs, workspace locks, stdout/stderr artifacts, manifest/Git diff capture, trace events, `runtime inspect`, and `agent run`.
 - Shared Context SQLite storage, snapshot redaction, `context list`, CLI runner `shared_context` briefing injection, structured `context_snapshot` candidates, fallback run snapshots, and one-step `cli_agent` handoff execution.
 - Policy and approval v0.1 for mutable `cli_agent` execution, including approval storage, `once` and `run` scopes, `policy check`, `approvals list/grant/deny`, critical workspace denial, and trace events.
+- Bundled `developer-team` pack with `pack list`, `pack inspect`, `pack install`, model-profile selection, clean AgentSpec generation, and a runnable `product_pm` entrypoint.
 
 ### Changed
 

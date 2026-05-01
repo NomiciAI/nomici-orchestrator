@@ -20,6 +20,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(newContextCommand())
 	root.AddCommand(newApprovalsCommand())
 	root.AddCommand(newPolicyCommand())
+	root.AddCommand(newPackCommand())
 	root.AddCommand(newSpecCommand())
 	root.AddCommand(newGraphCommand())
 	root.AddCommand(newRunCommand())

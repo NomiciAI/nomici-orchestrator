@@ -92,6 +92,14 @@ Optional:
 
 ## v0.1 Trust Root
 
+Private bootstrap implementation note:
+
+- `developer-team` is the first bundled official pack.
+- The default install path writes a model-backed `product_pm` entrypoint and `architect` subagent into `nomici.yaml`.
+- The installer chooses an existing model provider profile, or a user-selected profile via `--model`.
+- Optional CLI implementer/reviewer/test-runner roles stay as manifest metadata until pack install can safely prompt for concrete local runtime commands.
+- The installed pack is recorded in `extensions.packs`.
+
 `trust.level` in a pack manifest is not authoritative in v0.1.
 
 Until signed distribution exists:

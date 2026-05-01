@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, and trace inspection commands are implemented. Packs, general multi-agent graph execution, broader policy coverage, and Console workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, and trace inspection commands are implemented. General multi-agent graph execution, broader policy coverage, and Console workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -32,6 +32,9 @@ The current private bootstrap can run this narrower proof slice:
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
+nomici pack list
+nomici pack inspect developer-team
+nomici pack install developer-team --model gpt
 nomici spec validate --config nomici.yaml
 nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
@@ -52,6 +55,8 @@ nomici trace show <run_id>
 ```
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
+
+The bundled `developer-team` pack installs a runnable `product_pm` entrypoint and `architect` subagent using an existing model provider profile. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or one `handoff` edge between two `cli_agent`-backed `external_agent` nodes. General multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 
