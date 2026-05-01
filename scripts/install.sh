@@ -4,6 +4,7 @@ set -eu
 repo="NomiciAI/nomici-orchestrator"
 install_dir="${HOME}/.local/bin"
 version="latest"
+pnpm_version="10.33.2"
 from_source=""
 skip_checksum="false"
 uninstall="false"
@@ -97,15 +98,56 @@ install_from_source() {
     echo "--from-source must point to the nomici-orchestrator repository root" >&2
     exit 1
   fi
-  if ! command -v make >/dev/null 2>&1; then
-    echo "make is required for source install" >&2
-    exit 1
-  fi
+  ensure_source_build_tools
   (
     cd "$src_dir"
     VERSION="$version" make build
   )
   install_binary "$src_dir/bin/nomici"
+}
+
+require_command() {
+  cmd="$1"
+  remediation="$2"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "$cmd is required for source install." >&2
+    echo "$remediation" >&2
+    exit 1
+  fi
+}
+
+ensure_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    return
+  fi
+
+  require_command corepack "Install a current Node.js release with Corepack, or install pnpm manually: npm install -g pnpm@${pnpm_version}"
+
+  echo "pnpm was not found; enabling Corepack and activating pnpm ${pnpm_version}."
+  if ! corepack enable >/dev/null 2>&1; then
+    echo "Corepack could not enable pnpm shims." >&2
+    echo "Try: corepack enable" >&2
+    echo "Or install pnpm manually: npm install -g pnpm@${pnpm_version}" >&2
+    exit 1
+  fi
+  if ! corepack prepare "pnpm@${pnpm_version}" --activate >/dev/null 2>&1; then
+    echo "Corepack could not activate pnpm ${pnpm_version}." >&2
+    echo "Try: corepack prepare pnpm@${pnpm_version} --activate" >&2
+    echo "Or install pnpm manually: npm install -g pnpm@${pnpm_version}" >&2
+    exit 1
+  fi
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "pnpm is still not on PATH after Corepack activation." >&2
+    echo "Try opening a new shell, or install pnpm manually: npm install -g pnpm@${pnpm_version}" >&2
+    exit 1
+  fi
+}
+
+ensure_source_build_tools() {
+  require_command make "Install Xcode Command Line Tools on macOS, or build-essential/make on Linux."
+  require_command go "Install Go from https://go.dev/doc/install."
+  require_command node "Install Node.js from https://nodejs.org/."
+  ensure_pnpm
 }
 
 detect_platform() {

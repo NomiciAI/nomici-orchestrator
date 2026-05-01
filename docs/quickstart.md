@@ -8,27 +8,18 @@ For now, installation means "build Nomici from this source checkout and copy the
 
 - Go
 - Node.js
-- pnpm, activated through Corepack
 - macOS or Linux shell for the local CLI-agent example
 
-Why Node.js and Corepack? The `nomici` CLI and Gateway are written in Go, but the bundled Console is a React app. The source installer builds that Console before compiling the Go binary. `corepack enable` turns on Node.js's package-manager shim so the pinned `pnpm` version can be used. It is not a Nomici command and it does not configure Nomici.
-
-If `corepack` is not available, install a current Node.js release or install `pnpm` manually.
+Why Node.js? The `nomici` CLI and Gateway are written in Go, but the bundled Console is a React app. The source installer builds that Console before compiling the Go binary. If `pnpm` is missing, the installer tries to activate it through Node.js Corepack and prints a fix command if that fails.
 
 Clone the repo and install from source:
 
 ```bash
 git clone https://github.com/NomiciAI/nomici-orchestrator.git
 cd nomici-orchestrator
-
-go version
-node --version
-corepack enable
-corepack prepare pnpm@10.33.2 --activate
-
 scripts/install.sh --from-source .
-nomici --version
 nomici doctor
+nomici run local_assistant "Explain what this example demonstrates." --config examples/basic-local-agent/nomici.yaml
 ```
 
 If `nomici` is not on your `PATH`, add `~/.local/bin` or run `./bin/nomici` from the repository root.

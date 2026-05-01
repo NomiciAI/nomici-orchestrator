@@ -46,6 +46,7 @@ The project follows semantic versioning once the first public release is cut.
 - Marked planned README commands explicitly so the bootstrap path does not overstate `nomici up`, `nomici doctor`, or `nomici gateway open`.
 - Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for alpha bootstrap.
 - AgentSpec and internal AgentGraph now accept `local_process` runtimes with `start` commands for managed long-running processes.
+- Source install now checks build tools and activates `pnpm` through Corepack when needed, so Quickstart users do not need to run Corepack commands manually.
 
 ### Deprecated
 
