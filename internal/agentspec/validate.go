@@ -13,6 +13,8 @@ const (
 	AgentKindExternal = "external_agent"
 	AgentKindModel    = "model_agent"
 	AgentKindTool     = "tool_agent"
+
+	RuntimeKindCLIAgent = "cli_agent"
 )
 
 func Validate(loaded *LoadedSpec) []ValidationError {
@@ -52,6 +54,20 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 		}
 	}
 
+	for id, runtime := range spec.Runtimes {
+		path := "runtimes." + id
+		switch runtime.Kind {
+		case RuntimeKindCLIAgent:
+			if runtime.Invoke.Executable == "" {
+				errors = append(errors, validationError(loaded, "missing_required", path+".invoke.executable", "cli_agent runtime requires invoke.executable", "Set invoke.executable to the command to run."))
+			}
+		case "":
+			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "runtime kind is required", "Set kind to cli_agent for the current proof slice."))
+		default:
+			errors = append(errors, validationError(loaded, "unsupported_runtime_kind", path+".kind", "runtime kind "+quote(runtime.Kind)+" is not executable in v0.1 yet", "Use cli_agent for Gate 4 external agent execution."))
+		}
+	}
+
 	for id, agent := range spec.Agents {
 		path := "agents." + id
 		switch agent.Kind {
@@ -72,8 +88,10 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 				errors = append(errors, validationError(loaded, "missing_reference", path+".model", "agent references missing model "+quote(agent.Model), "Define models."+agent.Model+" or update the agent model reference."))
 			}
 		}
-		if agent.Kind == AgentKindExternal && agent.Runtime != "" {
-			if _, ok := spec.Runtimes[agent.Runtime]; !ok {
+		if agent.Kind == AgentKindExternal {
+			if strings.TrimSpace(agent.Runtime) == "" {
+				errors = append(errors, validationError(loaded, "missing_required", path+".runtime", "external_agent requires a runtime reference", "Set runtime to a key under runtimes."))
+			} else if _, ok := spec.Runtimes[agent.Runtime]; !ok {
 				errors = append(errors, validationError(loaded, "missing_reference", path+".runtime", "agent references missing runtime "+quote(agent.Runtime), "Define runtimes."+agent.Runtime+" or update the runtime reference."))
 			}
 		}

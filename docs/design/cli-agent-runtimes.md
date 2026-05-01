@@ -138,6 +138,12 @@ Those are data-plane internals.
 
 ## CLI Runner Contract v0.1
 
+Private bootstrap implementation note:
+
+- The first executable path is AgentSpec-first: define a `cli_agent` runtime in `nomici.yaml`, then run it with `nomici agent run <external_agent>`.
+- `nomici runtime inspect <runtime_id>` can inspect configured runtimes.
+- YAML mutation commands such as `nomici runtime add ...` are deferred until the Runtime Registry edit path exists, so the bootstrap does not introduce a second source of truth.
+
 The CLI Agent Runner is a process runner contract. It is not the same surface as an HTTP adapter, although Gateway normalizes its result into the same run/trace model.
 
 ### Invoke Input

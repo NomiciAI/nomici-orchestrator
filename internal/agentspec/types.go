@@ -4,7 +4,7 @@ type Spec struct {
 	Version    string                    `yaml:"version" json:"version"`
 	Project    Project                   `yaml:"project" json:"project"`
 	Models     map[string]Model          `yaml:"models" json:"models,omitempty"`
-	Runtimes   map[string]map[string]any `yaml:"runtimes" json:"runtimes,omitempty"`
+	Runtimes   map[string]Runtime        `yaml:"runtimes" json:"runtimes,omitempty"`
 	Agents     map[string]Agent          `yaml:"agents" json:"agents,omitempty"`
 	Tools      map[string]map[string]any `yaml:"tools" json:"tools,omitempty"`
 	MCP        map[string]any            `yaml:"mcp" json:"mcp,omitempty"`
@@ -28,6 +28,24 @@ type Model struct {
 	Model         string   `yaml:"model" json:"model"`
 	Capabilities  []string `yaml:"capabilities" json:"capabilities,omitempty"`
 	ContextWindow int      `yaml:"context_window" json:"context_window,omitempty"`
+}
+
+type Runtime struct {
+	Kind           string            `yaml:"kind" json:"kind"`
+	Runner         string            `yaml:"runner" json:"runner,omitempty"`
+	Workspace      string            `yaml:"workspace" json:"workspace,omitempty"`
+	Invoke         RuntimeInvoke     `yaml:"invoke" json:"invoke,omitempty"`
+	Env            map[string]string `yaml:"env" json:"env,omitempty"`
+	EnvFrom        []string          `yaml:"env_from" json:"env_from,omitempty"`
+	Capabilities   map[string]any    `yaml:"capabilities" json:"capabilities,omitempty"`
+	Trust          string            `yaml:"trust" json:"trust,omitempty"`
+	TimeoutSeconds int               `yaml:"timeout_seconds" json:"timeout_seconds,omitempty"`
+}
+
+type RuntimeInvoke struct {
+	Executable string   `yaml:"executable" json:"executable,omitempty"`
+	Args       []string `yaml:"args" json:"args,omitempty"`
+	Stdin      string   `yaml:"stdin" json:"stdin,omitempty"`
 }
 
 type Agent struct {

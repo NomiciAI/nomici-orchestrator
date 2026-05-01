@@ -22,9 +22,10 @@ func Compile(loaded *agentspec.LoadedSpec) (*Snapshot, []agentspec.ValidationErr
 		CreatedAt:     time.Now().UTC(),
 		SourceHash:    agentspec.SourceHash(loaded.Raw),
 		IR: IR{
-			Models: map[string]Model{},
-			Agents: map[string]Agent{},
-			Edges:  []Edge{},
+			Models:   map[string]Model{},
+			Runtimes: map[string]Runtime{},
+			Agents:   map[string]Agent{},
+			Edges:    []Edge{},
 		},
 	}
 
@@ -42,6 +43,26 @@ func Compile(loaded *agentspec.LoadedSpec) (*Snapshot, []agentspec.ValidationErr
 			Capabilities:  model.Capabilities,
 			ContextWindow: model.ContextWindow,
 			Source:        loaded.Source("models." + id),
+		}
+	}
+
+	for id, runtime := range spec.Runtimes {
+		snapshot.IR.Runtimes[id] = Runtime{
+			ID:        id,
+			Kind:      runtime.Kind,
+			Runner:    runtime.Runner,
+			Workspace: runtime.Workspace,
+			Invoke: RuntimeInvoke{
+				Executable: runtime.Invoke.Executable,
+				Args:       runtime.Invoke.Args,
+				Stdin:      runtime.Invoke.Stdin,
+			},
+			Env:            runtime.Env,
+			EnvFrom:        runtime.EnvFrom,
+			Capabilities:   runtime.Capabilities,
+			Trust:          runtime.Trust,
+			TimeoutSeconds: runtime.TimeoutSeconds,
+			Source:         loaded.Source("runtimes." + id),
 		}
 	}
 

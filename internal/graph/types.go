@@ -16,9 +16,10 @@ type Snapshot struct {
 }
 
 type IR struct {
-	Models map[string]Model `json:"models"`
-	Agents map[string]Agent `json:"agents"`
-	Edges  []Edge           `json:"edges"`
+	Models   map[string]Model   `json:"models"`
+	Runtimes map[string]Runtime `json:"runtimes,omitempty"`
+	Agents   map[string]Agent   `json:"agents"`
+	Edges    []Edge             `json:"edges"`
 }
 
 type Model struct {
@@ -40,6 +41,26 @@ type Agent struct {
 	Role         string           `json:"role,omitempty"`
 	Instructions string           `json:"instructions,omitempty"`
 	Source       agentspec.Source `json:"source"`
+}
+
+type Runtime struct {
+	ID             string            `json:"id"`
+	Kind           string            `json:"kind"`
+	Runner         string            `json:"runner,omitempty"`
+	Workspace      string            `json:"workspace,omitempty"`
+	Invoke         RuntimeInvoke     `json:"invoke,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	EnvFrom        []string          `json:"env_from,omitempty"`
+	Capabilities   map[string]any    `json:"capabilities,omitempty"`
+	Trust          string            `json:"trust,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	Source         agentspec.Source  `json:"source"`
+}
+
+type RuntimeInvoke struct {
+	Executable string   `json:"executable,omitempty"`
+	Args       []string `json:"args,omitempty"`
+	Stdin      string   `json:"stdin,omitempty"`
 }
 
 type Edge struct {

@@ -46,6 +46,47 @@ agents:
 	}
 }
 
+func TestCompileCLIRuntime(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+runtimes:
+  implementer_cli:
+    kind: cli_agent
+    runner: cli_invoke
+    workspace: ./workspace
+    invoke:
+      executable: fake-agent
+      args:
+        - "${INPUT}"
+    capabilities:
+      files_write: true
+agents:
+  implementer:
+    kind: external_agent
+    runtime: implementer_cli
+`)
+	loaded, err := agentspec.LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	snapshot, errors := Compile(loaded)
+	if len(errors) != 0 {
+		t.Fatalf("expected no validation errors, got %+v", errors)
+	}
+	runtime := snapshot.IR.Runtimes["implementer_cli"]
+	if runtime.Kind != agentspec.RuntimeKindCLIAgent {
+		t.Fatalf("expected cli_agent runtime, got %s", runtime.Kind)
+	}
+	if runtime.Invoke.Executable != "fake-agent" {
+		t.Fatalf("expected fake-agent executable, got %s", runtime.Invoke.Executable)
+	}
+	if snapshot.IR.Agents["implementer"].Runtime != "implementer_cli" {
+		t.Fatalf("expected agent runtime reference")
+	}
+}
+
 func TestGraphStoreSaveLatest(t *testing.T) {
 	path := writeSpec(t, `
 version: "0.1"

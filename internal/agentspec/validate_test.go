@@ -98,3 +98,60 @@ agents:
 		t.Fatalf("expected missing_reference, got %s", errors[0].Code)
 	}
 }
+
+func TestValidateExternalAgentCLIRuntime(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+runtimes:
+  implementer_cli:
+    kind: cli_agent
+    runner: cli_invoke
+    workspace: ./workspace
+    invoke:
+      executable: fake-agent
+      args:
+        - "${INPUT}"
+agents:
+  implementer:
+    kind: external_agent
+    runtime: implementer_cli
+`)
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	if errors := Validate(loaded); len(errors) != 0 {
+		t.Fatalf("expected no validation errors, got %+v", errors)
+	}
+}
+
+func TestValidateCLIRuntimeRequiresExecutable(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+runtimes:
+  implementer_cli:
+    kind: cli_agent
+agents:
+  implementer:
+    kind: external_agent
+    runtime: implementer_cli
+`)
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	errors := Validate(loaded)
+	if len(errors) != 1 {
+		t.Fatalf("expected one validation error, got %+v", errors)
+	}
+	if errors[0].Code != "missing_required" {
+		t.Fatalf("expected missing_required, got %s", errors[0].Code)
+	}
+	if errors[0].Source.Path != "runtimes.implementer_cli.invoke.executable" {
+		t.Fatalf("expected runtime executable source, got %s", errors[0].Source.Path)
+	}
+}
