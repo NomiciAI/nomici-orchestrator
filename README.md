@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, and trace inspection commands are implemented. Packs, general multi-agent graph execution, approvals, and Console workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, and trace inspection commands are implemented. Packs, general multi-agent graph execution, broader policy coverage, and Console workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -43,6 +43,10 @@ nomici run product_pm "Say hello through a single-node graph"
 nomici agent run implementer "Use a configured cli_agent runtime"
 nomici run implementer "Run one supported cli_agent handoff"
 nomici context list
+nomici policy check
+nomici approvals list
+nomici approvals grant <approval_id> --scope once
+nomici approvals deny <approval_id>
 nomici trace list
 nomici trace show <run_id>
 ```

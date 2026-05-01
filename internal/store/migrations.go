@@ -112,4 +112,32 @@ CREATE INDEX IF NOT EXISTS idx_context_snapshots_run ON context_snapshots(run_id
 CREATE INDEX IF NOT EXISTS idx_context_snapshots_project ON context_snapshots(project_id, created_at DESC);
 `,
 	},
+	{
+		Version: 5,
+		SQL: `
+CREATE TABLE IF NOT EXISTS approvals (
+	approval_id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	action_id TEXT NOT NULL,
+	action_type TEXT NOT NULL,
+	action_fingerprint TEXT NOT NULL,
+	status TEXT NOT NULL,
+	risk TEXT NOT NULL,
+	scope TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL,
+	subject_json TEXT NOT NULL DEFAULT '{}',
+	requested_by_agent TEXT NOT NULL DEFAULT '',
+	runtime_id TEXT NOT NULL DEFAULT '',
+	reason TEXT NOT NULL DEFAULT '',
+	requested_at TEXT NOT NULL,
+	resolved_at TEXT NOT NULL DEFAULT '',
+	consumed_at TEXT NOT NULL DEFAULT '',
+	bound_run_id TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_approvals_fingerprint ON approvals(action_fingerprint, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_run ON approvals(run_id);
+`,
+	},
 }

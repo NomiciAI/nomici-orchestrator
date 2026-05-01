@@ -13,6 +13,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/clirunner"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
+	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
@@ -147,6 +148,7 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 
 	traceStore := tracepkg.NewStore(db)
 	contextStore := sharedcontext.NewStore(db)
+	policyService := policy.NewService(db)
 	runID := ids.New("run")
 	taskID := ids.New("task")
 	ctx := command.Context()
@@ -165,7 +167,7 @@ func runExternalCLIAgent(command *cobra.Command, snapshot *graph.Snapshot, agent
 		return err
 	}
 
-	result, err := invokeExternalCLIAgent(ctx, traceStore, runtime, agent, configPath, runID, taskID, graphPrompt(agent, prompt), nil)
+	result, err := invokeExternalCLIAgent(ctx, traceStore, policyService, snapshot.ProjectID, runtime, agent, configPath, runID, taskID, graphPrompt(agent, prompt), nil)
 	if err != nil {
 		_ = appendExternalFailure(ctx, traceStore, runID, agent.ID, runtime.ID, err.Error())
 		return err
@@ -234,6 +236,7 @@ func runExternalCLIHandoff(command *cobra.Command, snapshot *graph.Snapshot, fro
 
 	traceStore := tracepkg.NewStore(db)
 	contextStore := sharedcontext.NewStore(db)
+	policyService := policy.NewService(db)
 	runID := ids.New("run")
 	taskID := ids.New("task")
 	ctx := command.Context()
@@ -252,7 +255,7 @@ func runExternalCLIHandoff(command *cobra.Command, snapshot *graph.Snapshot, fro
 		return err
 	}
 
-	first, err := invokeExternalCLIAgent(ctx, traceStore, fromRuntime, fromAgent, configPath, runID, taskID, graphPrompt(fromAgent, prompt), nil)
+	first, err := invokeExternalCLIAgent(ctx, traceStore, policyService, snapshot.ProjectID, fromRuntime, fromAgent, configPath, runID, taskID, graphPrompt(fromAgent, prompt), nil)
 	if err != nil {
 		_ = appendExternalFailure(ctx, traceStore, runID, fromAgent.ID, fromRuntime.ID, err.Error())
 		return err
@@ -306,7 +309,7 @@ func runExternalCLIHandoff(command *cobra.Command, snapshot *graph.Snapshot, fro
 		}); err != nil {
 			return err
 		}
-		second, err = invokeExternalCLIAgent(ctx, traceStore, toRuntime, toAgent, configPath, runID, taskID, graphPrompt(toAgent, prompt), handoffSnapshot)
+		second, err = invokeExternalCLIAgent(ctx, traceStore, policyService, snapshot.ProjectID, toRuntime, toAgent, configPath, runID, taskID, graphPrompt(toAgent, prompt), handoffSnapshot)
 		if err != nil {
 			_ = appendExternalFailure(ctx, traceStore, runID, toAgent.ID, toRuntime.ID, err.Error())
 			return err
@@ -348,8 +351,15 @@ func runExternalCLIHandoff(command *cobra.Command, snapshot *graph.Snapshot, fro
 	return nil
 }
 
-func invokeExternalCLIAgent(ctx context.Context, traceStore *tracepkg.Store, runtime graph.Runtime, agent graph.Agent, configPath string, runID string, taskID string, prompt string, upstream *sharedcontext.Snapshot) (*clirunner.Result, error) {
+func invokeExternalCLIAgent(ctx context.Context, traceStore *tracepkg.Store, policyService *policy.Service, projectID string, runtime graph.Runtime, agent graph.Agent, configPath string, runID string, taskID string, prompt string, upstream *sharedcontext.Snapshot) (*clirunner.Result, error) {
 	briefing := sharedcontext.RenderBriefing(upstream)
+	policyDecision, err := checkCLIAgentPolicy(ctx, traceStore, policyService, projectID, runtime, agent, configPath, runID)
+	if err != nil {
+		return nil, err
+	}
+	if policyDecision.Decision != policy.DecisionAllow {
+		return nil, policyBlockedError(policyDecision)
+	}
 	if err := traceStore.Append(ctx, &tracepkg.Event{
 		RunID:     runID,
 		Type:      tracepkg.EventAdapterInvoked,
@@ -417,6 +427,105 @@ func invokeExternalCLIAgent(ctx context.Context, traceStore *tracepkg.Store, run
 		return nil, err
 	}
 	return result, nil
+}
+
+func checkCLIAgentPolicy(ctx context.Context, traceStore *tracepkg.Store, policyService *policy.Service, projectID string, runtime graph.Runtime, agent graph.Agent, configPath string, runID string) (*policy.Decision, error) {
+	workspace := resolveRuntimeWorkspace(runtime.Workspace, configPath)
+	action := policy.ActionRequest{
+		RunID:      runID,
+		ActionID:   ids.New("action"),
+		ActionType: policy.ActionCLIInvoke,
+		ProjectID:  projectID,
+		AgentID:    agent.ID,
+		RuntimeID:  runtime.ID,
+		Workspace:  workspace,
+		FilesWrite: runtimeFilesWrite(runtime),
+		Summary:    policySummary(runtime, agent, workspace),
+		Subject: map[string]string{
+			"workspace": workspace,
+			"agent_id":  agent.ID,
+			"runtime":   runtime.ID,
+		},
+	}
+	decision, err := policyService.Check(ctx, action)
+	if err != nil {
+		return nil, err
+	}
+	if err := appendPolicyTrace(ctx, traceStore, runID, agent.ID, runtime.ID, action, decision); err != nil {
+		return nil, err
+	}
+	return decision, nil
+}
+
+func appendPolicyTrace(ctx context.Context, traceStore *tracepkg.Store, runID string, agentID string, runtimeID string, action policy.ActionRequest, decision *policy.Decision) error {
+	payload := jsonPayload(map[string]any{
+		"decision":    decision.Decision,
+		"risk":        decision.Risk,
+		"reason":      decision.Reason,
+		"approval_id": decision.ApprovalID,
+		"scope":       decision.Scope,
+		"action_type": action.ActionType,
+		"summary":     action.Summary,
+		"workspace":   action.Workspace,
+		"fingerprint": decision.Fingerprint,
+		"files_write": action.FilesWrite,
+	})
+	if err := traceStore.Append(ctx, &tracepkg.Event{
+		RunID:     runID,
+		Type:      tracepkg.EventPolicyChecked,
+		NodeID:    agentID,
+		RuntimeID: runtimeID,
+		Payload:   payload,
+	}); err != nil {
+		return err
+	}
+	switch decision.Decision {
+	case policy.DecisionApproval:
+		if err := traceStore.Append(ctx, &tracepkg.Event{
+			RunID:     runID,
+			Type:      tracepkg.EventApprovalRequested,
+			NodeID:    agentID,
+			RuntimeID: runtimeID,
+			Payload:   payload,
+		}); err != nil {
+			return err
+		}
+		return traceStore.Append(ctx, &tracepkg.Event{
+			RunID:     runID,
+			Type:      tracepkg.EventPolicyBlocked,
+			NodeID:    agentID,
+			RuntimeID: runtimeID,
+			Payload:   payload,
+		})
+	case policy.DecisionDeny:
+		return traceStore.Append(ctx, &tracepkg.Event{
+			RunID:     runID,
+			Type:      tracepkg.EventPolicyBlocked,
+			NodeID:    agentID,
+			RuntimeID: runtimeID,
+			Payload:   payload,
+		})
+	default:
+		return nil
+	}
+}
+
+func policyBlockedError(decision *policy.Decision) error {
+	switch decision.Decision {
+	case policy.DecisionApproval:
+		return fmt.Errorf("approval required: %s. Approval: %s. Remediation: run `nomici approvals grant %s --scope once` and rerun the command, or use `--scope run` for matching actions in the next run", decision.Reason, decision.ApprovalID, decision.ApprovalID)
+	case policy.DecisionDeny:
+		return fmt.Errorf("policy denied action: %s", decision.Reason)
+	default:
+		return fmt.Errorf("policy blocked action: %s", decision.Reason)
+	}
+}
+
+func policySummary(runtime graph.Runtime, agent graph.Agent, workspace string) string {
+	if runtimeFilesWrite(runtime) {
+		return fmt.Sprintf("Run mutable cli_agent %s for agent %s in %s", runtime.ID, agent.ID, workspace)
+	}
+	return fmt.Sprintf("Run read-only cli_agent %s for agent %s in %s", runtime.ID, agent.ID, workspace)
 }
 
 func saveCLIContextSnapshot(ctx context.Context, contextStore *sharedcontext.Store, traceStore *tracepkg.Store, projectID string, runID string, taskID string, fromAgent string, toAgent string, result *clirunner.Result, kind string) (*sharedcontext.Snapshot, error) {

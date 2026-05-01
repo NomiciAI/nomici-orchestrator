@@ -90,6 +90,16 @@ Default: deny unless explicitly configured.
 
 ## Approval Scopes
 
+Private bootstrap implementation note:
+
+- The first enforced action class is `runtime.cli_agent.invoke`.
+- `files_write: false` CLI runtimes are treated as low risk and auto-allowed.
+- `files_write: true` CLI runtimes are treated as medium risk and require approval.
+- `once` grants are consumed by the next matching action.
+- `run` grants bind to the next matching run and allow matching actions in that run.
+- Matching is currently scoped by project, action type, and workspace path.
+- Full tool broker coverage for MCP, browser, office, email/calendar, deploy, and network side effects is deferred.
+
 v0.1 approval scopes:
 
 - `once`: grant exactly one requested action.

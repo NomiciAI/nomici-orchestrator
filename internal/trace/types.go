@@ -41,4 +41,9 @@ const (
 	EventHandoffCreated         = "handoff.created"
 	EventHandoffAccepted        = "handoff.accepted"
 	EventHandoffContextAttached = "handoff.context_attached"
+	EventPolicyChecked          = "policy.checked"
+	EventPolicyBlocked          = "policy.blocked"
+	EventApprovalRequested      = "approval.requested"
+	EventApprovalGranted        = "approval.granted"
+	EventApprovalDenied         = "approval.denied"
 )
