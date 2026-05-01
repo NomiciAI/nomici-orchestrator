@@ -37,7 +37,7 @@ The project follows semantic versioning once the first public release is cut.
 
 ### Fixed
 
-- Nothing yet.
+- Gate 0 scaffold baseline now builds, tests, lints, prints version, and serves Gateway health.
 
 ### Security
 

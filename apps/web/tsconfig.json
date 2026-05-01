@@ -3,13 +3,13 @@
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
     "strict": true,
     "target": "ES2022",
-    "types": ["vite/client"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src", "vite.config.ts"]
 }
