@@ -98,6 +98,8 @@ AgentGraph IR is the normalized intermediate representation produced from AgentS
 
 It is not the same thing as the canvas. The canvas is one editor for the graph. `nomici.yaml` is one source format for the graph. AgentGraph IR is the internal contract used by Gateway, policy, runtime management, trace, and deployment.
 
+AgentGraph IR should converge from implementation evidence. v0.1 should start with the minimal immutable graph snapshot needed by implemented adapters and add fields only when packs, policy, trace, or Console require them.
+
 AgentGraph IR should represent:
 
 - nodes
@@ -496,7 +498,7 @@ v0.1 should implement:
 
 - Gateway-centered control plane.
 - AgentSpec loading and validation.
-- Basic AgentGraph IR representation.
+- Minimal AgentGraph IR representation driven by implemented adapters.
 - Model, runtime, and agent registries.
 - Local process runtime manager.
 - Basic reconciler for configured local runtimes.
@@ -533,7 +535,7 @@ Nomici should not:
 ## Open Questions
 
 - Should AgentGraph IR be stored in SQLite as normalized tables, JSON blobs, or both?
-- Should AgentGraph IR be exposed as a public API in v0.1 or remain internal?
+- Settled: AgentGraph IR remains internal in v0.1.
 - Should the Console edit AgentSpec directly or edit IR and export AgentSpec?
 - Should OpenAI-compatible `/v1/*` route to raw models, agents, or both through explicit prefixes?
 - Should the first MCP integration be a brokered registry or direct pass-through?

@@ -176,11 +176,7 @@ secret_ref: bitwarden://item/openai-api-key
 
 Forbidden:
 
-```yaml
-api_key: sk-...
-token: secret-value
-password: plaintext-password
-```
+Do not put fields named `api_key`, `token`, or `password` with raw values in `nomici.yaml`.
 
 Rules:
 

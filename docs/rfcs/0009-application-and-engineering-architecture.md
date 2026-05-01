@@ -249,6 +249,12 @@ Responsibilities:
 - official pack discovery
 - local pack development workflow
 
+v0.1 trust root:
+
+- official packs must be bundled with the binary or listed in a compiled official pack index
+- local pack manifest claims of `trust.level: official` are not authoritative
+- permission review still applies to official packs
+
 Pack types:
 
 - Provider Pack
@@ -384,13 +390,15 @@ Responsibilities:
 
 - create run ID
 - resolve target agent
-- invoke adapter or native agent
+- invoke adapter or `gateway_agent`
 - stream output
 - apply policy before Nomici-mediated tools
 - emit trace events
 - handle cancellation
 
 The run engine should remain thin. It coordinates control-plane execution; it does not become a durable workflow engine in v0.1.
+
+`gateway_agent` is the v0.1 name for the minimal Gateway-run coordinator loop. `native_agent` is not a public v0.1 kind.
 
 ### Task Ledger
 
@@ -688,6 +696,8 @@ Protocol surfaces:
 
 v0.1 should implement only what is needed. Reserved paths should not imply full compatibility before it exists.
 
+`/api/health` is the liveness/readiness exception and may return minimal naked JSON. Normal command/query APIs should use the standard response envelope.
+
 ## Storage Architecture
 
 Default local storage:
@@ -773,6 +783,17 @@ Avoid:
 
 ## v0.1 Implementation Phases
 
+Before the full product slice, implementation should prove:
+
+- provider setup
+- OpenAI-compatible or Ollama model profile
+- one Gateway-mediated invocation
+- trace event storage
+- secret redaction
+- health/status visibility
+
+This proof slice should not require packs, full graph canvas editing, A2A sidecars, or MCP proxying.
+
 Phase 0: Foundation
 
 - repo governance
@@ -796,6 +817,7 @@ Phase 2: AgentGraph and Packs
 - `ai-application-pm` pack
 - `developer-team` pack scaffold
 - permission review
+- minimal IR fields driven by implemented adapters
 
 Phase 3: Runtime and Adapters
 
@@ -816,7 +838,7 @@ Phase 4: Runs, Trace, Approval
 
 Phase 5: Console MVP
 
-- setup
+- setup inspection after Gateway starts
 - pack gallery
 - canvas view
 - models
@@ -824,6 +846,8 @@ Phase 5: Console MVP
 - runs/traces
 - approvals
 - artifacts
+
+Full provider setup in Console requires bootstrap Gateway mode. If bootstrap mode is not implemented in the first v0.1 slice, CLI-first setup is the supported path.
 
 ## What To Cut If Scope Grows
 
@@ -842,16 +866,22 @@ Cut first:
 Do not cut:
 
 - provider setup
+- trace event store
+- security defaults
+- model profile storage without raw secrets
+- one Gateway-mediated invocation path
+
+Do not cut from the v0.1 product slice:
+
 - pack manifest
 - AgentGraph compiler
 - runtime observed state
-- trace event store
 - approval model
-- security defaults
+- first-run useful official bundled pack
 
 ## Open Questions
 
-- Should official packs live in the main repository during v0.1?
+- Should official bundled packs live in the main repository during v0.1?
 - Should `nomici model setup` default to global profile config or project config?
 - Should `developer-team` be the default first-run pack?
 - Should `office` be official but experimental in v0.1?

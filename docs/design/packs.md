@@ -86,6 +86,20 @@ Optional:
 - `trust`
 - `docs`
 
+## v0.1 Trust Root
+
+`trust.level` in a pack manifest is not authoritative in v0.1.
+
+Until signed distribution exists:
+
+- `official` only applies to packs bundled with the Nomici binary or listed in a compiled official pack index
+- local directory packs are treated as `local` or `untrusted`
+- a local manifest claiming `trust.level: official` must not grant privileges
+- Console may show the claim as informational only
+- permission review is still required for official packs
+
+The `trust` field remains useful as reserved metadata, but Gateway must not trust it without a trust root.
+
 ## Pack Install State Machine
 
 ```text

@@ -200,6 +200,6 @@ Nomici v0.1 is successful when:
 
 - Should `nomici up` always start Gateway, or should it fail if Gateway is already running with a different workspace?
 - Should v0.1 allow multiple active workspaces per profile, or one active workspace at a time?
-- Should native agents be implemented in Go first, or should v0.1 use a small sidecar runtime for richer agent loops?
+- Settled after RFC 0009: v0.1 uses `gateway_agent` for a minimal Gateway-run coordinator loop. Richer agent loops remain external runtimes.
 - Should Docker runner be included in v0.1, or deferred to v0.2?
 - Should the OpenAI-compatible `/v1/*` endpoint be enabled by default or require explicit opt-in?

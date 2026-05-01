@@ -162,7 +162,7 @@ Failure states:
 
 Recovery:
 
-- missing secret: show env var export command
+- missing secret reference -> show env var export command
 - endpoint unreachable: show health check and base URL remediation
 - auth failed: re-enter secret reference
 - model not found: list available models if supported
@@ -186,6 +186,10 @@ Rules:
 - `--json` for machine output
 - never echo raw secrets
 - write only secret references
+
+CLI setup can run before Gateway is started.
+
+Console setup requires a Gateway process because Console is served by Gateway. v0.1 may support `nomici gateway run --setup` as a bootstrap mode; otherwise the hard setup path is CLI-first.
 
 ## Gateway API
 

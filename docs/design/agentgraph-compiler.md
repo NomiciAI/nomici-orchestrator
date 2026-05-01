@@ -17,6 +17,20 @@ Output:
 
 AgentGraph IR is internal in v0.1.
 
+## Convergence Policy
+
+This document describes the target internal shape, not a requirement to implement every IR field before the first adapter works.
+
+Implementation should be evidence-driven:
+
+- start with the smallest immutable graph snapshot needed by the proof slice
+- implement OpenAI-compatible invocation first
+- add fields only when an adapter, pack, policy check, trace view, or Console feature needs them
+- keep source mapping early because it drives actionable errors
+- keep snapshot immutability early because it drives trace, replay, and audit
+
+Do not expose AgentGraph IR as a public standard in v0.1.
+
 ## Compile Pipeline
 
 ```text
@@ -68,6 +82,8 @@ Required passes:
 - no raw secrets
 - trust defaults applied
 - unsupported executable edges flagged
+
+The first implementation may support a reduced pass set if unsupported features fail closed with clear errors.
 
 ## Edge Semantics
 

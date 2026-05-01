@@ -136,6 +136,8 @@ Core REST API:
 - `/api/policies`
 - `/api/secrets`
 
+`/api/health` is a health-probe exception and may return a minimal naked JSON response. Normal command/query APIs should use the standard Gateway response envelope.
+
 Event surfaces:
 
 - `/events` for Server-Sent Events if useful for simple clients

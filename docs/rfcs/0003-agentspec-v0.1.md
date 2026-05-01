@@ -121,7 +121,7 @@ runtimes:
 
 agents:
   product_pm:
-    kind: native_agent
+    kind: gateway_agent
     model: gpt
     role: >
       Brainstorm AI application ideas, define product vision,
@@ -133,12 +133,12 @@ agents:
       - openclaw_ops
 
   senior_architect:
-    kind: native_agent
+    kind: gateway_agent
     model: local_qwen
     role: Design software architecture.
 
   uiux_designer:
-    kind: native_agent
+    kind: gateway_agent
     model: gpt
     role: Design software UX and product flows.
 
@@ -311,19 +311,20 @@ Agents describe canvas nodes that can receive work.
 
 Kinds for v0.1:
 
-- `native_agent`
+- `gateway_agent`
 - `external_agent`
 - `model_agent`
 - `tool_agent`
 
 Future kinds:
 
+- `native_agent`
 - `remote_a2a_agent`
 - `router_agent`
 - `approval_agent`
 - `memory_agent`
 
-Native agent fields:
+Gateway agent fields:
 
 - `kind`
 - `model`
@@ -354,6 +355,7 @@ Rules:
 - `runtime` must reference an entry in `runtimes`.
 - `subagents` must reference entries in `agents` or compatible runtime-backed agent IDs.
 - External agents are untrusted by default unless policy says otherwise.
+- `gateway_agent` is a minimal Gateway-run coordinator loop, not durable execution or a full framework runtime.
 
 ## Tools
 

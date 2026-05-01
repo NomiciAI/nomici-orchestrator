@@ -52,6 +52,7 @@ Rules:
 - The Definition Plane is Git-friendly and should avoid secrets.
 - The Execution Plane performs model calls, agent loops, and tool actions.
 - The Evidence Plane records what happened and supports review, replay, export, and eval.
+- A minimal `gateway_agent` loop may exist in the Control Plane for first-run coordination, but advanced agent execution belongs in the Execution Plane.
 
 ## Dependency Direction
 
@@ -107,6 +108,7 @@ Disallowed dependencies:
 - Runtimes write trace events without Gateway mediation unless through a trace adapter.
 - Pack install runs arbitrary setup scripts without explicit approval.
 - AgentGraph IR becomes a public contract in v0.1.
+- Local pack manifest trust claims grant official privileges.
 
 ## Core Data Flow
 
@@ -139,6 +141,15 @@ nomici run product_pm "..."
 
 This slice proves the product without requiring full A2A, full MCP proxying, durable workflow execution, team mode, or marketplace infrastructure.
 
+A smaller proof slice should land before this:
+
+```text
+provider setup
+  -> one Gateway-mediated model or external endpoint invocation
+  -> trace events
+  -> redaction and health/status checks
+```
+
 ## Why The Pieces Fit
 
 Provider setup is a product feature and a platform primitive.
@@ -160,6 +171,10 @@ Instead of merely launching processes, it compares desired and observed state, r
 Run Engine should stay intentionally small.
 
 It coordinates graph snapshots, adapter calls, tasks, traces, approvals, and artifacts. Durable state machines remain the responsibility of LangGraph, OpenAI Agents SDK, CrewAI, ADK, Hermes, OpenClaw, or other runtimes.
+
+Gateway Agent Loop should be intentionally minimal.
+
+It exists so first-run packs can have a root coordinator without requiring users to install another framework. It should not provide durable execution, framework-native memory, complex planners, or independent side-effect permissions.
 
 Policy and Tool Broker are the safety choke point.
 
@@ -236,6 +251,8 @@ The following should remain true through v0.1:
 - Runtime desired state and observed state are separate.
 - AgentGraph IR is internal.
 - Durable workflow execution is delegated to external runtimes.
+- `official` pack trust requires a bundled pack or compiled official index until signatures exist.
+- Console setup requires Gateway; if bootstrap mode is absent, setup is CLI-first.
 - Remote/team/multi-user features are deferred.
 
 ## Failure Boundaries

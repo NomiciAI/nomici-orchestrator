@@ -63,6 +63,8 @@ Nomici is not:
 
 Nomici should manage, connect, and govern strong runtimes rather than rebuild them.
 
+Nomici may include a minimal `gateway_agent` loop for first-run coordination. Durable or framework-native agent behavior belongs in external runtimes.
+
 ## Architecture Direction
 
 Nomici uses a Gateway-centered architecture. The current authoritative summary is [Architecture](docs/architecture.md).

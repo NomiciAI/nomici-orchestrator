@@ -35,6 +35,53 @@ provider setup -> pack install -> Gateway -> runtime/agent registry
 
 v0.1 is not a full autonomous agent platform. It is a local-first control plane that can run useful starter packs.
 
+## Proof Slice
+
+Before the full v0.1 product slice, the project should prove a smaller hard slice:
+
+```text
+provider setup
+  -> OpenAI-compatible or Ollama model profile
+  -> Gateway-mediated invocation
+  -> trace event storage
+  -> secret redaction
+  -> health/status visibility
+```
+
+This hard slice validates the Gateway, provider setup, adapter invocation, storage, trace, and security path without requiring packs, graph canvas editing, runtime reconciliation, approval queue, A2A sidecars, or MCP proxying.
+
+## Delivery Tiers
+
+Hard delivery:
+
+- provider setup for OpenAI-compatible and Ollama
+- model profile storage without raw secrets
+- one Gateway-mediated invocation path
+- trace event store
+- basic Gateway health/status
+- documented security defaults
+
+Product delivery:
+
+- pack manifest validation
+- pack permission review
+- AgentGraph compile/validate
+- basic runtime observed state
+- run records and trace timeline
+- approval record model
+- first useful official bundled pack
+
+Degradable delivery:
+
+- complete Console setup wizard
+- rich visual canvas editing
+- runtime auto-restart
+- non-trivial approval scopes
+- full MCP proxy
+- A2A sidecars
+- Office/browser packs
+- signed remote pack distribution
+
 ## Phase 0: Foundation
 
 Status: in progress
@@ -92,6 +139,7 @@ Exit criteria:
 - Raw secrets are not written to `nomici.yaml`.
 - Capability profile supports `true`, `false`, and `unknown`.
 - Provider test emits trace events.
+- A single Gateway-mediated model invocation can be traced without requiring packs or full AgentGraph execution.
 
 ## Phase 2: Packs and AgentGraph
 
@@ -120,6 +168,7 @@ Exit criteria:
 - Pack can install one single-agent definition.
 - Pack can install one multi-agent team graph.
 - AgentGraph IR remains internal.
+- AgentGraph starts from the minimal fields needed by implemented adapters and grows from implementation evidence.
 - Unsupported graph edges fail clearly if executed.
 
 ## Phase 3: Runtime and Adapters
@@ -201,10 +250,11 @@ Goals:
 
 Exit criteria:
 
-- User can complete the first-run flow from Console.
+- User can inspect the first-run flow from Console after Gateway starts.
 - Console does not receive raw secrets.
 - Console renders graph from Gateway API.
 - Console can inspect traces and artifacts.
+- Full provider setup from Console requires bootstrap Gateway mode; if that mode is not implemented, CLI-first setup remains the hard path.
 
 ## Phase 6: Pre-Public Hardening
 
@@ -247,12 +297,17 @@ Exit criteria:
 ## Do Not Cut From v0.1
 
 - provider setup
+- trace event store
+- security defaults
+- model profile storage without raw secrets
+- one Gateway-mediated invocation path
+
+Do not cut from the v0.1 product slice:
+
 - pack manifest
 - AgentGraph compile/validate
 - runtime observed state
-- trace event store
 - approval model
-- security defaults
 - first-run useful official pack
 
 ## Quality Bar

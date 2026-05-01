@@ -29,6 +29,7 @@ Nomici should serve two audiences:
 
 - Core does not contain heavy Office or Browser runtimes. Core manages Tool Packs.
 - AgentGraph IR is internal in v0.1, not a public standard.
+- `native_agent` is not a v0.1 public kind. Use `gateway_agent` for the minimal Gateway-run coordinator loop.
 - Agent is the atomic extension unit.
 - Pack is the distribution and composition unit.
 - Agent Pack can install multiple agents, graph edges, tools, policies, examples, and tests.
@@ -36,6 +37,8 @@ Nomici should serve two audiences:
 - Gateway is the only control plane. CLI and Console should go through Gateway APIs once Gateway is running.
 - Run Engine stays lightweight. Durable execution belongs to external runtimes.
 - Side-effecting tools go through Policy, Approval, and Trace when Nomici mediates execution.
+- Pack `official` trust in v0.1 requires a bundled pack or compiled official index. Local manifest claims are not authoritative.
+- Console setup requires a running Gateway. v0.1 can use CLI-first setup or a bootstrap `gateway run --setup` mode.
 - SQLite is the default local store. Postgres is later.
 - v0.1 does not include remote/team/multi-user mode.
 - v0.1 targets first-run useful, not full autonomy.
@@ -63,6 +66,7 @@ Settings
 Gateway:
 
 ```text
+Gateway Agent Loop
 Setup Engine
 Provider Registry
 Pack Manager
@@ -146,6 +150,12 @@ Console shape:
 - first-run launcher
 - trace and artifact viewer
 
+Console setup boundary:
+
+- Console is served by Gateway and cannot run before a Gateway process exists.
+- CLI-first setup is the hard v0.1 path.
+- A bootstrap Gateway mode can serve setup UI before runtimes are started.
+
 ## Extension Model
 
 Atomic extension units:
@@ -212,6 +222,10 @@ Nomici does not own:
 - local office document engines
 - browser automation engines
 - hard sandboxing for malicious local code
+
+Gateway Agent boundary:
+
+Nomici may run a minimal `gateway_agent` loop for first-run coordination. That loop may call a model, request handoffs, call agent-as-tool adapters, and request Nomici-mediated tools. It is not durable execution and should not grow into a full framework runtime.
 
 When a data-plane runtime has a stronger primitive, Nomici integrates it instead of reimplementing it.
 
@@ -293,6 +307,8 @@ Protocol surfaces:
 ```
 
 Reserved paths should not imply full compatibility before implementation exists.
+
+`/api/health` is a health-probe exception and may return a minimal naked JSON response. Normal command/query APIs should use the documented response envelope.
 
 ## Storage
 

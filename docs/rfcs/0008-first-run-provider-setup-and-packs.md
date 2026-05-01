@@ -103,6 +103,12 @@ Console shape:
 - First run launcher
 - Trace and artifact viewer
 
+Console setup boundary:
+
+- Console is served by Gateway, so Console setup requires a Gateway process.
+- The hard v0.1 path is CLI-first setup.
+- A bootstrap `nomici gateway run --setup` mode can provide Console setup before runtimes are started.
+
 ## Provider Setup
 
 Provider setup should be a first-class feature, not only YAML editing.
@@ -208,6 +214,7 @@ Rules:
 - Console must not display full secret values.
 - CLI output must redact secret-looking values.
 - Provider test runs must be traceable.
+- CLI provider setup can run before Gateway. Console provider setup requires bootstrap Gateway mode.
 
 ## Capability Probe
 
@@ -279,7 +286,7 @@ Single-agent example:
 ```yaml
 agents:
   legal_reviewer:
-    kind: native_agent
+    kind: gateway_agent
     model: gpt
     role: Review contracts and identify risks.
 ```
@@ -408,6 +415,12 @@ Default behavior:
 
 - Official packs may be shown prominently.
 - Community packs require warning and review.
+
+v0.1 trust root:
+
+- `official` is authoritative only for packs bundled with the Nomici binary or listed in a compiled official pack index.
+- Local directory packs that claim `trust.level: official` are still treated as `local` or `untrusted`.
+- Signed remote pack distribution is deferred, so local manifest trust claims do not grant privileges.
 - Local packs are user-controlled but still permission-reviewed.
 - Untrusted packs cannot auto-run commands.
 

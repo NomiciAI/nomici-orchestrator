@@ -63,6 +63,18 @@ Consumers:
 
 AgentGraph IR is not the same thing as React Flow nodes. The Console may render IR, but IR must stay stable enough for CLI, API, validation, and future deployment.
 
+### IR Convergence Policy
+
+This RFC describes the target internal shape. Implementation should not freeze every field before the first adapter runs.
+
+Rules:
+
+- Start with the smallest immutable graph snapshot needed for the proof slice.
+- Implement the OpenAI-compatible adapter first and let streaming, cancellation, errors, auth, and trace requirements test the IR.
+- Add IR fields only when an adapter, pack, policy check, trace view, or Console feature needs them.
+- Keep source mapping and snapshot immutability early because they support errors, audit, and replay.
+- Do not expose AgentGraph IR as a public standard in v0.1.
+
 ## IR Document Shape
 
 ```json
@@ -908,7 +920,7 @@ Trace validation:
 
 Phase 1:
 
-- Define Go structs for AgentGraph IR.
+- Define minimal Go structs for the proof-slice graph snapshot.
 - Define Go structs for adapter contract types.
 - Define trace event structs.
 - Add JSON fixtures for sample graph.

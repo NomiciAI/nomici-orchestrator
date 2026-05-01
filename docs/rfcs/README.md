@@ -29,12 +29,15 @@ The current implementation direction is:
 - Nomici is a local-first Agent Control Plane and Designer.
 - Core manages Tool Packs instead of bundling heavy Office/Browser runtimes.
 - AgentGraph IR is internal in v0.1.
+- `gateway_agent` is the minimal Gateway-run coordinator loop; `native_agent` is not a v0.1 public kind.
 - Agent is the atomic extension unit.
 - Pack is the distribution and composition unit.
 - Provider setup is a v0.1 core feature.
 - Gateway is the only control plane.
 - Run Engine is lightweight; durable execution belongs to data-plane runtimes.
 - Side-effecting tools go through Policy, Approval, and Trace.
+- Official pack trust requires a bundled pack or compiled official index until signatures exist.
+- Console setup requires a Gateway process; CLI-first setup is the hard path unless bootstrap Gateway mode lands.
 - SQLite is default; Postgres is later.
 - v0.1 does not include remote/team/multi-user mode.
 - v0.1 targets first-run useful, not full autonomy.

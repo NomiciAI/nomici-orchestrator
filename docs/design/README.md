@@ -7,6 +7,7 @@ RFCs capture decisions and direction. Design deep dives turn the direction into 
 Current deep dives:
 
 - [System Composition](system-composition.md)
+- [v0.1 Boundaries](v0.1-boundaries.md)
 - [Provider Setup](provider-setup.md)
 - [Pack System](packs.md)
 - [AgentGraph Compiler](agentgraph-compiler.md)
@@ -43,3 +44,5 @@ Design rules:
 - SQLite is the v0.1 source of observed state.
 
 The composition rationale is documented in [System Composition](system-composition.md).
+
+Scope and naming clarifications are documented in [v0.1 Boundaries](v0.1-boundaries.md).

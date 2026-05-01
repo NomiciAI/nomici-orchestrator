@@ -18,6 +18,12 @@ CLI and Console should use the same Gateway APIs once Gateway is running. Bootst
 
 ## Response Envelope
 
+Most command/query APIs should use the standard response envelope.
+
+`GET /api/health` is the deliberate exception. It may return a minimal naked JSON response for process supervisors, health probes, curl smoke tests, and release checks.
+
+Future human/API status routes such as `/api/status` should use the standard envelope.
+
 Successful response:
 
 ```json
@@ -93,6 +99,8 @@ Protocol surfaces:
 
 Reserved paths should not imply full compatibility.
 
+`/api/health` is for liveness/readiness only. It should not become the general system status API.
+
 ## Event Stream
 
 Event stream messages:
@@ -114,6 +122,26 @@ Use cases:
 - runtime log tail metadata
 
 v0.1 can start with SSE for server-to-client events and add WebSocket later.
+
+## Bootstrap Mode
+
+Console is served by Gateway. Therefore Console-based setup needs some Gateway process to exist before normal runtimes are running.
+
+Bootstrap mode:
+
+```bash
+nomici gateway run --setup
+```
+
+Expected behavior:
+
+- serves Console assets
+- exposes health, setup, provider catalog, model test, pack inspect, and pack install APIs
+- does not start runtimes automatically
+- does not run agents
+- uses the same token, auth, and secret redaction rules as normal Gateway
+
+If bootstrap mode is not implemented in the first product slice, setup remains CLI-first.
 
 ## API Versioning
 
