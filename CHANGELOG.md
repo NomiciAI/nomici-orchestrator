@@ -25,6 +25,7 @@ The project follows semantic versioning once the first public release is cut.
 - SQLite-backed provider profile store, secret resolver, trace store, and OpenAI-compatible adapter.
 - Gateway `/api/models/test` endpoint with response envelope, trace events, and secret redaction.
 - CLI commands for `model setup`, `model list`, `model doctor`, `model test`, `run model`, `trace list`, and `trace show`.
+- Minimal AgentSpec parser/validator, internal AgentGraph snapshot compiler/store, `spec validate`, `graph validate`, `graph export`, and single-node `nomici run <entrypoint>`.
 
 ### Changed
 
