@@ -751,7 +751,7 @@ or in parallel. Steps 6-9 depend on 1-5. Step 10 depends on 6.
 
 ```bash
 # Setup
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=<your_api_key>
 nomici model setup --kind openai_compatible --name gpt --model gpt-5.5 --api-key-env OPENAI_API_KEY
 
 # Start Gateway

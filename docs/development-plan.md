@@ -1,6 +1,6 @@
 # Development Plan
 
-This is the current authoritative development plan for the private bootstrap phase.
+This is the current authoritative development plan for the alpha bootstrap phase.
 
 The plan is intentionally staged. Nomici should prove one useful vertical slice before expanding protocol depth, framework adapters, team mode, or marketplace features.
 
@@ -13,7 +13,7 @@ The detailed living execution checklist is `docs/implementation/v0.1-plan.md`. I
 Status:
 
 ```text
-Private bootstrap
+Alpha bootstrap
 Design-first
 Minimal scaffold exists
 Not public
@@ -22,7 +22,7 @@ Not ready for user installation
 
 Repository policy:
 
-- Direct maintainer pushes to `main` are allowed during private bootstrap.
+- Direct maintainer pushes to `main` are allowed during alpha bootstrap.
 - Force-push and branch deletion remain disabled.
 - Before quiet public, restore strict branch protection with PR review and CODEOWNERS review.
 

@@ -38,12 +38,13 @@ The project follows semantic versioning once the first public release is cut.
 - Top-level `doctor` and Gateway `start`, `stop`, `status`, `logs`, and `open` commands.
 - `scripts/install.sh` with no-sudo defaults, source install, future release download, checksum verification, backup, custom install dir, version selection, and uninstall.
 - Minimal OpenAI-compatible Gateway routes: `GET /v1/models` and non-streaming `POST /v1/chat/completions`.
+- Quickstart documentation and a no-API-key `examples/basic-local-agent` demo.
 
 ### Changed
 
-- Split the private bootstrap run command implementation into smaller files for graph execution, external CLI agents, policy, shared context, and display helpers.
+- Split the alpha bootstrap run command implementation into smaller files for graph execution, external CLI agents, policy, shared context, and display helpers.
 - Marked planned README commands explicitly so the bootstrap path does not overstate `nomici up`, `nomici doctor`, or `nomici gateway open`.
-- Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for private bootstrap.
+- Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for alpha bootstrap.
 - AgentSpec and internal AgentGraph now accept `local_process` runtimes with `start` commands for managed long-running processes.
 
 ### Deprecated

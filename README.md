@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -12,26 +12,32 @@ Modern agents are becoming powerful but fragmented. A developer may have Claude 
 
 Nomici aims to provide one local-first control plane for composing those pieces into useful, inspectable, governed agent organizations.
 
-## Planned Quickstart
+## Quickstart
 
 ```bash
-curl -fsSL https://nomici.ai/install.sh | bash
+corepack enable
+scripts/install.sh --from-source .
 nomici doctor
-nomici model setup
-nomici pack install developer-team
+cd examples/basic-local-agent
+nomici spec validate --config nomici.yaml
+nomici run local_assistant "Explain what this example demonstrates." --config nomici.yaml
 nomici up
 nomici gateway open
-nomici run product_pm "Plan and implement a small web app"
 ```
 
-The hosted `curl` install endpoint and release artifacts are still planned. During private bootstrap, install from a local checkout with `scripts/install.sh --from-source .`; the CLI commands shown after installation are implemented.
+The hosted `curl` install endpoint and release artifacts are still planned. For this alpha, install from a local checkout with `scripts/install.sh --from-source .`.
+
+See [Quickstart](docs/quickstart.md) for a no-API-key local example and an optional model-provider path.
 
 ## Implemented Bootstrap Commands
 
-The current private bootstrap can run this narrower proof slice:
+The current alpha can run this narrower proof slice:
 
 ```bash
 scripts/install.sh --from-source .
+cd examples/basic-local-agent
+nomici run local_assistant "Verify local agent execution." --config nomici.yaml
+cd ../..
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
@@ -84,7 +90,7 @@ The intended v0.1 flow:
 - Run a real task.
 - Inspect traces, logs, approvals, artifacts, and policy decisions.
 
-In the current private bootstrap, `nomici doctor` performs local checks and `nomici gateway open` opens the read-only Console. The install script remains planned, so run the built `nomici` binary directly during development.
+In the current alpha bootstrap, `nomici doctor` performs local checks and `nomici gateway open` opens the read-only Console. The source installer works from a local checkout; hosted release downloads remain planned.
 
 `NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. CLI commands authenticate with `NOMICI_GATEWAY_TOKEN` when set, otherwise they read `.nomici/gateway.token` next to the local state database. Treat the token as an operator credential and do not point the CLI at a shared or public Gateway unless that Gateway is explicitly trusted.
 
@@ -135,10 +141,10 @@ Nomici Console
       -> CLI agents / Hermes / OpenClaw / local models / MCP / A2A
 ```
 
-The planned stack is:
+The current stack is:
 
 - Go for CLI, Gateway, runtime manager, policy, trace, and release binary.
-- TypeScript, React, Vite, React Flow, Tailwind, and pnpm for Nomici Console.
+- TypeScript, React, Vite, React Flow, plain CSS, and pnpm for Nomici Console.
 - SQLite by default.
 - JSON Schema for AgentSpec.
 - A single `nomici` binary for end users.

@@ -2,10 +2,10 @@
 
 This checklist must be completed before making `NomiciAI/nomici-orchestrator` public.
 
-Nomici product code lives in a parent workspace that contains multiple sibling projects. Do not publish from the parent directory. The only intended public repository root for this project is:
+Nomici product code may live in a parent workspace that contains multiple sibling projects. Do not publish from the parent directory. The only intended public repository root for this project is a Git repository whose directory basename is:
 
 ```text
-/Users/stephen/Documents/nomici/code/nomici-orchestrator
+nomici-orchestrator
 ```
 
 ## Publication Stages
@@ -25,7 +25,7 @@ Goal:
 Safe when:
 
 - Private GitHub contents have been reviewed.
-- README accurately says the project is in design/RFC phase.
+- README accurately says which alpha bootstrap features are implemented and which are planned.
 - No secrets or unrelated project files are present.
 - The team accepts that the repo is public but not announced.
 
@@ -50,8 +50,8 @@ Safe when:
 Run from the repository root:
 
 ```bash
-cd /Users/stephen/Documents/nomici/code/nomici-orchestrator
 git rev-parse --show-toplevel
+test "$(basename "$(git rev-parse --show-toplevel)")" = "nomici-orchestrator"
 git status --short
 git remote -v
 git ls-files | sort
@@ -60,16 +60,12 @@ git ls-files | sort
 Expected:
 
 - `git rev-parse --show-toplevel` prints the `nomici-orchestrator` directory.
+- The root directory basename check passes.
 - `git status --short` is clean before publication.
 - `git remote -v` points only to `NomiciAI/nomici-orchestrator` once configured.
 - `git ls-files` contains only intended open-source files.
 
-Never run publication commands from:
-
-```text
-/Users/stephen/Documents/nomici/code
-/Users/stephen/Documents/nomici
-```
+Never run publication commands from a parent workspace or any directory that contains sibling Nomici product repositories.
 
 ## Secret Checks
 
@@ -98,7 +94,6 @@ Do not publish:
 Create the private repository from the correct root:
 
 ```bash
-cd /Users/stephen/Documents/nomici/code/nomici-orchestrator
 gh repo create NomiciAI/nomici-orchestrator \
   --private \
   --source . \
@@ -128,7 +123,7 @@ Configure:
 
 ## Install Script Review
 
-Current private bootstrap installer:
+Current alpha bootstrap installer:
 
 ```bash
 scripts/install.sh --from-source .
@@ -139,7 +134,7 @@ Before quiet public, verify:
 - It does not use `sudo` by default.
 - It installs to `~/.local/bin/nomici` by default.
 - It supports `--install-dir`.
-- It supports `--version`.
+- It supports `--version <version>` for release selection.
 - It supports `--uninstall`.
 - It backs up an existing binary before replacement.
 - It does not read or upload user configuration or secrets.
@@ -148,7 +143,7 @@ Before quiet public, verify:
 
 ## Bootstrap Mode
 
-During private bootstrap, `main` may allow direct maintainer pushes so the project can move quickly before there are external contributors.
+During alpha bootstrap, `main` may allow direct maintainer pushes so the project can move quickly before there are external contributors.
 
 Bootstrap mode may keep:
 
@@ -164,7 +159,7 @@ Bootstrap mode may temporarily disable:
 - Required CODEOWNERS reviews.
 - Admin enforcement.
 
-Current private bootstrap verification commands:
+Current alpha bootstrap verification commands:
 
 ```bash
 gh api orgs/NomiciAI/teams --jq '.[].slug'
@@ -174,7 +169,7 @@ gh api repos/NomiciAI/nomici-orchestrator/actions/permissions/workflow --jq .
 gh api repos/NomiciAI/nomici-orchestrator/vulnerability-alerts --method GET --include
 ```
 
-Expected private bootstrap state:
+Expected alpha bootstrap state:
 
 - `maintainers` exists as a real team in `NomiciAI`.
 - `main` disallows force-pushes.
