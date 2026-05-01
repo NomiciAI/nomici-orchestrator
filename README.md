@@ -91,6 +91,7 @@ Current design documents:
 - [RFC 0005: Technology Stack Decision](docs/rfcs/0005-technology-stack.md)
 - [RFC 0006: Control Plane Architecture](docs/rfcs/0006-control-plane-architecture.md)
 - [RFC 0007: AgentGraph IR and Adapter Contract](docs/rfcs/0007-agentgraph-ir-adapter-contract.md)
+- [RFC 0008: First-Run Experience, Provider Setup, and Packs](docs/rfcs/0008-first-run-provider-setup-and-packs.md)
 
 ## Security Defaults
 
