@@ -10,6 +10,8 @@ The project follows semantic versioning once the first public release is cut.
 
 - Initial RFCs for product scope, architecture, AgentSpec v0.1, security model, and technology stack.
 - Initial open-source project foundation files.
+- Authoritative architecture summary and development plan.
+- RFC index summarizing current design documents.
 
 ### Changed
 

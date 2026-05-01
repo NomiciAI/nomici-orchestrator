@@ -1,37 +1,44 @@
 # Nomici Orchestrator
 
-Open-source control plane for local and remote AI agents.
+Open-source control plane and designer for local and remote AI agents.
 
-Nomici Orchestrator is a local-first agent control plane for running, registering, connecting, observing, and governing agent runtimes such as Hermes, OpenClaw, local model servers, MCP tools, and A2A-compatible remote agents.
+Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: design and RFC phase. The commands below describe the intended v0.1 user experience and are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. A minimal CLI/Gateway scaffold exists, but the first-run user experience described below is not implemented yet.
 
 ## Why Nomici
 
-Modern agents are becoming powerful but fragmented. A developer may have a Hermes coder, an OpenClaw operator, an Ollama model, a LangGraph workflow, several MCP tools, and multiple API keys spread across terminals, configs, ports, and dashboards.
+Modern agents are becoming powerful but fragmented. A developer may have a Hermes coder, an OpenClaw operator, an Ollama model, a LangGraph workflow, several MCP tools, office documents, and multiple API keys spread across terminals, configs, ports, and dashboards.
 
-Nomici aims to provide one local-first control plane for composing those pieces into manageable agent organizations.
+Nomici aims to provide one local-first control plane for composing those pieces into useful, inspectable, governed agent organizations.
 
 ## Intended Quickstart
 
 ```bash
 curl -fsSL https://nomici.ai/install.sh | bash
-nomici init --template ai-application-pm
+nomici doctor
+nomici model setup
+nomici pack install developer-team
 nomici up
 nomici gateway open
+nomici run product_pm "Plan and implement a small web app"
 ```
 
 The intended v0.1 flow:
 
-- Define an organization in `nomici.yaml`.
+- Check the local machine with `nomici doctor`.
+- Configure an LLM provider without writing raw secrets to `nomici.yaml`.
+- Install a useful agent pack.
+- Review requested permissions.
 - Start Nomici Gateway on `http://127.0.0.1:8787`.
 - Start configured local runtimes.
-- Open Nomici Console.
-- Run an agent.
-- Inspect traces, logs, approvals, and policy decisions.
+- Run a real task.
+- Inspect traces, logs, approvals, artifacts, and policy decisions.
 
 ## What Nomici Will Do
 
+- Guided LLM provider setup
+- First-run useful agent packs
 - Visual agent canvas
 - Local runtime manager
 - AgentSpec YAML
@@ -41,6 +48,7 @@ The intended v0.1 flow:
 - A2A agent-to-agent integration
 - OpenAI-compatible model and agent endpoint
 - Hermes and OpenClaw adapters
+- Tool packs for local work such as office documents, developer workflows, research, and personal ops
 - Trace, replay, approval, policy, and audit logs
 
 ## What Nomici Is Not
@@ -57,7 +65,7 @@ Nomici should manage, connect, and govern strong runtimes rather than rebuild th
 
 ## Architecture Direction
 
-Nomici uses a Gateway-centered architecture:
+Nomici uses a Gateway-centered architecture. The current authoritative summary is [Architecture](docs/architecture.md).
 
 ```text
 Nomici Console
@@ -80,10 +88,13 @@ The planned stack is:
 - A single `nomici` binary for end users.
 - `make` commands as the contributor interface.
 
+The current development plan is [Development Plan](docs/development-plan.md).
+
 ## RFCs
 
 Current design documents:
 
+- [RFC Index](docs/rfcs/README.md)
 - [RFC 0001: Product Scope](docs/rfcs/0001-product-scope.md)
 - [RFC 0002: Architecture](docs/rfcs/0002-architecture.md)
 - [RFC 0003: AgentSpec v0.1](docs/rfcs/0003-agentspec-v0.1.md)

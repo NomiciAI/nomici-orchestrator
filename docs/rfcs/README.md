@@ -1,0 +1,40 @@
+# RFC Index
+
+RFCs are design history. They capture reasoning, alternatives, and draft decisions.
+
+Current authoritative summaries live in:
+
+- `docs/architecture.md`
+- `docs/development-plan.md`
+- `ROADMAP.md`
+
+## RFCs
+
+| RFC | Title | Status | Purpose |
+| --- | --- | --- | --- |
+| 0001 | Product Scope | Draft | Defines product positioning, v0.1 scope, users, goals, and non-goals. |
+| 0002 | Architecture | Draft | Defines the initial Gateway-centered architecture. |
+| 0003 | AgentSpec v0.1 | Draft | Defines the first version of `nomici.yaml`. |
+| 0004 | Security Model | Draft | Defines local-first security defaults, trust zones, approvals, and audit. |
+| 0005 | Technology Stack Decision | Draft | Selects Go core, TypeScript Console, pnpm workspace, and Makefile commands. |
+| 0006 | Control Plane Architecture | Draft | Defines Nomici as a control plane/designer, not a multi-agent framework. |
+| 0007 | AgentGraph IR and Adapter Contract | Draft | Defines IR, adapter contract, reconciler state, trace schema, and eval hooks. |
+| 0008 | First-Run Experience, Provider Setup, and Packs | Draft | Defines provider setup, packs, first-run flow, and extension model. |
+| 0009 | Application and Engineering Architecture | Draft | Consolidates product modules, engineering modules, storage, API, and phases. |
+
+## Current Decisions
+
+The current implementation direction is:
+
+- Nomici is a local-first Agent Control Plane and Designer.
+- Core manages Tool Packs instead of bundling heavy Office/Browser runtimes.
+- AgentGraph IR is internal in v0.1.
+- Agent is the atomic extension unit.
+- Pack is the distribution and composition unit.
+- Provider setup is a v0.1 core feature.
+- Gateway is the only control plane.
+- Run Engine is lightweight; durable execution belongs to data-plane runtimes.
+- Side-effecting tools go through Policy, Approval, and Trace.
+- SQLite is default; Postgres is later.
+- v0.1 does not include remote/team/multi-user mode.
+- v0.1 targets first-run useful, not full autonomy.

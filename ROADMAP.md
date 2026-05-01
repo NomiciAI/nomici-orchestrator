@@ -6,15 +6,24 @@ This roadmap describes intended direction. It is not a release promise.
 
 Goal:
 
-Prove the local-first control-plane loop from `nomici.yaml` to Gateway, Console, runtime registry, agent run, traces, approvals, and logs.
+Prove the local-first control-plane loop from provider setup and pack install to Gateway, runtime registry, first run, traces, approvals, and artifacts.
 
 Planned:
 
 - `nomici` CLI
 - Nomici Gateway
 - Basic Nomici Console
+- First-run setup flow
+- Provider catalog
+- Provider setup wizard
+- Generic OpenAI-compatible provider
+- Ollama provider setup
+- Model test prompt
 - AgentSpec v0.1
 - JSON Schema validation
+- Pack manifest schema
+- `ai-application-pm` pack
+- `developer-team` pack scaffold
 - Model registry
 - Runtime registry
 - Local process runner
@@ -24,9 +33,22 @@ Planned:
 - Ollama and vLLM through provider or OpenAI-compatible configuration
 - SQLite trace store
 - Approval queue
+- Artifact metadata
 - Conservative default policy
 - Demo templates
 - Install script
+
+Implementation phases:
+
+- Phase 0: Foundation
+- Phase 1: Provider Setup
+- Phase 2: Packs and AgentGraph
+- Phase 3: Runtime and Adapters
+- Phase 4: Runs, Trace, Approval, Artifacts
+- Phase 5: Console MVP
+- Phase 6: Pre-Public Hardening
+
+See `docs/development-plan.md`.
 
 ## v0.2: Protocol-First Orchestration
 
@@ -78,6 +100,11 @@ Planned:
 
 - Model training
 - Cloud-first hosted control plane
+- Remote/team/multi-user mode in v0.1
 - Full deterministic re-execution of external LLM runs
 - Public internet Gateway exposure by default
 - Running arbitrary untrusted code as a hard security boundary
+- Full Office pack
+- Browser automation pack
+- Remote pack registry
+- Signed pack distribution
