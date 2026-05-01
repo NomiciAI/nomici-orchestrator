@@ -126,6 +126,26 @@ Configure:
 - Ensure `.github/workflows/ci.yml` passes on `main`.
 - Ensure `CODEOWNERS` references an existing GitHub team.
 
+## Install Script Review
+
+Current private bootstrap installer:
+
+```bash
+scripts/install.sh --from-source .
+```
+
+Before quiet public, verify:
+
+- It does not use `sudo` by default.
+- It installs to `~/.local/bin/nomici` by default.
+- It supports `--install-dir`.
+- It supports `--version`.
+- It supports `--uninstall`.
+- It backs up an existing binary before replacement.
+- It does not read or upload user configuration or secrets.
+- Release download mode verifies `checksums.txt` unless `--skip-checksum` is explicitly passed.
+- Hosted `curl` install instructions are not advertised as live until release artifacts and the install endpoint exist.
+
 ## Bootstrap Mode
 
 During private bootstrap, `main` may allow direct maintainer pushes so the project can move quickly before there are external contributors.

@@ -40,7 +40,7 @@ jobs:
 
       - name: Secret pattern scan
         run: |
-          if grep -R --exclude-dir=dist --exclude-dir=node_modules -n -E '(sk-[A-Za-z0-9]{10,}|api_key:\s|password:\s|secret:\s|BEGIN (RSA|OPENSSH|PRIVATE) KEY|Authorization: Bearer [A-Za-z0-9]{10,})' README.md CHANGELOG.md docs .github SECURITY.md internal cmd apps packages 2>/dev/null; then
+          if grep -R --exclude-dir=dist --exclude-dir=node_modules -n -E '(sk-[A-Za-z0-9]{10,}|api_key:\s|password:\s|secret:\s|BEGIN (RSA|OPENSSH|PRIVATE) KEY|Authorization: Bearer [A-Za-z0-9]{10,})' README.md CHANGELOG.md docs .github SECURITY.md internal cmd apps packages scripts 2>/dev/null; then
             echo "Potential secret-like content found. Review and redact before merging."
             exit 1
           fi

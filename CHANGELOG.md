@@ -36,6 +36,7 @@ The project follows semantic versioning once the first public release is cut.
 - Default Gateway bearer-token auth for non-health API endpoints, with local token file creation, CLI token forwarding, Console token entry, and `gateway token show/rotate`.
 - Minimal local lifecycle commands: `up`, `down`, `ps`, and `logs` for Gateway and `local_process` runtimes.
 - Top-level `doctor` and Gateway `start`, `stop`, `status`, `logs`, and `open` commands.
+- `scripts/install.sh` with no-sudo defaults, source install, future release download, checksum verification, backup, custom install dir, version selection, and uninstall.
 
 ### Changed
 

@@ -24,13 +24,14 @@ nomici gateway open
 nomici run product_pm "Plan and implement a small web app"
 ```
 
-The install script itself is still planned; the CLI commands shown after installation are implemented in the private bootstrap.
+The hosted `curl` install endpoint and release artifacts are still planned. During private bootstrap, install from a local checkout with `scripts/install.sh --from-source .`; the CLI commands shown after installation are implemented.
 
 ## Implemented Bootstrap Commands
 
 The current private bootstrap can run this narrower proof slice:
 
 ```bash
+scripts/install.sh --from-source .
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
