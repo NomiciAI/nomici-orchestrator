@@ -4,6 +4,8 @@ This is the current authoritative development plan for the private bootstrap pha
 
 The plan is intentionally staged. Nomici should prove one useful vertical slice before expanding protocol depth, framework adapters, team mode, or marketplace features.
 
+Implementation-oriented design notes live in `docs/design/`.
+
 ## Current Phase
 
 Status:

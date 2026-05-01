@@ -90,6 +90,8 @@ The planned stack is:
 
 The current development plan is [Development Plan](docs/development-plan.md).
 
+Implementation design notes live in [Design Deep Dives](docs/design/README.md).
+
 ## RFCs
 
 Current design documents:

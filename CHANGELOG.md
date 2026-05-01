@@ -12,6 +12,7 @@ The project follows semantic versioning once the first public release is cut.
 - Initial open-source project foundation files.
 - Authoritative architecture summary and development plan.
 - RFC index summarizing current design documents.
+- Implementation-oriented design deep dives for provider setup, packs, graph compilation, Gateway API, runtime reconciliation, runs/traces, policy/tool brokering, and storage.
 
 ### Changed
 

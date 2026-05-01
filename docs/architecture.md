@@ -4,6 +4,8 @@ This document is the current authoritative architecture summary for Nomici Orche
 
 RFCs remain the decision history. This document summarizes the current direction that implementation should follow.
 
+Implementation-oriented details live in `docs/design/`.
+
 ## Product Architecture
 
 Nomici Orchestrator is a local-first Agent Control Plane and Designer.
