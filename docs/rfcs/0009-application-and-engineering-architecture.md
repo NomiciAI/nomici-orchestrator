@@ -26,7 +26,7 @@ Users should be able to configure an LLM provider, install a pack, and run a rea
 
 Control-plane first:
 
-Nomici owns registry, graph, lifecycle, policy, approval, traces, eval hooks, artifacts, and deployment state. Specialized runtimes own their execution engines.
+Nomici owns registry, graph, lifecycle, policy, approval, shared context, traces, eval hooks, artifacts, and deployment state. Specialized runtimes own their execution engines and agent-native memory.
 
 Packs over built-in bloat:
 
@@ -81,6 +81,7 @@ Nomici Gateway
   Approval Queue
   Run Engine
   Task Ledger
+  Shared Context
   Trace Store
   Artifact Store
   Secrets Resolver
@@ -180,6 +181,7 @@ Nomici does not own:
 - provider model execution
 - durable workflow engines
 - framework-native agent loops
+- agent-native memory
 - local office document engines
 - browser automation engines
 - arbitrary sandboxing for malicious code
@@ -406,6 +408,20 @@ The run engine should remain thin. It coordinates control-plane execution; it do
 
 `gateway_agent` is the v0.1 name for the minimal Gateway-run coordinator loop. `native_agent` is not a public v0.1 kind. The first compelling developer proof may use external `cli_agent` runtimes before the Gateway agent loop is featureful.
 
+### Shared Context
+
+Responsibilities:
+
+- project context
+- run context
+- handoff briefings
+- context snapshots
+- open issues
+- user feedback
+- artifact summaries
+
+Shared Context is not a replacement for Hermes/OpenClaw memory, coding-agent sessions, LangGraph state, or framework-native memory. It is a control-plane bridge that gives downstream agents useful briefing context without requiring raw memory dumps.
+
 ### Task Ledger
 
 Responsibilities:
@@ -479,6 +495,7 @@ internal/
   approvals/
   tools/
   runs/
+  context/
   trace/
   artifacts/
   secrets/
@@ -608,6 +625,16 @@ Owns:
 - task ledger
 - cancellation
 
+### `internal/context`
+
+Owns:
+
+- shared context items
+- handoff context snapshots
+- task briefings
+- context redaction
+- promotion from trace/artifacts into Shared Context
+
 ### `internal/trace`
 
 Owns:
@@ -683,6 +710,7 @@ Gateway APIs should be grouped by product module:
 /api/tools
 /api/runs
 /api/tasks
+/api/context
 /api/traces
 /api/approvals
 /api/artifacts
@@ -722,6 +750,8 @@ Suggested SQLite tables:
 - `runtime_observed_state`
 - `runs`
 - `tasks`
+- `context_items`
+- `context_snapshots`
 - `trace_events`
 - `approvals`
 - `artifacts`
@@ -736,6 +766,7 @@ project/
     state.db
     runs/
     artifacts/
+    context/
     logs/
 ```
 
@@ -798,6 +829,13 @@ Before the full product slice, implementation should prove:
 - secret redaction
 - health/status visibility
 
+The developer proof slice should also prove:
+
+- `cli_agent` external invocation
+- workspace diff capture
+- handoff context snapshot
+- approval gate before publish actions
+
 This proof slice should not require packs, full graph canvas editing, A2A sidecars, or MCP proxying.
 
 Phase 0: Foundation
@@ -839,6 +877,8 @@ Phase 3: Runtime and Adapters
 Phase 4: Runs, Trace, Approval
 
 - run engine
+- shared context
+- handoff context snapshots
 - trace event store
 - approval queue
 - trace export

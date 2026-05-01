@@ -62,6 +62,17 @@ Task statuses:
 - `failed`
 - `cancelled`
 
+Task records should link to shared context:
+
+- input briefing
+- handoff context snapshots
+- open issues
+- artifacts
+- approvals
+- eval feedback
+
+The task ledger gives long-running autonomy structure without claiming deterministic durable execution.
+
 ## Trace Event Schema
 
 ```json
@@ -113,6 +124,9 @@ Rules:
 - `approval.granted`
 - `approval.denied`
 - `artifact.created`
+- `context.item.created`
+- `context.snapshot.created`
+- `handoff.context_attached`
 - `eval.scored`
 
 ## Timeline Replay
@@ -121,6 +135,7 @@ v0.1 replay means:
 
 - show ordered event timeline
 - show agent/model/tool transitions
+- show context snapshots and handoff briefings
 - show approvals
 - show artifacts
 - show errors
@@ -162,3 +177,4 @@ nomici task show <task_id>
 - redaction
 - cancellation
 - approval wait/resume
+- context snapshot creation

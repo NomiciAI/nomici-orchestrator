@@ -149,6 +149,14 @@ Edge categories:
 
 v0.1 does not need to execute every edge category. It should still be able to validate, render, and preserve them.
 
+Memory semantics:
+
+- Runtime-native memory belongs to the runtime.
+- Nomici should not replace Hermes/OpenClaw memory, coding-agent sessions, LangGraph state, or framework-native memory.
+- Nomici owns Shared Context: project decisions, run summaries, handoff briefings, open issues, artifacts, and user feedback.
+- `memory` nodes and `reads_memory` / `writes_memory` edges may represent external runtime memory, Nomici Shared Context, or a handoff context bridge.
+- v0.1 should implement Shared Context summaries and handoff snapshots before attempting any deeper memory integration.
+
 ### Desired State and Observed State
 
 Nomici should use a control-plane model:
@@ -500,6 +508,7 @@ v0.1 should implement:
 - Gateway-centered control plane.
 - AgentSpec loading and validation.
 - Minimal AgentGraph IR representation driven by implemented adapters.
+- Shared Context summaries and handoff snapshots.
 - Model, runtime, and agent registries.
 - Local process runtime manager.
 - Basic reconciler for configured local runtimes.

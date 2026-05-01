@@ -132,6 +132,7 @@ Core REST API:
 - `/api/tools`
 - `/api/graphs`
 - `/api/runs`
+- `/api/context`
 - `/api/traces`
 - `/api/approvals`
 - `/api/policies`

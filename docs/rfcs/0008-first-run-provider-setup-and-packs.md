@@ -553,6 +553,8 @@ Agents:
 - Citation Checker
 - Memory Writer
 
+`Memory Writer` means writing to Nomici Shared Context or to a configured external memory system through an adapter. It does not imply Nomici owns every runtime's internal memory.
+
 Use cases:
 
 - research a topic
@@ -605,6 +607,8 @@ Core concepts:
 - assignment
 - checkpoint
 - artifact
+- shared context
+- handoff briefing
 - approval
 - trace
 - resume
@@ -635,6 +639,13 @@ Nomici should not implement a full durable workflow engine immediately. For dura
 - specialized coding-agent orchestrators
 
 Nomici's value is to make these visible, governable, resumable, and auditable.
+
+Shared context for long-running tasks:
+
+- upstream agents emit context snapshots at handoff boundaries
+- downstream agents receive task briefings, artifact summaries, and open issues
+- project decisions and user feedback can be promoted into project context
+- runtime-native memory stays inside each runtime
 
 ## Pack Install Flow
 
@@ -737,6 +748,7 @@ v0.1 should implement:
 - Built-in `ai-application-pm` pack.
 - Built-in `developer-team` pack scaffold.
 - Generic CLI Agent Runner profile for developer-team runtimes.
+- Handoff context snapshots for developer-team runs.
 - Pack permission review in CLI, even if simple.
 
 v0.1 may defer:

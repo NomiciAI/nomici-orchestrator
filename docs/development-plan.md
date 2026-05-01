@@ -33,7 +33,7 @@ provider setup -> pack install -> Gateway -> runtime/agent registry
   -> first run -> trace -> approval/artifact review
 ```
 
-v0.1 is not a full autonomous agent platform. It is a local-first control plane that can run useful starter packs.
+v0.1 is not a full autonomous agent platform. It is a local-first control plane that can run useful starter packs and prove safe partial autonomy.
 
 ## Proof Slice
 
@@ -80,6 +80,7 @@ Product delivery:
 - AgentGraph compile/validate
 - basic runtime observed state
 - generic CLI agent runner
+- shared context items and handoff snapshots
 - run records and trace timeline
 - approval record model
 - first useful official bundled pack
@@ -94,6 +95,7 @@ Degradable delivery:
 - A2A sidecars
 - Office/browser packs
 - signed remote pack distribution
+- advanced cross-session learning
 
 ## Phase 0: Foundation
 
@@ -224,6 +226,8 @@ Goals:
 
 - lightweight run engine
 - task ledger
+- shared context items
+- handoff context snapshots
 - append-only trace events
 - approval queue
 - artifact metadata
@@ -244,6 +248,7 @@ nomici approvals deny <approval_id>
 Exit criteria:
 
 - Run creates structured trace events.
+- Handoffs can attach a context snapshot without exposing agent-native memory.
 - Side-effecting tool requests can require approval.
 - Approval decisions are audited.
 - Artifacts are stored under workspace `.nomici/`.

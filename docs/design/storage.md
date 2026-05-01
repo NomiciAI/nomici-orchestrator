@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Nomici needs local-first persistent state for profiles, provider profiles, graph snapshots, runtime observations, runs, traces, approvals, artifacts, and eval results.
+Nomici needs local-first persistent state for profiles, provider profiles, graph snapshots, runtime observations, runs, tasks, shared context, traces, approvals, artifacts, and eval results.
 
 SQLite is the default v0.1 store.
 
@@ -17,6 +17,7 @@ project/
     state.db
     runs/
     artifacts/
+    context/
     logs/
 ```
 
@@ -50,6 +51,8 @@ runtime_desired_state
 runtime_observed_state
 runs
 tasks
+context_items
+context_snapshots
 trace_events
 approvals
 artifacts
@@ -96,6 +99,34 @@ runtime_id
 payload_json
 redactions_json
 metadata_json
+```
+
+`context_items`:
+
+```text
+context_id
+scope
+kind
+title
+body
+source_json
+confidence
+sensitivity
+status
+created_at
+updated_at
+```
+
+`context_snapshots`:
+
+```text
+snapshot_id
+run_id
+from_agent
+to_agent
+summary
+payload_json
+created_at
 ```
 
 `approvals`:
@@ -174,5 +205,6 @@ Design requirements:
 - migration idempotency
 - trace insert ordering
 - JSONL export redaction
+- shared context redaction
 - workspace/global path separation
 - corrupt DB startup error

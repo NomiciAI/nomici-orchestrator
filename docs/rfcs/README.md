@@ -36,9 +36,10 @@ The current implementation direction is:
 - Gateway is the only control plane.
 - Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces are high-priority data-plane runtimes through a generic CLI Agent Runner.
 - Run Engine is lightweight; durable execution belongs to data-plane runtimes.
+- Agent-native memory belongs to runtimes; Nomici provides Shared Context for cross-agent handoff and long-running task continuity.
 - Side-effecting tools go through Policy, Approval, and Trace.
 - Official pack trust requires a bundled pack or compiled official index until signatures exist.
 - Console setup requires a Gateway process; CLI-first setup is the hard path unless bootstrap Gateway mode lands.
 - SQLite is default; Postgres is later.
 - v0.1 does not include remote/team/multi-user mode.
-- v0.1 targets first-run useful, not full autonomy.
+- v0.1 targets first-run useful and safe partial autonomy, not unsupervised full autonomy.

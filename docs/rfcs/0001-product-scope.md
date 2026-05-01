@@ -59,6 +59,7 @@ v0.1 must support these product goals:
 - Start Nomici Gateway and local runtimes with `nomici up`.
 - Register models, agents, runtimes, MCP tools, and graph edges.
 - Run native or external agents through a common interface.
+- Carry shared context across handoffs without replacing agent-native memory.
 - Manage local process runtimes with PID, port, health, and logs.
 - Connect to OpenAI-compatible endpoints, including local model servers and external agent gateways.
 - Provide a Web Console with dashboard, canvas, runtimes, models, agents, runs, traces, approvals, and settings.
@@ -105,6 +106,7 @@ Included:
 - OpenClaw endpoint adapter
 - Ollama and vLLM through OpenAI-compatible or provider-specific configuration
 - SQLite trace store with WAL
+- Shared Context Layer for project/run context and handoff snapshots
 - Approval queue
 - Policy defaults for high-risk tools
 - 3 demo templates:

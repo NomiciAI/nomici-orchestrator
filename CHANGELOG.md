@@ -15,6 +15,7 @@ The project follows semantic versioning once the first public release is cut.
 - Implementation-oriented design deep dives for provider setup, packs, graph compilation, Gateway API, runtime reconciliation, runs/traces, policy/tool brokering, and storage.
 - v0.1 boundary clarifications for `gateway_agent`, scoped delivery tiers, IR convergence, Gateway health responses, pack trust roots, and Console bootstrap.
 - Generic CLI agent runtime strategy for Claude Code, Codex, opencode, Aider, custom commands, editor-native agents with automation surfaces, and developer-team pack integration.
+- Shared Context Layer strategy for agent-native memory boundaries, handoff briefings, and safe long-running autonomy.
 
 ### Changed
 

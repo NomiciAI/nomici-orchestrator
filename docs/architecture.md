@@ -36,12 +36,13 @@ Nomici should serve two audiences:
 - Provider setup is a v0.1 core feature.
 - Gateway is the only control plane. CLI and Console should go through Gateway APIs once Gateway is running.
 - Run Engine stays lightweight. Durable execution belongs to external runtimes.
+- Nomici does not replace agent-native memory. It provides a Shared Context Layer for cross-agent handoff, project decisions, run summaries, and long-running task context.
 - Side-effecting tools go through Policy, Approval, and Trace when Nomici mediates execution.
 - Pack `official` trust in v0.1 requires a bundled pack or compiled official index. Local manifest claims are not authoritative.
 - Console setup requires a running Gateway. v0.1 can use CLI-first setup or a bootstrap `gateway run --setup` mode.
 - SQLite is the default local store. Postgres is later.
 - v0.1 does not include remote/team/multi-user mode.
-- v0.1 targets first-run useful, not full autonomy.
+- v0.1 targets first-run useful and safe partial autonomy, not unsupervised full autonomy.
 
 ## Application Modules
 
@@ -79,6 +80,7 @@ Policy Engine
 Approval Queue
 Run Engine
 Task Ledger
+Shared Context
 Trace Store
 Artifact Store
 Secrets Resolver
@@ -223,6 +225,7 @@ Nomici does not own:
 - model execution
 - durable workflow engines
 - framework-native agent loops
+- agent-native memory inside runtimes
 - local office document engines
 - browser automation engines
 - hard sandboxing for malicious local code
@@ -230,6 +233,10 @@ Nomici does not own:
 Gateway Agent boundary:
 
 Nomici may run a minimal `gateway_agent` loop for first-run coordination. That loop may call a model, request handoffs, call agent-as-tool adapters, and request Nomici-mediated tools. It is not durable execution and should not grow into a full framework runtime.
+
+Shared Context boundary:
+
+Hermes, OpenClaw, Claude Code, Codex, opencode, Aider, LangGraph, and similar runtimes own their own memory and sessions. Nomici owns cross-agent context: project decisions, run summaries, handoff briefings, artifacts, open issues, and user feedback that should travel between agents.
 
 CLI Agent boundary:
 
@@ -255,6 +262,7 @@ internal/policy
 internal/approvals
 internal/tools
 internal/runs
+internal/context
 internal/trace
 internal/artifacts
 internal/secrets
@@ -297,6 +305,7 @@ Gateway API groups:
 /api/tools
 /api/runs
 /api/tasks
+/api/context
 /api/traces
 /api/approvals
 /api/artifacts
@@ -336,6 +345,8 @@ Suggested tables:
 - `runtime_observed_state`
 - `runs`
 - `tasks`
+- `context_items`
+- `context_snapshots`
 - `trace_events`
 - `approvals`
 - `artifacts`

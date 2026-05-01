@@ -45,6 +45,49 @@ Risk values:
 - `high`
 - `critical`
 
+## Autonomy Tiers
+
+Policy should enable long-running autonomy by distinguishing low-risk work from publish/deploy actions.
+
+Low risk:
+
+- read files inside workspace
+- inspect repo state
+- run tests
+- generate local diffs
+- summarize artifacts
+
+Default: allow and trace.
+
+Medium risk:
+
+- write files inside approved workspace
+- run known local commands
+- call known APIs
+- use trusted MCP tools
+
+Default: allow within scoped policy or ask once per run/session.
+
+High risk:
+
+- git push
+- PR creation
+- deploy
+- write outside workspace
+- unknown network host
+- email/calendar mutation
+
+Default: approval.
+
+Critical risk:
+
+- raw secret export
+- permission bypass flags
+- destructive system paths
+- public remote access enablement
+
+Default: deny unless explicitly configured.
+
 ## Risk Classification
 
 Default approval:

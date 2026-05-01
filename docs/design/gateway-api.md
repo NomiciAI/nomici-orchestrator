@@ -80,6 +80,7 @@ Auth errors:
 /api/tools
 /api/runs
 /api/tasks
+/api/context
 /api/traces
 /api/approvals
 /api/artifacts

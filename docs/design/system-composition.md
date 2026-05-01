@@ -38,6 +38,7 @@ Execution Plane
 
 Evidence Plane
   traces
+  shared context
   logs
   approvals
   artifacts
@@ -53,6 +54,7 @@ Rules:
 - The Execution Plane performs model calls, agent loops, and tool actions.
 - The Evidence Plane records what happened and supports review, replay, export, and eval.
 - A minimal `gateway_agent` loop may exist in the Control Plane for first-run coordination, but advanced agent execution belongs in the Execution Plane.
+- Agent-native memory belongs to runtimes; Shared Context belongs to Nomici.
 
 ## Dependency Direction
 
@@ -90,6 +92,7 @@ Run Engine
   -> adapters
   -> tool broker
   -> task ledger
+  -> shared context
   -> trace store
 
 Tool Broker
@@ -184,6 +187,10 @@ Trace Store is the evidence layer.
 
 It gives the project replay, audit, debug bundles, eval hooks, and user trust without requiring deterministic re-execution in v0.1.
 
+Shared Context is the team coordination layer.
+
+It carries project context, run context, handoff briefings, open issues, and user feedback between agents. It does not replace Hermes/OpenClaw memory, Claude Code sessions, LangGraph state, or framework-native memory.
+
 SQLite is the right local default.
 
 It matches local-first installation, simple backup, low operational burden, and future Postgres migration through service boundaries.
@@ -197,6 +204,7 @@ Nomici should borrow patterns without cloning any one project.
 | Gemini Enterprise Agent Designer | Visual designer, root agent, subagents, tools, preview, governance | Product shape: open local control plane and designer |
 | Agent Squad | Supervisor/routing and agent-as-tools patterns | Adapter/runtime inspiration, not the whole product |
 | LangGraph | Durable, stateful, long-running workflows | External runtime backend for workflows needing durability |
+| Hermes / OpenClaw memory | Runtime-native user/project learning | Keep inside runtime; bridge through context summaries |
 | CrewAI | Role-based teams and task collaboration | Pack templates for role/team agent setups |
 | OpenAI Agents SDK | Handoffs, agents-as-tools, guardrails, sessions, tracing | Coordination semantics and adapter concepts |
 | CLI-capable agents | Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces | Generic data-plane runtime class for developer-team packs |
@@ -254,7 +262,9 @@ The following should remain true through v0.1:
 - Pack install always has a permission review.
 - Side-effecting tools pass through Policy and Approval.
 - Every run produces trace events.
+- Handoffs can carry context snapshots.
 - Every graph execution uses an immutable graph snapshot.
+- Shared Context does not store raw secrets or private runtime memory dumps.
 - Runtime desired state and observed state are separate.
 - AgentGraph IR is internal.
 - Durable workflow execution is delegated to external runtimes.

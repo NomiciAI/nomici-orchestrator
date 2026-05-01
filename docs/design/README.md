@@ -8,6 +8,7 @@ Current deep dives:
 
 - [System Composition](system-composition.md)
 - [v0.1 Boundaries](v0.1-boundaries.md)
+- [Shared Context and Autonomy](shared-context-autonomy.md)
 - [CLI Agent Runtimes](cli-agent-runtimes.md)
 - [Provider Setup](provider-setup.md)
 - [Pack System](packs.md)
@@ -47,5 +48,7 @@ Design rules:
 The composition rationale is documented in [System Composition](system-composition.md).
 
 Scope and naming clarifications are documented in [v0.1 Boundaries](v0.1-boundaries.md).
+
+Agent-native memory, shared context bridging, and long-running autonomy are covered in [Shared Context and Autonomy](shared-context-autonomy.md).
 
 Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces are covered in [CLI Agent Runtimes](cli-agent-runtimes.md).

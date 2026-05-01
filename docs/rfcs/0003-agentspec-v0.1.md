@@ -459,6 +459,12 @@ Modes:
 - `memory_read`
 - `memory_write`
 
+Memory edge rules:
+
+- `memory_read` and `memory_write` may refer to Nomici Shared Context, external memory systems, or runtime-native memory declarations.
+- They do not imply Nomici owns agent-native memory.
+- v0.1 should execute only Shared Context handoff/read/write operations that Gateway explicitly supports.
+
 Example:
 
 ```yaml

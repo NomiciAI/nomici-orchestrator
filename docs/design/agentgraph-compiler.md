@@ -112,6 +112,13 @@ Governance:
 
 A2A should be used when crossing runtime, server, vendor, or remote-agent boundaries.
 
+Memory edge semantics:
+
+- `reads_memory` may mean reading Nomici Shared Context or declaring that a runtime has its own memory.
+- `writes_memory` may mean promoting a trace/artifact summary into Shared Context.
+- These edges do not imply Nomici owns agent-native memory.
+- v0.1 should preserve and render memory edges even when only handoff context snapshots are executable.
+
 ## Graph Snapshot
 
 Snapshot:

@@ -39,6 +39,7 @@ The intended v0.1 flow:
 
 - Guided LLM provider setup
 - First-run useful agent packs
+- Shared context and handoff briefings across agents
 - Visual agent canvas
 - Local runtime manager
 - AgentSpec YAML

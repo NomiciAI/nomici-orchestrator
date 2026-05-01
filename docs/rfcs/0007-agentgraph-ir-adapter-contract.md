@@ -422,6 +422,7 @@ v0.1 adapter goals:
 - Support a generic CLI Agent Runner for strong local agents.
 - Support local process observation where runtime manager starts the process.
 - Return structured capabilities and errors.
+- Carry shared context briefings without requiring runtime memory dumps.
 - Emit trace events through Gateway, not directly to storage.
 
 ## Adapter Interface
@@ -492,11 +493,26 @@ Rules:
     "stream": true,
     "timeout_ms": 120000
   },
+  "shared_context": {
+    "project": [],
+    "run": [],
+    "handoff": {
+      "snapshot_id": "ctxsnap_01H",
+      "summary": "Implementer created the auth middleware and left token rotation unresolved."
+    }
+  },
   "trace_context": {
     "parent_event_id": "evt_01H..."
   }
 }
 ```
+
+Shared context rules:
+
+- Shared context is a briefing, not a raw memory dump.
+- Runtimes keep their own agent-native memory and sessions.
+- Adapters may ignore unsupported context fields but should not leak secrets.
+- Gateway decides which context items are allowed into each request.
 
 ### InvokeResult
 
@@ -510,6 +526,12 @@ Rules:
     "input_tokens": 100,
     "output_tokens": 200,
     "cost_usd": null
+  },
+  "context_snapshot": {
+    "summary": "Completed scaffold implementation and found one follow-up test gap.",
+    "open_issues": [],
+    "decisions": [],
+    "artifacts": []
   },
   "artifacts": [],
   "raw_ref": null
@@ -764,6 +786,13 @@ Adapter:
 - `adapter.completed`
 - `adapter.failed`
 - `adapter.cancelled`
+
+Shared context:
+
+- `context.item.created`
+- `context.item.updated`
+- `context.snapshot.created`
+- `handoff.context_attached`
 
 Model:
 

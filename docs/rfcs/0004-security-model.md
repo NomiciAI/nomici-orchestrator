@@ -195,6 +195,19 @@ Policy decisions:
 - `deny`
 - `approval`
 
+Autonomy posture:
+
+Policy is not intended to make agents less capable. It is intended to make long-running autonomy safe enough to leave unattended.
+
+Default tiers:
+
+- low-risk actions are allowed and traced
+- medium-risk actions are allowed within scoped policy or approved once per run/session
+- high-risk actions require approval
+- critical-risk actions are denied unless explicitly configured
+
+This keeps routine work moving while preserving human gates for publish, deploy, destructive changes, unknown network access, and secret exposure.
+
 Approval scopes:
 
 - once
