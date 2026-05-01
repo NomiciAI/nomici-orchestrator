@@ -92,6 +92,7 @@ Current design documents:
 - [RFC 0006: Control Plane Architecture](docs/rfcs/0006-control-plane-architecture.md)
 - [RFC 0007: AgentGraph IR and Adapter Contract](docs/rfcs/0007-agentgraph-ir-adapter-contract.md)
 - [RFC 0008: First-Run Experience, Provider Setup, and Packs](docs/rfcs/0008-first-run-provider-setup-and-packs.md)
+- [RFC 0009: Application and Engineering Architecture](docs/rfcs/0009-application-and-engineering-architecture.md)
 
 ## Security Defaults
 
