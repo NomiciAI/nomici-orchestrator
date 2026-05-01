@@ -258,6 +258,23 @@ Pack types:
 - Template Pack
 - Eval Pack
 
+Extension granularity:
+
+- Agent Definition: one reusable agent as an atomic extension.
+- Agent Pack: a coordinated team of agents plus graph edges, tools, policies, examples, and tests.
+- Pack: the general distribution unit for agent packs, tool packs, provider packs, runtime adapter packs, template packs, and eval packs.
+
+Decision:
+
+> Agent is the atomic extension unit. Pack is the distribution and composition unit.
+
+Agent Pack graph edges should use the right coordination mode:
+
+- `delegates_to`, `handoff`, and `agent_as_tool` for internal graph coordination.
+- `a2a` for protocol-based interoperability across runtimes, servers, vendors, or remote agents.
+- `uses_tool` and `uses_mcp` for tool/data access.
+- `requires_approval` for human and policy gates.
+
 The pack manager should never silently execute untrusted install logic.
 
 ### AgentGraph Compiler

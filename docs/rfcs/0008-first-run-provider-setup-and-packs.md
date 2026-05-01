@@ -245,7 +245,78 @@ Unknown should be acceptable. Nomici should not pretend to know capabilities it 
 
 ## Packs
 
-Packs are the user-facing extension system.
+Packs are the user-facing distribution and composition system.
+
+Packs are not the only extension granularity. Nomici should support both atomic extensions and composition extensions.
+
+Core distinction:
+
+```text
+Agent Definition
+  A single agent as an atomic extension.
+
+Agent Pack
+  A coordinated group of agents, edges, tools, policies, examples, and tests.
+
+Pack
+  A general distribution unit for providers, tools, agents, runtimes, templates, and evals.
+```
+
+Decision:
+
+> Agent is the atomic extension unit. Pack is the distribution and composition unit. Agent Pack is a pack that installs a coordinated group of agents, edges, tools, and policies.
+
+Users and developers should be able to:
+
+- create one new agent
+- import one new agent
+- publish one reusable agent definition
+- install a multi-agent team pack
+- compose multiple packs into one project
+
+Single-agent example:
+
+```yaml
+agents:
+  legal_reviewer:
+    kind: native_agent
+    model: gpt
+    role: Review contracts and identify risks.
+```
+
+Multi-agent pack example:
+
+```text
+contract-review-team
+  root: legal_pm
+  agents:
+    - legal_reviewer
+    - risk_analyst
+    - redline_writer
+    - human_approval
+  edges:
+    - legal_pm -> legal_reviewer
+    - legal_pm -> risk_analyst
+    - redline_writer -> human_approval
+  tools:
+    - office.docx
+    - filesystem
+  policies:
+    - docx write requires approval
+```
+
+Agent-to-agent interaction inside an Agent Pack does not always mean A2A.
+
+Use edge kinds precisely:
+
+- `delegates_to` for internal delegation inside a Nomici graph
+- `handoff` when control moves from one agent to another
+- `agent_as_tool` when an agent is callable as a tool by another agent
+- `a2a` when crossing runtime, server, vendor, or remote-agent boundaries through the A2A protocol
+- `uses_tool` or `uses_mcp` for tools and MCP servers
+- `requires_approval` for human or policy gates
+
+Nomici should not label every agent-to-agent edge as A2A. A2A is the interoperability protocol for heterogeneous or remote agents, not the only internal coordination mode.
 
 Pack types:
 
