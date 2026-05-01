@@ -93,6 +93,8 @@ The planned stack is:
 
 The current development plan is [Development Plan](docs/development-plan.md).
 
+The current living implementation checklist is [v0.1 Implementation Plan](docs/implementation/v0.1-plan.md).
+
 Implementation design notes live in [Design Deep Dives](docs/design/README.md).
 
 ## RFCs

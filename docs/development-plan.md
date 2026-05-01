@@ -6,6 +6,8 @@ The plan is intentionally staged. Nomici should prove one useful vertical slice 
 
 Implementation-oriented design notes live in `docs/design/`.
 
+The detailed living execution checklist is `docs/implementation/v0.1-plan.md`. It uses implementation gates, which are finer-grained than this high-level roadmap.
+
 ## Current Phase
 
 Status:

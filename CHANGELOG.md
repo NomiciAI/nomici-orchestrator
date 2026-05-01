@@ -20,6 +20,7 @@ The project follows semantic versioning once the first public release is cut.
 - Gateway agent loop boundary as a single-run coordinator rather than a durable or self-directed agent runtime.
 - CLI Agent Runner process contract for prompt/briefing injection, stdout/stderr artifacts, diff capture, cancellation, and workspace locks.
 - v0.1 approval scope policy: `once` and `run` only, with session/global scopes deferred.
+- Living v0.1 implementation plan with implementation gates, exit commands, recording rules, and cut lines.
 
 ### Changed
 
