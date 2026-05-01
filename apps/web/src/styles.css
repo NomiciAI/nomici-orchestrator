@@ -165,6 +165,44 @@ h2 {
   background: #fff0f0;
 }
 
+.auth-banner {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 360px) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid #b9c8c5;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.auth-banner div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.auth-banner strong {
+  color: #223038;
+  font-size: 14px;
+}
+
+.auth-banner span {
+  color: #617175;
+  font-size: 13px;
+}
+
+.auth-banner input {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #b8c6c3;
+  border-radius: 6px;
+  color: #1d2930;
+  font: inherit;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(520px, 1.4fr) minmax(360px, 1fr);
@@ -358,6 +396,11 @@ h2 {
 
   .workspace {
     padding: 12px;
+  }
+
+  .auth-banner {
+    grid-template-columns: 1fr;
+    margin: 12px;
   }
 
   .canvas {

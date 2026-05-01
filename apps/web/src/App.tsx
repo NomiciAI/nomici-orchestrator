@@ -1,5 +1,5 @@
 import { Background, Controls, ReactFlow, type Edge, type Node } from '@xyflow/react';
-import { useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 
@@ -143,18 +143,29 @@ const emptyOverview: Overview = {
 };
 
 export function App() {
+  const [gatewayToken, setGatewayToken] = useState(() => window.localStorage.getItem('nomici.gateway.token') ?? '');
+  const [tokenInput, setTokenInput] = useState(gatewayToken);
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'auth'>('loading');
   const [error, setError] = useState('');
 
-  async function loadOverview() {
+  async function loadOverview(nextToken = gatewayToken) {
     setStatus('loading');
     setError('');
     try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (nextToken.trim() !== '') {
+        headers.Authorization = `Bearer ${nextToken.trim()}`;
+      }
       const response = await fetch('/api/console/overview', {
-        headers: { Accept: 'application/json' },
+        headers,
       });
+      if (response.status === 401) {
+        setStatus('auth');
+        setError('Gateway token required');
+        return;
+      }
       if (!response.ok) {
         throw new Error(`Gateway API returned ${response.status}`);
       }
@@ -171,6 +182,18 @@ export function App() {
   useEffect(() => {
     void loadOverview();
   }, []);
+
+  function submitToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextToken = tokenInput.trim();
+    if (nextToken === '') {
+      window.localStorage.removeItem('nomici.gateway.token');
+    } else {
+      window.localStorage.setItem('nomici.gateway.token', nextToken);
+    }
+    setGatewayToken(nextToken);
+    void loadOverview(nextToken);
+  }
 
   const flow = useMemo(() => buildFlow(overview.graph_snapshot), [overview.graph_snapshot]);
 
@@ -201,6 +224,25 @@ export function App() {
       </section>
 
       {status === 'failed' ? <div className="banner banner-error">{error}</div> : null}
+      {status === 'auth' ? (
+        <form className="auth-banner" onSubmit={submitToken}>
+          <div>
+            <strong>Gateway token required</strong>
+            <span>Run `nomici gateway token show` locally and paste the token here.</span>
+          </div>
+          <input
+            aria-label="Gateway token"
+            autoComplete="off"
+            onChange={(event) => setTokenInput(event.target.value)}
+            placeholder="Gateway token"
+            type="password"
+            value={tokenInput}
+          />
+          <button className="button" type="submit">
+            Connect
+          </button>
+        </form>
+      ) : null}
       {warnings.map((warning) => (
         <div className="banner" key={warning}>
           {warning}

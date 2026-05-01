@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, mutable `cli_agent` approval gates, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -42,7 +42,8 @@ nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
 nomici gateway run
-# open http://127.0.0.1:8787 manually for the read-only Console overview
+nomici gateway token show
+# open http://127.0.0.1:8787 manually and paste the token for the read-only Console overview
 nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"
@@ -61,7 +62,7 @@ Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API k
 
 The bundled `developer-team` pack installs a runnable `product_pm` entrypoint and `architect` subagent using an existing model provider profile. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
-The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent runs, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values.
+The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent runs, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` and paste it into the Console when prompted.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or one `handoff` edge between two `cli_agent`-backed `external_agent` nodes. General multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 
@@ -78,7 +79,7 @@ The intended v0.1 flow:
 
 In the current private bootstrap, use `nomici model doctor` instead of the planned top-level `nomici doctor`, and use `nomici gateway run` plus a browser opened to `http://127.0.0.1:8787` instead of the planned `nomici up` and `nomici gateway open`.
 
-`NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. Until Gateway token auth is implemented, only use it with trusted loopback URLs or isolated development endpoints; do not point it at a shared or public Gateway.
+`NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. CLI commands authenticate with `NOMICI_GATEWAY_TOKEN` when set, otherwise they read `.nomici/gateway.token` next to the local state database. Treat the token as an operator credential and do not point the CLI at a shared or public Gateway unless that Gateway is explicitly trusted.
 
 ## What Nomici Will Do
 

@@ -33,7 +33,7 @@ func newModelCommand() *cobra.Command {
 
 	command.AddCommand(newModelSetupCommand(&dbPath))
 	command.AddCommand(newModelListCommand(&dbPath))
-	command.AddCommand(newModelTestCommand(&gatewayURL))
+	command.AddCommand(newModelTestCommand(&gatewayURL, &dbPath))
 	command.AddCommand(newModelDoctorCommand(&dbPath))
 
 	return command
@@ -195,7 +195,7 @@ func newModelListCommand(dbPath *string) *cobra.Command {
 	}
 }
 
-func newModelTestCommand(gatewayURL *string) *cobra.Command {
+func newModelTestCommand(gatewayURL *string, dbPath *string) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "test <profile_id> [prompt]",
 		Short: "Test a model provider through Nomici Gateway",
@@ -209,7 +209,7 @@ func newModelTestCommand(gatewayURL *string) *cobra.Command {
 				*gatewayURL = envURL
 			}
 
-			result, err := postModelTest(command.Context(), *gatewayURL, args[0], prompt)
+			result, err := postModelTest(command.Context(), *gatewayURL, *dbPath, args[0], prompt)
 			if err != nil {
 				return err
 			}
@@ -268,7 +268,7 @@ type modelUsage struct {
 	OutputTokens int
 }
 
-func postModelTest(ctx context.Context, gatewayURL string, profileID string, prompt string) (*modelTestCLIResult, error) {
+func postModelTest(ctx context.Context, gatewayURL string, dbPath string, profileID string, prompt string) (*modelTestCLIResult, error) {
 	baseURL, err := url.Parse(gatewayURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid gateway URL: %w", err)
@@ -289,6 +289,9 @@ func postModelTest(ctx context.Context, gatewayURL string, profileID string, pro
 		return nil, fmt.Errorf("create model test request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if err := addGatewayAuth(request, dbPath); err != nil {
+		return nil, err
+	}
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

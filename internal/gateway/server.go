@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
@@ -27,10 +28,12 @@ const (
 )
 
 type Options struct {
-	Host    string
-	Port    int
-	Version string
-	DBPath  string
+	Host      string
+	Port      int
+	Version   string
+	DBPath    string
+	TokenPath string
+	AuthToken string
 }
 
 type Server struct {
@@ -86,6 +89,20 @@ func (server *Server) Run(ctx context.Context) error {
 }
 
 func (server *Server) initialize() error {
+	if server.options.TokenPath == "" {
+		server.options.TokenPath = gatewayauth.TokenPathForDB(server.options.DBPath)
+	}
+	if server.options.AuthToken == "" {
+		token, created, err := gatewayauth.LoadOrCreate(server.options.TokenPath)
+		if err != nil {
+			return err
+		}
+		server.options.AuthToken = token
+		if created {
+			log.Printf("Nomici Gateway token saved to %s", server.options.TokenPath)
+		}
+	}
+
 	db, err := store.Open(server.options.DBPath)
 	if err != nil {
 		return err

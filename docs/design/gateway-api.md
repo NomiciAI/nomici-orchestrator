@@ -56,13 +56,12 @@ Default:
 
 - Gateway binds to `127.0.0.1`.
 - Bearer token auth is required.
-- CLI obtains token from profile config or keychain.
-- Console uses same-origin token/session flow.
+- CLI obtains token from `NOMICI_GATEWAY_TOKEN` or the local token file next to the state database.
+- Console is served same-origin and prompts the user for the local token before calling protected APIs.
 
 Auth errors:
 
-- `auth_missing`
-- `auth_invalid`
+- `unauthorized`
 - `auth_expired`
 - `auth_forbidden`
 

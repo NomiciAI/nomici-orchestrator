@@ -26,16 +26,21 @@ func NewRouter(options Options, services Services) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Get("/api/health", healthHandler(options))
-	router.Get("/api/console/overview", consoleOverviewHandler(options, services))
-	router.Get("/api/models", modelListHandler(services))
-	router.Get("/api/packs", packListHandler(services))
-	router.Get("/api/graphs/latest", latestGraphHandler(services))
-	router.Get("/api/runtimes", runtimeListHandler(services))
-	router.Get("/api/runs", runListHandler(services))
-	router.Get("/api/approvals", approvalListHandler(services))
-	if services.Providers != nil && services.Trace != nil && services.Secrets != nil && services.Adapter != nil {
-		router.Post("/api/models/test", modelTestHandler(services))
-	}
+	router.Group(func(api chi.Router) {
+		if options.AuthToken != "" {
+			api.Use(bearerAuthMiddleware(options.AuthToken))
+		}
+		api.Get("/api/console/overview", consoleOverviewHandler(options, services))
+		api.Get("/api/models", modelListHandler(services))
+		api.Get("/api/packs", packListHandler(services))
+		api.Get("/api/graphs/latest", latestGraphHandler(services))
+		api.Get("/api/runtimes", runtimeListHandler(services))
+		api.Get("/api/runs", runListHandler(services))
+		api.Get("/api/approvals", approvalListHandler(services))
+		if services.Providers != nil && services.Trace != nil && services.Secrets != nil && services.Adapter != nil {
+			api.Post("/api/models/test", modelTestHandler(services))
+		}
+	})
 	router.Handle("/*", web.Handler())
 
 	return router

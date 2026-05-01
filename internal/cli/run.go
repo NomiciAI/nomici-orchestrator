@@ -37,11 +37,11 @@ func newRunCommand() *cobra.Command {
 	command.PersistentFlags().StringVar(&gatewayURL, "gateway-url", defaultGatewayURL, "Nomici Gateway URL")
 	command.PersistentFlags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path")
 	command.PersistentFlags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
-	command.AddCommand(newRunModelCommand(&gatewayURL))
+	command.AddCommand(newRunModelCommand(&gatewayURL, &dbPath))
 	return command
 }
 
-func newRunModelCommand(gatewayURL *string) *cobra.Command {
+func newRunModelCommand(gatewayURL *string, dbPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "model <profile_id> [prompt]",
 		Short: "Run a model profile through Nomici Gateway",
@@ -55,7 +55,7 @@ func newRunModelCommand(gatewayURL *string) *cobra.Command {
 				*gatewayURL = envURL
 			}
 
-			result, err := postModelTest(command.Context(), *gatewayURL, args[0], prompt)
+			result, err := postModelTest(command.Context(), *gatewayURL, *dbPath, args[0], prompt)
 			if err != nil {
 				return err
 			}
@@ -114,7 +114,7 @@ func runGraphEntrypoint(command *cobra.Command, configPath string, dbPath string
 		return err
 	}
 
-	result, err := postModelTest(command.Context(), gatewayURL, model.ID, graphPrompt(agent, prompt))
+	result, err := postModelTest(command.Context(), gatewayURL, dbPath, model.ID, graphPrompt(agent, prompt))
 	if err != nil {
 		return err
 	}

@@ -33,12 +33,13 @@ The project follows semantic versioning once the first public release is cut.
 - Read-only Console MVP backed by Gateway APIs for overview, models, packs, latest graph, runtimes, runs, and approvals.
 - GitHub Actions CI baseline with read-only workflow permissions.
 - CI secret-pattern scan for docs, workflows, and source paths.
+- Default Gateway bearer-token auth for non-health API endpoints, with local token file creation, CLI token forwarding, Console token entry, and `gateway token show/rotate`.
 
 ### Changed
 
 - Split the private bootstrap run command implementation into smaller files for graph execution, external CLI agents, policy, shared context, and display helpers.
 - Marked planned README commands explicitly so the bootstrap path does not overstate `nomici up`, `nomici doctor`, or `nomici gateway open`.
-- Documented `NOMICI_GATEWAY_URL` as a trusted-loopback bootstrap convenience until Gateway token auth exists.
+- Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for private bootstrap.
 
 ### Deprecated
 
@@ -57,3 +58,5 @@ The project follows semantic versioning once the first public release is cut.
 - Security model documented before implementation begins.
 - Console model APIs redact suspicious `api_key_env` values before sending data to the browser.
 - Policy approval grant matching documents its current workspace-scoped fingerprint semantics.
+- Gateway token auth now protects read-only Console APIs, model tests, graph/runs/runtimes/packs/approvals APIs, while `/api/health` remains public.
+- Local state and Gateway token directories are created with owner-only permissions.
