@@ -32,10 +32,13 @@ The project follows semantic versioning once the first public release is cut.
 - Bundled `developer-team` pack with `pack list`, `pack inspect`, `pack install`, model-profile selection, clean AgentSpec generation, and a runnable `product_pm` entrypoint.
 - Read-only Console MVP backed by Gateway APIs for overview, models, packs, latest graph, runtimes, runs, and approvals.
 - GitHub Actions CI baseline with read-only workflow permissions.
+- CI secret-pattern scan for docs, workflows, and source paths.
 
 ### Changed
 
-- Nothing yet.
+- Split the private bootstrap run command implementation into smaller files for graph execution, external CLI agents, policy, shared context, and display helpers.
+- Marked planned README commands explicitly so the bootstrap path does not overstate `nomici up`, `nomici doctor`, or `nomici gateway open`.
+- Documented `NOMICI_GATEWAY_URL` as a trusted-loopback bootstrap convenience until Gateway token auth exists.
 
 ### Deprecated
 
@@ -52,3 +55,5 @@ The project follows semantic versioning once the first public release is cut.
 ### Security
 
 - Security model documented before implementation begins.
+- Console model APIs redact suspicious `api_key_env` values before sending data to the browser.
+- Policy approval grant matching documents its current workspace-scoped fingerprint semantics.

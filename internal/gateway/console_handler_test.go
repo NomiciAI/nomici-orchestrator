@@ -148,3 +148,58 @@ func TestConsoleOverviewEndpoint(t *testing.T) {
 		t.Fatalf("expected one pending approval, got %d", len(envelope.Data.PendingApprovals))
 	}
 }
+
+func TestConsoleOverviewRedactsMisconfiguredAPIKeyEnv(t *testing.T) {
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	providerStore := providers.NewStore(db)
+	misconfigured := "sk-" + "misconfigured-secret"
+	if err := providerStore.Save(context.Background(), &providers.Profile{
+		ID:        "bad",
+		Name:      "bad",
+		Kind:      providers.KindOpenAICompatible,
+		BaseURL:   "http://127.0.0.1:19999/v1",
+		Model:     "fake-model",
+		APIKeyEnv: misconfigured,
+	}); err != nil {
+		t.Fatalf("save provider: %v", err)
+	}
+
+	router := NewRouter(Options{Version: "test"}, Services{
+		Providers: providerStore,
+		Trace:     trace.NewStore(db),
+		Secrets:   secrets.NewResolver(),
+		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Graph:     graph.NewStore(db),
+		Packs:     packs.NewStore(db),
+		Policy:    policy.NewService(db),
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/console/overview", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), misconfigured) {
+		t.Fatal("console overview leaked misconfigured api_key_env")
+	}
+
+	var envelope struct {
+		Data consoleOverview `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	if envelope.Data.Models[0].APIKeyEnv != "[redacted]" {
+		t.Fatalf("expected redacted api_key_env, got %q", envelope.Data.Models[0].APIKeyEnv)
+	}
+}

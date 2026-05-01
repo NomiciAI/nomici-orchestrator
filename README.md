@@ -12,17 +12,19 @@ Modern agents are becoming powerful but fragmented. A developer may have Claude 
 
 Nomici aims to provide one local-first control plane for composing those pieces into useful, inspectable, governed agent organizations.
 
-## Intended Quickstart
+## Planned Quickstart
 
 ```bash
 curl -fsSL https://nomici.ai/install.sh | bash
-nomici doctor
+nomici doctor              # planned
 nomici model setup
 nomici pack install developer-team
-nomici up
-nomici gateway open
+nomici up                  # planned
+nomici gateway open        # planned
 nomici run product_pm "Plan and implement a small web app"
 ```
+
+The commands marked `planned` are part of the intended v0.1 UX but are not implemented in the private bootstrap yet. Use the implemented bootstrap commands below for the current runnable path.
 
 ## Implemented Bootstrap Commands
 
@@ -40,7 +42,7 @@ nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
 nomici gateway run
-# open http://127.0.0.1:8787 for the read-only Console overview
+# open http://127.0.0.1:8787 manually for the read-only Console overview
 nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"
@@ -73,6 +75,10 @@ The intended v0.1 flow:
 - Start configured local runtimes.
 - Run a real task.
 - Inspect traces, logs, approvals, artifacts, and policy decisions.
+
+In the current private bootstrap, use `nomici model doctor` instead of the planned top-level `nomici doctor`, and use `nomici gateway run` plus a browser opened to `http://127.0.0.1:8787` instead of the planned `nomici up` and `nomici gateway open`.
+
+`NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. Until Gateway token auth is implemented, only use it with trusted loopback URLs or isolated development endpoints; do not point it at a shared or public Gateway.
 
 ## What Nomici Will Do
 

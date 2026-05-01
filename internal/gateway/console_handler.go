@@ -10,6 +10,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 )
 
@@ -18,7 +19,7 @@ const consoleRunLimit = 8
 type consoleOverview struct {
 	Gateway          consoleGatewayStatus    `json:"gateway"`
 	Counts           consoleCounts           `json:"counts"`
-	Models           []*providers.Profile    `json:"models"`
+	Models           []consoleModelProfile   `json:"models"`
 	Packs            []consolePackStatus     `json:"packs"`
 	Graph            *consoleGraphSummary    `json:"graph,omitempty"`
 	GraphSnapshot    *graph.Snapshot         `json:"graph_snapshot,omitempty"`
@@ -42,6 +43,21 @@ type consoleCounts struct {
 	Runtimes         int `json:"runtimes"`
 	Runs             int `json:"runs"`
 	PendingApprovals int `json:"pending_approvals"`
+}
+
+type consoleModelProfile struct {
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Kind            string            `json:"kind"`
+	BaseURL         string            `json:"base_url"`
+	Model           string            `json:"model"`
+	APIKeyEnv       string            `json:"api_key_env"`
+	Capabilities    map[string]string `json:"capabilities,omitempty"`
+	ContextWindow   int               `json:"context_window,omitempty"`
+	CostPer1MInput  float64           `json:"cost_per_1m_input,omitempty"`
+	CostPer1MOutput float64           `json:"cost_per_1m_output,omitempty"`
+	CreatedAt       string            `json:"created_at"`
+	UpdatedAt       string            `json:"updated_at"`
 }
 
 type consolePackStatus struct {
@@ -112,7 +128,7 @@ func modelListHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "models_list_failed", "Model profiles could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		writeSuccess(response, requestID, models, nil)
+		writeSuccess(response, requestID, sanitizeModelProfiles(models), nil)
 	}
 }
 
@@ -261,7 +277,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 			Runs:             len(runs),
 			PendingApprovals: len(pendingApprovals),
 		},
-		Models:           models,
+		Models:           sanitizeModelProfiles(models),
 		Packs:            packStatuses,
 		Graph:            graphSummary,
 		GraphSnapshot:    snapshot,
@@ -299,6 +315,27 @@ func loadPackStatuses(request *http.Request, services Services) ([]consolePackSt
 		})
 	}
 	return statuses, nil
+}
+
+func sanitizeModelProfiles(models []*providers.Profile) []consoleModelProfile {
+	sanitized := make([]consoleModelProfile, 0, len(models))
+	for _, model := range models {
+		sanitized = append(sanitized, consoleModelProfile{
+			ID:              model.ID,
+			Name:            model.Name,
+			Kind:            model.Kind,
+			BaseURL:         model.BaseURL,
+			Model:           model.Model,
+			APIKeyEnv:       sharedcontext.RedactText(model.APIKeyEnv),
+			Capabilities:    model.Capabilities,
+			ContextWindow:   model.ContextWindow,
+			CostPer1MInput:  model.CostPer1MInput,
+			CostPer1MOutput: model.CostPer1MOutput,
+			CreatedAt:       model.CreatedAt,
+			UpdatedAt:       model.UpdatedAt,
+		})
+	}
+	return sanitized
 }
 
 func loadLatestTrace(request *http.Request, services Services, runs []*trace.RunSummary) ([]consoleTraceEvent, error) {

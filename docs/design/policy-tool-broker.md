@@ -97,7 +97,8 @@ Private bootstrap implementation note:
 - `files_write: true` CLI runtimes are treated as medium risk and require approval.
 - `once` grants are consumed by the next matching action.
 - `run` grants bind to the next matching run and allow matching actions in that run.
-- Matching is currently scoped by project, action type, and workspace path.
+- Matching is currently scoped by project, action type, and normalized absolute workspace path.
+- The current fingerprint intentionally does not include `agent_id` or `runtime_id`; two CLI agents in the same project and workspace share a grant for the same action class. This keeps approval semantics centered on the mutable workspace boundary rather than the agent name.
 - Full tool broker coverage for MCP, browser, office, email/calendar, deploy, and network side effects is deferred.
 
 v0.1 approval scopes:
