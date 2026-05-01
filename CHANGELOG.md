@@ -21,6 +21,7 @@ The project follows semantic versioning once the first public release is cut.
 - CLI Agent Runner process contract for prompt/briefing injection, stdout/stderr artifacts, diff capture, cancellation, and workspace locks.
 - v0.1 approval scope policy: `once` and `run` only, with session/global scopes deferred.
 - Living v0.1 implementation plan with implementation gates, exit commands, recording rules, and cut lines.
+- Proof slice code plan for Gates 1 and 2, kept under implementation docs instead of design docs.
 
 ### Changed
 
