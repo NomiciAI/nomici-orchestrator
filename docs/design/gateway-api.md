@@ -102,6 +102,21 @@ Reserved paths should not imply full compatibility.
 
 `/api/health` is for liveness/readiness only. It should not become the general system status API.
 
+Implemented private-bootstrap query routes:
+
+```text
+GET  /api/console/overview
+GET  /api/models
+POST /api/models/test
+GET  /api/packs
+GET  /api/graphs/latest
+GET  /api/runtimes
+GET  /api/runs
+GET  /api/approvals
+```
+
+`/api/console/overview` is a read-optimized aggregate for the embedded Console. It returns only Gateway state from SQLite-backed services and should not read project files or expose raw secret values.
+
 ## Event Stream
 
 Event stream messages:

@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
+	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
@@ -98,6 +101,9 @@ func (server *Server) initialize() error {
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
 		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Graph:     graph.NewStore(db),
+		Packs:     packs.NewStore(db),
+		Policy:    policy.NewService(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

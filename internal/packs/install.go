@@ -89,6 +89,9 @@ func InstallDeveloperTeam(ctx context.Context, options InstallOptions) (*Install
 	if err := writeSpec(options.ConfigPath, spec); err != nil {
 		return nil, err
 	}
+	if err := savePackInstallation(ctx, options.DBPath, manifest, options.ConfigPath, installedAt); err != nil {
+		return nil, err
+	}
 
 	return &InstallResult{
 		PackID:      manifest.ID,
@@ -181,6 +184,27 @@ func writeSpec(configPath string, spec *agentspec.Spec) error {
 		return fmt.Errorf("marshal AgentSpec: %w", err)
 	}
 	return os.WriteFile(configPath, payload, 0o644)
+}
+
+func savePackInstallation(ctx context.Context, dbPath string, manifest Manifest, configPath string, installedAt time.Time) error {
+	db, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		return err
+	}
+	return NewStore(db).SaveInstallation(ctx, &Installation{
+		PackID:      manifest.ID,
+		Version:     manifest.Version,
+		Kind:        manifest.Kind,
+		Trust:       manifest.Trust.Level,
+		ConfigPath:  configPath,
+		Entrypoints: manifest.Agents.Entrypoints,
+		InstalledAt: installedAt,
+		UpdatedAt:   installedAt,
+	})
 }
 
 func profileCapabilities(profile *providers.Profile) []string {

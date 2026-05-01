@@ -43,6 +43,25 @@ func TestInstallDeveloperTeamCreatesRunnableSpec(t *testing.T) {
 	if loaded.Spec.Agents["architect"].Kind != agentspec.AgentKindModel {
 		t.Fatalf("expected architect model agent")
 	}
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	installation, err := NewStore(db).GetInstallation(context.Background(), DeveloperTeamID)
+	if err != nil {
+		t.Fatalf("get pack installation: %v", err)
+	}
+	if installation.ConfigPath != configPath {
+		t.Fatalf("expected config path %s, got %s", configPath, installation.ConfigPath)
+	}
+	if len(installation.Entrypoints) != 1 || installation.Entrypoints[0] != "product_pm" {
+		t.Fatalf("unexpected entrypoints: %+v", installation.Entrypoints)
+	}
 }
 
 func TestInstallDeveloperTeamRequiresProvider(t *testing.T) {

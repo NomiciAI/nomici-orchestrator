@@ -140,4 +140,21 @@ CREATE INDEX IF NOT EXISTS idx_approvals_fingerprint ON approvals(action_fingerp
 CREATE INDEX IF NOT EXISTS idx_approvals_run ON approvals(run_id);
 `,
 	},
+	{
+		Version: 6,
+		SQL: `
+CREATE TABLE IF NOT EXISTS pack_installations (
+	pack_id TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	trust TEXT NOT NULL,
+	config_path TEXT NOT NULL DEFAULT '',
+	entrypoints_json TEXT NOT NULL DEFAULT '[]',
+	installed_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pack_installations_updated_at ON pack_installations(updated_at DESC);
+`,
+	},
 }
