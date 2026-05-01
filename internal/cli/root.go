@@ -14,6 +14,9 @@ func NewRootCommand(version string) *cobra.Command {
 
 	root.SetVersionTemplate("nomici {{.Version}}\n")
 	root.AddCommand(newGatewayCommand(version))
+	root.AddCommand(newModelCommand())
+	root.AddCommand(newRunCommand())
+	root.AddCommand(newTraceCommand())
 
 	return root
 }

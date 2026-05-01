@@ -22,6 +22,9 @@ The project follows semantic versioning once the first public release is cut.
 - v0.1 approval scope policy: `once` and `run` only, with session/global scopes deferred.
 - Living v0.1 implementation plan with implementation gates, exit commands, recording rules, and cut lines.
 - Proof slice code plan for Gates 1 and 2, kept under implementation docs instead of design docs.
+- SQLite-backed provider profile store, secret resolver, trace store, and OpenAI-compatible adapter.
+- Gateway `/api/models/test` endpoint with response envelope, trace events, and secret redaction.
+- CLI commands for `model setup`, `model list`, `model doctor`, `model test`, `run model`, `trace list`, and `trace show`.
 
 ### Changed
 

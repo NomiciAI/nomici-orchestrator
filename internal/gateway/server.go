@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -9,6 +10,12 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
+	"github.com/NomiciAI/nomici-orchestrator/internal/store"
+	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 )
 
 const (
@@ -20,11 +27,13 @@ type Options struct {
 	Host    string
 	Port    int
 	Version string
+	DBPath  string
 }
 
 type Server struct {
 	options    Options
 	httpServer *http.Server
+	db         *sql.DB
 }
 
 func NewServer(options Options) *Server {
@@ -35,17 +44,19 @@ func NewServer(options Options) *Server {
 		options.Port = DefaultPort
 	}
 
-	return &Server{
-		options: options,
-		httpServer: &http.Server{
-			Addr:              net.JoinHostPort(options.Host, strconv.Itoa(options.Port)),
-			Handler:           NewRouter(options),
-			ReadHeaderTimeout: 5 * time.Second,
-		},
+	if options.DBPath == "" {
+		options.DBPath = store.DefaultDBPath
 	}
+
+	return &Server{options: options}
 }
 
 func (server *Server) Run(ctx context.Context) error {
+	if err := server.initialize(); err != nil {
+		return err
+	}
+	defer server.db.Close()
+
 	errs := make(chan error, 1)
 
 	go func() {
@@ -69,4 +80,30 @@ func (server *Server) Run(ctx context.Context) error {
 	case err := <-errs:
 		return err
 	}
+}
+
+func (server *Server) initialize() error {
+	db, err := store.Open(server.options.DBPath)
+	if err != nil {
+		return err
+	}
+	if err := store.Migrate(db); err != nil {
+		_ = db.Close()
+		return err
+	}
+	server.db = db
+
+	services := Services{
+		Providers: providers.NewStore(db),
+		Trace:     trace.NewStore(db),
+		Secrets:   secrets.NewResolver(),
+		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+	}
+	server.httpServer = &http.Server{
+		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),
+		Handler:           NewRouter(server.options, services),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	return nil
 }

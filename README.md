@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold builds and serves `/api/health`, but the first-run user experience described below is not implemented yet.
+> Project status: private bootstrap. Architecture and RFCs are still being refined. The minimal CLI/Gateway scaffold, provider profile setup, Gateway-mediated model test, and trace inspection commands are implemented. Packs, AgentGraph execution, approvals, CLI agent runner, and Console workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -23,6 +23,23 @@ nomici up
 nomici gateway open
 nomici run product_pm "Plan and implement a small web app"
 ```
+
+## Implemented Bootstrap Commands
+
+The current private bootstrap can run this narrower proof slice:
+
+```bash
+nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
+nomici model list
+nomici model doctor
+nomici gateway run
+nomici model test gpt "Say hello from Nomici"
+nomici run model gpt "Say hello from Nomici"
+nomici trace list
+nomici trace show <run_id>
+```
+
+Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
 The intended v0.1 flow:
 

@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway"
+	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,7 @@ func newGatewayRunCommand(version string) *cobra.Command {
 		Host:    gateway.DefaultHost,
 		Port:    gateway.DefaultPort,
 		Version: version,
+		DBPath:  store.DefaultDBPath,
 	}
 
 	command := &cobra.Command{
@@ -40,6 +42,7 @@ func newGatewayRunCommand(version string) *cobra.Command {
 
 	command.Flags().StringVar(&options.Host, "host", options.Host, "Gateway bind host")
 	command.Flags().IntVar(&options.Port, "port", options.Port, "Gateway bind port")
+	command.Flags().StringVar(&options.DBPath, "db-path", options.DBPath, "Gateway SQLite database path")
 
 	return command
 }

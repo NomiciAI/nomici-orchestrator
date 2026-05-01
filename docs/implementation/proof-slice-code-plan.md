@@ -24,7 +24,9 @@ provider setup
 This slice must run without packs, AgentGraph compiler, runtime reconciler,
 approval queue, A2A sidecars, or MCP proxy.
 
-## Current State
+## Starting State
+
+This was the scaffold state before implementing Gate 1 and Gate 2:
 
 - `cmd/nomici/main.go` — binary entry point
 - `internal/cli/root.go` — cobra root, only gateway subcommand
@@ -34,7 +36,7 @@ approval queue, A2A sidecars, or MCP proxy.
 - `internal/gateway/health.go` — health handler
 - `internal/gateway/server_test.go` — health endpoint test
 - `internal/gateway/web/web.go` — embedded Console dist
-- `go.mod` — module declared, no require directives yet (chi and cobra imported but not resolved)
+- `go.mod` — module declared; Gate 0 resolved chi and cobra dependencies before this slice started
 
 ## Step 0: Fix Dependencies (5 min)
 
