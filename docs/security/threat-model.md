@@ -94,7 +94,7 @@ Mitigations:
 
 Risk:
 
-External endpoints and local coding agents such as Claude Code, Codex, Hermes, or OpenClaw may have powerful tool access. Routing through them can execute actions outside Nomici's direct control.
+External endpoints and local agents such as Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes, or OpenClaw may have powerful tool access. Routing through them can execute actions outside Nomici's direct control.
 
 Mitigations:
 
@@ -103,7 +103,7 @@ Mitigations:
 - Apply Nomici policy before Nomici-mediated calls.
 - Document that external runtime policies still matter.
 - Preserve audit events for delegated calls.
-- Capture pre/post diffs and command transcripts where available for CLI coding agents.
+- Capture pre/post diffs and command transcripts where available for CLI agents.
 
 ### Runtime Process Escape or Misconfiguration
 

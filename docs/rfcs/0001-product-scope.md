@@ -49,7 +49,7 @@ The target users for v0.1 are technical users who already use or evaluate agent 
 
 The user problem:
 
-> I already have tools like Claude Code, Codex, Hermes, OpenClaw, Ollama, vLLM, LangGraph, OpenAI Agents SDK, CrewAI, and MCP servers, but they are scattered across terminals, ports, configs, and dashboards. I need one local-first control plane to register them, connect them, govern them, and observe runs.
+> I already have tools like Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes, OpenClaw, Ollama, vLLM, LangGraph, OpenAI Agents SDK, CrewAI, and MCP servers, but they are scattered across terminals, ports, configs, and dashboards. I need one local-first control plane to register them, connect them, govern them, and observe runs.
 
 ## Goals
 
@@ -99,9 +99,8 @@ Included:
 - Runtime registry
 - Local process runner
 - OpenAI-compatible endpoint adapter
-- Generic coding-agent CLI adapter
-- Codex CLI profile
-- Claude Code CLI profile
+- Generic CLI Agent Runner
+- CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native agents where they expose automation surfaces
 - Hermes endpoint adapter
 - OpenClaw endpoint adapter
 - Ollama and vLLM through OpenAI-compatible or provider-specific configuration
@@ -178,7 +177,7 @@ Loopback bind, token auth, secret redaction, untrusted remote agents, and approv
 
 Adapter pragmatism:
 
-OpenAI-compatible endpoints and generic CLI invocation are the v0.1 integration paths. Deeper native adapters come only after the control plane is stable.
+OpenAI-compatible endpoints and generic CLI agent invocation are the v0.1 integration paths. Deeper native adapters come only after the control plane is stable.
 
 Observable by default:
 
@@ -203,6 +202,6 @@ Nomici v0.1 is successful when:
 
 - Should `nomici up` always start Gateway, or should it fail if Gateway is already running with a different workspace?
 - Should v0.1 allow multiple active workspaces per profile, or one active workspace at a time?
-- Settled after RFC 0009: v0.1 uses `gateway_agent` for a minimal Gateway-run coordinator loop. Richer agent loops remain external runtimes.
+- Settled after RFC 0009 and later boundary review: `gateway_agent` is the name for a minimal Gateway-run coordinator loop, but the first compelling developer proof may use external `cli_agent` runtimes instead. Richer agent loops remain external runtimes.
 - Should Docker runner be included in v0.1, or deferred to v0.2?
 - Should the OpenAI-compatible `/v1/*` endpoint be enabled by default or require explicit opt-in?

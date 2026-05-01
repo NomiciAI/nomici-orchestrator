@@ -95,6 +95,8 @@ LLM Providers
 Agent Runtimes
   Claude Code
   Codex
+  opencode
+  Aider / Cline / Continue
   Hermes
   OpenClaw
   LangGraph
@@ -102,7 +104,7 @@ Agent Runtimes
   OpenAI Agents SDK
   Google ADK
   Agent Squad
-  coding-agent fleets
+  CLI agent fleets
 
 Tool Packs
   Office
@@ -229,9 +231,9 @@ Gateway Agent boundary:
 
 Nomici may run a minimal `gateway_agent` loop for first-run coordination. That loop may call a model, request handoffs, call agent-as-tool adapters, and request Nomici-mediated tools. It is not durable execution and should not grow into a full framework runtime.
 
-Coding Agent boundary:
+CLI Agent boundary:
 
-Claude Code, Codex, and similar local coding agents are data-plane runtimes. Nomici should register, invoke, observe, and govern them through adapters instead of trying to outperform them as individual coding agents.
+Claude Code, Codex, opencode, Aider, Cline, Continue, and similar local agents are data-plane runtimes. Nomici should use the generic CLI Agent Runner when they expose command-driven automation, and should avoid writing a bespoke adapter for every tool.
 
 When a data-plane runtime has a stronger primitive, Nomici integrates it instead of reimplementing it.
 

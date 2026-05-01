@@ -14,7 +14,7 @@ The project follows semantic versioning once the first public release is cut.
 - RFC index summarizing current design documents.
 - Implementation-oriented design deep dives for provider setup, packs, graph compilation, Gateway API, runtime reconciliation, runs/traces, policy/tool brokering, and storage.
 - v0.1 boundary clarifications for `gateway_agent`, scoped delivery tiers, IR convergence, Gateway health responses, pack trust roots, and Console bootstrap.
-- Coding-agent runtime strategy for Claude Code, Codex, generic CLI invocation, and developer-team pack integration.
+- Generic CLI agent runtime strategy for Claude Code, Codex, opencode, Aider, custom commands, editor-native agents with automation surfaces, and developer-team pack integration.
 
 ### Changed
 

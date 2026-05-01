@@ -256,7 +256,7 @@ Kinds for v0.1:
 - `ollama`
 - `vllm`
 - `process`
-- `coding_agent_cli`
+- `cli_agent`
 
 Runner kinds for v0.1:
 
@@ -284,6 +284,19 @@ runtimes:
       WORKER_MODE: local
     health:
       command: python healthcheck.py
+
+  implementer_cli:
+    kind: cli_agent
+    runner: cli_invoke
+    workspace: ./workspace
+    invoke:
+      executable: agent-cli
+      args:
+        - "${INPUT}"
+    capabilities:
+      files_read: true
+      files_write: true
+      shell: true
 ```
 
 Runtime fields:
@@ -292,6 +305,8 @@ Runtime fields:
 - `runner`: required for managed runtimes.
 - `workspace`: optional working directory.
 - `start.command`: command used by local process runner.
+- `invoke.executable`: executable used by `cli_invoke`.
+- `invoke.args`: argument template used by `cli_invoke`.
 - `stop.command`: optional custom stop command.
 - `env`: non-secret environment values.
 - `env_from`: references to env files or secret stores.

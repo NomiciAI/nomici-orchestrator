@@ -63,7 +63,9 @@ trust:
   level: official
 ```
 
-The `developer-team` pack should treat Claude Code, Codex, Hermes, OpenClaw, and similar tools as optional external runtimes for implementer/reviewer roles. It should not require any one tool to be installed.
+The `developer-team` pack should treat Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes, OpenClaw, and similar tools as optional external runtimes for implementer/reviewer roles. Command-driven tools use `cli_agent`; editor-native tools need an automation surface or future sidecar. The pack should not require any one tool to be installed.
+
+Adding a command-driven CLI agent should usually require only pack YAML: a `cli_agent` runtime, an `invoke` command template, conservative capabilities, policy scopes, and an `external_agent` mapping.
 
 Required:
 

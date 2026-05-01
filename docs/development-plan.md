@@ -50,6 +50,18 @@ provider setup
 
 This hard slice validates the Gateway, provider setup, adapter invocation, storage, trace, and security path without requiring packs, graph canvas editing, runtime reconciliation, approval queue, A2A sidecars, or MCP proxying.
 
+A second proof slice should validate the developer story:
+
+```text
+CLI agent runtime
+  -> external_agent invocation
+  -> workspace diff capture
+  -> trace event storage
+  -> approval gate before publish actions
+```
+
+This slice can be more compelling than an early `gateway_agent` loop because it uses agents developers already trust while Nomici adds coordination, evidence, and governance.
+
 ## Delivery Tiers
 
 Hard delivery:
@@ -67,7 +79,7 @@ Product delivery:
 - pack permission review
 - AgentGraph compile/validate
 - basic runtime observed state
-- generic coding-agent CLI adapter
+- generic CLI agent runner
 - run records and trace timeline
 - approval record model
 - first useful official bundled pack
@@ -181,9 +193,8 @@ Goals:
 - health checks
 - logs
 - OpenAI-compatible adapter
-- generic coding-agent CLI adapter
-- Codex CLI profile
-- Claude Code CLI profile
+- generic CLI agent runner
+- CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native agents where they expose automation surfaces
 - Hermes endpoint entry
 - OpenClaw endpoint entry
 
@@ -202,8 +213,8 @@ Exit criteria:
 - `nomici up` can start configured local process runtimes.
 - Runtime state records PID, endpoint, health, and logs.
 - OpenAI-compatible endpoint can be invoked through adapter contract.
-- At least one installed local coding agent can be represented as an external runtime when available.
-- Codex and Claude Code profiles degrade cleanly when their commands are not installed.
+- At least one installed local CLI agent can be represented as an external runtime when available.
+- CLI agent profiles degrade cleanly when their commands are not installed.
 - Hermes/OpenClaw can be represented as external runtimes.
 - Drift is visible through CLI and Gateway API.
 

@@ -1,10 +1,14 @@
-# Coding Agent Runtimes
+# CLI Agent Runtimes
 
 ## Purpose
 
-Claude Code, Codex, and similar local coding agents are high-value data-plane runtimes for Nomici.
+Claude Code, Codex, opencode, Aider, and similar command-driven local agents are high-value data-plane runtimes for Nomici.
 
-They are not competitors to replace in v0.1. They are exactly the kind of strong local agent runtime that makes an independent control plane useful.
+Cline, Continue, and similar editor-native agents still matter to the strategy, but v0.1 should treat them as CLI-agent candidates only when they expose a command-driven automation surface. Otherwise they belong in future sidecar or extension integrations.
+
+They are not competitors to replace in v0.1. They are exactly the kind of strong local runtime that makes an independent control plane useful.
+
+The important abstraction is not a Claude Code adapter, a Codex adapter, or an opencode adapter. It is a generic CLI Agent Runner.
 
 ## Strategic Difference
 
@@ -21,7 +25,7 @@ many heterogeneous agents, runtimes, tools, models, policies, approvals,
 traces, and artifacts coordinated as one agent organization
 ```
 
-The difference is not that Nomici writes code better than Claude Code or Codex.
+The difference is not that Nomici writes code better than Claude Code, Codex, opencode, Aider, Cline, or Continue.
 
 The difference is that Nomici provides:
 
@@ -36,7 +40,7 @@ The difference is that Nomici provides:
 
 ## Why They Strengthen Nomici
 
-Strong local coding agents create the need for a control plane.
+Strong local CLI agents create the need for a control plane.
 
 A realistic user may want:
 
@@ -49,66 +53,92 @@ test_runner       tool_agent or external process
 human_approval    approval gate before push or deploy
 ```
 
-No single vendor coding agent owns that whole organization.
+No single CLI agent owns that whole organization.
 
 Nomici should let users compose it.
 
 ## Runtime Model
 
-Treat Claude Code, Codex, and similar tools as:
+Treat command-driven tools such as Claude Code, Codex, opencode, Aider, and custom commands as:
 
 ```text
 external_agent
+  -> cli_agent runtime
   -> cli_invoke runner
-  -> cli_invoke adapter
+  -> generic CLI Agent adapter
 ```
 
 Example shape:
 
 ```yaml
 runtimes:
-  claude_code_impl:
-    kind: coding_agent_cli
+  implementer_cli:
+    kind: cli_agent
     runner: cli_invoke
     workspace: ./workspace
-    command:
+    invoke:
       executable: claude
+      args:
+        - "-p"
+        - "${INPUT}"
     capabilities:
       files_read: true
       files_write: true
       shell: true
       streaming: true
       review: unknown
+    trust: untrusted
 
-  codex_review:
-    kind: coding_agent_cli
+  reviewer_cli:
+    kind: cli_agent
     runner: cli_invoke
     workspace: ./workspace
-    command:
+    invoke:
       executable: codex
+      args:
+        - "review"
+        - "${INPUT}"
     capabilities:
       files_read: true
       files_write: true
       shell: true
       review: true
+    trust: untrusted
 
 agents:
   implementer:
     kind: external_agent
-    runtime: claude_code_impl
+    runtime: implementer_cli
     trust: untrusted
 
   reviewer:
     kind: external_agent
-    runtime: codex_review
+    runtime: reviewer_cli
     trust: untrusted
 ```
 
-This is illustrative. The adapter must discover and validate the installed CLI surface on the user's machine.
+This is illustrative. The runner must validate the installed CLI surface on the user's machine and support static configuration for tools whose capabilities cannot be probed reliably.
+
+## Common Interface
+
+The common interface is intentionally narrow:
+
+```text
+task input
+  -> command invocation
+  -> workspace
+  -> stdout/stderr or structured output
+  -> exit code
+  -> changed files / artifacts
+```
+
+Nomici does not need to understand each tool's internal model provider, prompt format, memory, approval system, or tool-call loop.
+
+Those are data-plane internals.
 
 ## Adapter Modes
 
-The coding-agent CLI adapter should support modes, not one hard-coded command.
+The CLI Agent Runner should support modes, not one hard-coded command.
 
 Minimum modes:
 
@@ -116,7 +146,7 @@ Minimum modes:
 - `stream`: collect structured or line-oriented streaming output if supported
 - `review`: ask the runtime to review a diff, branch, or workspace if supported
 - `resume`: resume a prior session if supported
-- `capabilities`: probe installed command, version, non-interactive support, and supported safety flags
+- `capabilities`: probe installed command, version, non-interactive support, declared capabilities, and supported safety flags
 
 Optional modes:
 
@@ -126,7 +156,7 @@ Optional modes:
 
 ## Capability Probe
 
-Adapter setup should probe:
+Adapter setup should probe where possible:
 
 - executable exists
 - version command works
@@ -147,9 +177,26 @@ Capability values should be tri-state:
 
 Do not assume a capability from the product name.
 
+Some CLI agents will not expose reliable probing. For them, v0.1 should allow conservative static declarations in the runtime config and mark unverified claims as `unknown` or `declared`.
+
+Example profiles:
+
+```text
+claude_code
+codex
+opencode
+aider
+cline
+continue
+custom
+```
+
+Profiles are presets over `cli_agent`, not separate core adapters.
+Profiles for editor-native tools require an actual command-driven surface before they are enabled.
+
 ## Safety Model
 
-Coding agents are powerful local runtimes. They may read files, edit files, run shell commands, and call network services.
+CLI agents are powerful local runtimes. They may read files, edit files, run shell commands, and call network services.
 
 Default policy:
 
@@ -162,7 +209,7 @@ Default policy:
 
 Important limitation:
 
-If a local coding agent executes tools internally, Nomici may not see every internal tool call. Nomici should be honest about this.
+If a local CLI agent executes tools internally, Nomici may not see every internal tool call. Nomici should be honest about this.
 
 Mitigations:
 
@@ -175,7 +222,7 @@ Mitigations:
 
 ## Developer Team Pack
 
-The `developer-team` pack should make coding-agent runtimes first-class.
+The `developer-team` pack should make CLI agent runtimes first-class.
 
 Recommended default graph:
 
@@ -193,17 +240,34 @@ Recommended runtime mapping:
 ```text
 product_pm      gateway_agent
 architect       gateway_agent or local model-backed agent
-implementer     Claude Code, Codex, Hermes, OpenClaw, or another external coding agent
-reviewer        Codex, Claude Code, or another review-capable external agent
+implementer     Claude Code, Codex, opencode, Aider, Hermes, OpenClaw, or another external CLI agent
+reviewer        Codex, Claude Code, opencode, Aider, or another review-capable external CLI agent
 test_runner     tool_agent
 approval        approval gate
 ```
 
-The pack should not require Claude Code or Codex. It should detect them and offer them as high-quality runtime choices.
+The pack should not require any specific CLI agent. It should detect installed profiles and offer them as runtime choices.
+
+If no supported CLI agent is installed, the pack can fall back to:
+
+- OpenAI-compatible endpoint
+- local Ollama model
+- manual task handoff
+- disabled implementer/reviewer nodes with clear setup guidance
+
+Community packs should be able to add a new CLI agent by YAML configuration alone:
+
+- declare a `cli_agent` runtime
+- provide an `invoke` command template
+- declare conservative capabilities
+- attach workspace and policy scopes
+- map it to an `external_agent`
+
+No Go adapter should be required for ordinary command-driven agents.
 
 ## Priority
 
-v0.1 should prioritize coding-agent CLI adapters because they match the target user:
+v0.1 should prioritize the generic CLI Agent Runner because it matches the target user:
 
 - developers already using local AI coding agents
 - teams that want governed code changes
@@ -214,19 +278,20 @@ Recommended priority:
 
 1. OpenAI-compatible model/agent endpoint adapter.
 2. Ollama/local model provider.
-3. Generic coding-agent CLI adapter.
-4. Codex CLI profile.
-5. Claude Code CLI profile.
-6. Hermes/OpenClaw endpoint entries.
+3. Generic CLI Agent Runner.
+4. CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native tools only where they expose command-driven automation.
+5. Hermes/OpenClaw endpoint entries.
 
-Hermes and OpenClaw remain important, but Claude Code and Codex should be explicit first-class examples of the data-plane runtime strategy.
+Hermes and OpenClaw remain important, but CLI agents should be explicit first-class examples of the data-plane runtime strategy.
+
+This also reduces pressure to implement `gateway_agent` first. A convincing v0.1 demo can use existing CLI agents for implementation and review while Nomici supplies graph coordination, policy gates, trace, and approvals.
 
 ## Non-Goals
 
 v0.1 should not:
 
-- reimplement Claude Code or Codex behavior
-- depend on either tool being installed
+- reimplement CLI agent behavior
+- depend on any one CLI agent being installed
 - bypass their safety models
 - claim full internal trace visibility into their private tool calls
 - normalize every CLI-specific feature into core

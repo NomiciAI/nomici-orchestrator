@@ -82,7 +82,7 @@ Rules:
 
 ### Local Runtimes
 
-Managed processes such as Claude Code, Codex, Hermes, OpenClaw, Ollama, vLLM, and custom workers.
+Managed processes such as Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes, OpenClaw, Ollama, vLLM, and custom workers where they expose a runnable local surface.
 
 Rules:
 
@@ -93,7 +93,7 @@ Rules:
 
 ### External Agents
 
-External agent endpoints and invoked coding agents, including Claude Code, Codex, Hermes API servers, OpenClaw Gateways, and remote A2A agents.
+External agent endpoints and invoked local agents, including Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes API servers, OpenClaw Gateways, and remote A2A agents.
 
 Rules:
 
@@ -216,7 +216,7 @@ High-risk actions requiring approval by default:
 - HTTP request to unknown host
 - MCP tool from untrusted server
 - OpenClaw tool invoke
-- Claude Code or Codex invocation with broad workspace permissions
+- CLI agent invocation with broad workspace permissions
 - Runtime process start with untrusted command
 
 Approval records must include:

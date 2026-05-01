@@ -8,7 +8,7 @@ Nomici Orchestrator is a local-first agent control plane for configuring LLM pro
 
 ## Why Nomici
 
-Modern agents are becoming powerful but fragmented. A developer may have Claude Code, Codex, a Hermes coder, an OpenClaw operator, an Ollama model, a LangGraph workflow, several MCP tools, office documents, and multiple API keys spread across terminals, configs, ports, and dashboards.
+Modern agents are becoming powerful but fragmented. A developer may have Claude Code, Codex, opencode, Aider, Cline, Continue, a Hermes coder, an OpenClaw operator, an Ollama model, a LangGraph workflow, several MCP tools, office documents, and multiple API keys spread across terminals, configs, ports, and dashboards.
 
 Nomici aims to provide one local-first control plane for composing those pieces into useful, inspectable, governed agent organizations.
 
@@ -47,7 +47,7 @@ The intended v0.1 flow:
 - MCP tool and data integration
 - A2A agent-to-agent integration
 - OpenAI-compatible model and agent endpoint
-- Claude Code, Codex, Hermes, and OpenClaw runtime adapters
+- Generic CLI agent runner for command-driven agents such as Claude Code, Codex, opencode, Aider, and custom commands
 - Tool packs for local work such as office documents, developer workflows, research, and personal ops
 - Trace, replay, approval, policy, and audit logs
 
@@ -78,7 +78,7 @@ Nomici Console
     -> Policy and approvals
     -> Trace store
     -> Adapter layer
-      -> Claude Code / Codex / Hermes / OpenClaw / local models / MCP / A2A
+      -> CLI agents / Hermes / OpenClaw / local models / MCP / A2A
 ```
 
 The planned stack is:

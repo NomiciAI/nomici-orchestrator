@@ -98,7 +98,7 @@ Command should be structured as an array internally, even if CLI accepts a shell
 
 ## CLI Invoke Runner
 
-Coding agents such as Claude Code, Codex, and similar tools should use a `cli_invoke` runner profile when Nomici is invoking a command rather than maintaining a long-lived server process.
+Command-driven agents such as Claude Code, Codex, opencode, Aider, and similar tools should use a `cli_invoke` runner profile when Nomici is invoking a command rather than maintaining a long-lived server process. Editor-native agents such as Cline and Continue need an actual command-driven automation surface before this runner applies.
 
 Responsibilities:
 
@@ -111,7 +111,7 @@ Responsibilities:
 - support cancellation where possible
 - record pre/post workspace diff metadata where configured
 
-The runner should not assume full visibility into internal tool calls made by the coding agent.
+The runner should not assume full visibility into internal tool calls made by the CLI agent.
 
 Safety rules:
 

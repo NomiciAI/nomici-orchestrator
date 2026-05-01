@@ -13,7 +13,7 @@ The project should stand on existing agent runtimes and protocols:
 - A2A for agent-to-agent interoperability.
 - MCP for tool, data, and workflow integration.
 - OpenAI-compatible and native provider APIs for models and agent endpoints.
-- Claude Code, Codex, LangGraph, Google ADK, OpenAI Agents SDK, CrewAI, Hermes, OpenClaw, and similar systems as data-plane runtimes.
+- Claude Code, Codex, opencode, Aider, Cline, Continue, LangGraph, Google ADK, OpenAI Agents SDK, CrewAI, Hermes, OpenClaw, and similar systems as data-plane runtimes.
 
 Nomici's differentiated engineering surface is the control plane:
 
@@ -488,7 +488,7 @@ Nomici should integrate, not clone.
 | OpenAI Agents SDK | Handoffs, agents-as-tools, guardrails, tracing | Bridge and govern SDK agents |
 | CrewAI | Crews, flows, role-based automation | Register crews/flows as nodes |
 | Agent Squad | Routing, SupervisorAgent, agent-as-tools | Integrate as runtime/backend |
-| Claude Code / Codex | Strong local coding agents | Treat as external runtimes and govern through adapters |
+| CLI-capable agents | Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces | Treat as external runtimes through a generic CLI Agent Runner |
 | Hermes | Local agent runtime and gateway | Manage as external runtime |
 | OpenClaw | Gateway, operator runtime, Control UI | Manage as external runtime |
 | Coding-agent orchestrators | Worktrees, PR/CI loops | Treat as specialized runtime/template |
@@ -504,8 +504,8 @@ v0.1 should implement:
 - Local process runtime manager.
 - Basic reconciler for configured local runtimes.
 - OpenAI-compatible endpoint adapter.
-- Generic coding-agent CLI adapter.
-- Codex and Claude Code runtime profiles.
+- Generic CLI Agent Runner.
+- CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native agents where they expose automation surfaces.
 - Hermes and OpenClaw endpoint entries.
 - SQLite event store.
 - Trace timeline.

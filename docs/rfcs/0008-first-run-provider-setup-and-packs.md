@@ -490,7 +490,7 @@ This pack should absorb useful patterns from coding-agent orchestrators:
 - CI failure repair
 - human approval before push/deploy
 
-The pack should treat Claude Code, Codex, Hermes, OpenClaw, and similar local coding agents as optional external runtimes. They are not dependencies, but they are high-value runtime choices when installed.
+The pack should treat Claude Code, Codex, opencode, Aider, Cline, Continue, Hermes, OpenClaw, and similar local agents as optional external runtimes. Command-driven tools use `cli_agent`; editor-native tools need an automation surface or future sidecar. They are not dependencies, but they are high-value runtime choices when installed.
 
 ## Agent Packs
 
@@ -521,8 +521,8 @@ Suggested runtime mapping:
 
 - Product PM: `gateway_agent`
 - Architect: `gateway_agent` or local model-backed agent
-- Implementer: Claude Code, Codex, Hermes, OpenClaw, or another external coding agent
-- Reviewer: Codex, Claude Code, or another review-capable external agent
+- Implementer: Claude Code, Codex, opencode, Aider, Hermes, OpenClaw, or another external CLI agent
+- Reviewer: Codex, Claude Code, opencode, Aider, or another review-capable external CLI agent
 - Test Runner: tool agent or local process
 - Human Approval Gate: approval node before publish actions
 
@@ -736,7 +736,7 @@ v0.1 should implement:
 - Pack manifest schema draft.
 - Built-in `ai-application-pm` pack.
 - Built-in `developer-team` pack scaffold.
-- Generic coding-agent CLI adapter profile for developer-team runtimes.
+- Generic CLI Agent Runner profile for developer-team runtimes.
 - Pack permission review in CLI, even if simple.
 
 v0.1 may defer:

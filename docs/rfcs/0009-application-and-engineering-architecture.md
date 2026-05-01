@@ -97,6 +97,8 @@ LLM Providers
 Agent Runtimes
   Claude Code
   Codex
+  opencode
+  Aider / Cline / Continue
   Hermes
   OpenClaw
   LangGraph
@@ -104,7 +106,7 @@ Agent Runtimes
   OpenAI Agents SDK
   Google ADK
   Agent Squad
-  coding-agent fleets
+  CLI agent fleets
 
 Tool Packs
   Office
@@ -337,9 +339,8 @@ Responsibilities:
 v0.1 adapters:
 
 - OpenAI-compatible endpoint
-- generic coding-agent CLI
-- Codex CLI profile
-- Claude Code CLI profile
+- generic CLI Agent Runner
+- CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native agents where they expose automation surfaces
 - Hermes endpoint
 - OpenClaw endpoint
 - Ollama/local provider
@@ -403,7 +404,7 @@ Responsibilities:
 
 The run engine should remain thin. It coordinates control-plane execution; it does not become a durable workflow engine in v0.1.
 
-`gateway_agent` is the v0.1 name for the minimal Gateway-run coordinator loop. `native_agent` is not a public v0.1 kind.
+`gateway_agent` is the v0.1 name for the minimal Gateway-run coordinator loop. `native_agent` is not a public v0.1 kind. The first compelling developer proof may use external `cli_agent` runtimes before the Gateway agent loop is featureful.
 
 ### Task Ledger
 
@@ -829,9 +830,8 @@ Phase 3: Runtime and Adapters
 - local process runtime manager
 - runtime observed state
 - OpenAI-compatible adapter
-- generic coding-agent CLI adapter
-- Codex CLI profile
-- Claude Code CLI profile
+- generic CLI Agent Runner
+- CLI agent profiles for Codex, Claude Code, opencode, Aider, custom commands, and editor-native agents where they expose automation surfaces
 - Hermes endpoint entry
 - OpenClaw endpoint entry
 - health/logs

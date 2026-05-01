@@ -199,7 +199,7 @@ Nomici should borrow patterns without cloning any one project.
 | LangGraph | Durable, stateful, long-running workflows | External runtime backend for workflows needing durability |
 | CrewAI | Role-based teams and task collaboration | Pack templates for role/team agent setups |
 | OpenAI Agents SDK | Handoffs, agents-as-tools, guardrails, sessions, tracing | Coordination semantics and adapter concepts |
-| Claude Code / Codex | Strong local coding agents with CLI surfaces | First-class external runtimes for developer-team packs |
+| CLI-capable agents | Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces | Generic data-plane runtime class for developer-team packs |
 | Composio agent-orchestrator | Coding-agent fleets, worktrees, PR supervision | Future developer-team pack and coding runtime integration |
 | AI-Agents-Orchestrator style projects | Multi-CLI assistant supervision | Possible pack/runtime category, not core identity |
 | Hermes / OpenClaw | Strong local operator agents with gateways/profiles | Managed external runtimes and endpoint adapters |
@@ -220,9 +220,9 @@ Local productivity vs safety:
 - They must enter as Tool Packs with permissions, approvals, artifacts, and trace events.
 - Core should not silently gain broad filesystem, shell, browser, or email power.
 
-Strong coding agents vs Nomici differentiation:
+Strong CLI agents vs Nomici differentiation:
 
-- Claude Code, Codex, and similar tools should be integrated as data-plane runtimes.
+- Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces should be integrated through the generic CLI Agent Runner.
 - Nomici differentiates through multi-runtime composition, policy, approval, trace, and pack-based teams.
 - Nomici should not compete on single-agent coding quality.
 
