@@ -10,7 +10,6 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
-	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 )
@@ -32,11 +31,9 @@ type consoleOverview struct {
 }
 
 type consoleGatewayStatus struct {
-	Status     string `json:"status"`
-	Service    string `json:"service"`
-	Version    string `json:"version"`
-	ConfigPath string `json:"config_path,omitempty"`
-	DBPath     string `json:"db_path,omitempty"`
+	Status  string `json:"status"`
+	Service string `json:"service"`
+	Version string `json:"version"`
 }
 
 type consoleCounts struct {
@@ -55,8 +52,6 @@ type consoleModelProfile struct {
 	BaseURL         string            `json:"base_url"`
 	Model           string            `json:"model"`
 	APIKeyEnv       string            `json:"api_key_env"`
-	SecretStatus    string            `json:"secret_status,omitempty"`
-	SecretAvailable bool              `json:"secret_available"`
 	Capabilities    map[string]string `json:"capabilities,omitempty"`
 	ContextWindow   int               `json:"context_window,omitempty"`
 	CostPer1MInput  float64           `json:"cost_per_1m_input,omitempty"`
@@ -133,7 +128,7 @@ func modelListHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "models_list_failed", "Model profiles could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		writeSuccess(response, requestID, sanitizeModelProfiles(models, services.Secrets), nil)
+		writeSuccess(response, requestID, sanitizeModelProfiles(models), nil)
 	}
 }
 
@@ -270,11 +265,9 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 	}
 	return &consoleOverview{
 		Gateway: consoleGatewayStatus{
-			Status:     "ok",
-			Service:    "nomici-gateway",
-			Version:    version,
-			ConfigPath: options.ConfigPath,
-			DBPath:     options.DBPath,
+			Status:  "ok",
+			Service: "nomici-gateway",
+			Version: version,
 		},
 		Counts: consoleCounts{
 			Models:           len(models),
@@ -284,7 +277,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 			Runs:             len(runs),
 			PendingApprovals: len(pendingApprovals),
 		},
-		Models:           sanitizeModelProfiles(models, services.Secrets),
+		Models:           sanitizeModelProfiles(models),
 		Packs:            packStatuses,
 		Graph:            graphSummary,
 		GraphSnapshot:    snapshot,
@@ -294,7 +287,8 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		PendingApprovals: pendingApprovals,
 		Unavailable: []consoleUnavailableAPI{
 			{Name: "Canvas editing", Status: "deferred", Reason: "Gate 8 is read-only."},
-			{Name: "Runtime restart from Console", Status: "deferred", Reason: "Gateway needs a supervisor before it can safely restart itself."},
+			{Name: "Console provider setup", Status: "deferred", Reason: "Use `nomici model setup` for bootstrap."},
+			{Name: "Runtime lifecycle controls", Status: "deferred", Reason: "Runtime reconciler is not implemented yet."},
 		},
 	}, warnings, nil
 }
@@ -323,20 +317,9 @@ func loadPackStatuses(request *http.Request, services Services) ([]consolePackSt
 	return statuses, nil
 }
 
-func sanitizeModelProfiles(models []*providers.Profile, resolver *secrets.Resolver) []consoleModelProfile {
+func sanitizeModelProfiles(models []*providers.Profile) []consoleModelProfile {
 	sanitized := make([]consoleModelProfile, 0, len(models))
 	for _, model := range models {
-		secretAvailable := false
-		secretStatus := "not_required"
-		if model.APIKeyEnv != "" {
-			secretStatus = "missing"
-			if resolver != nil {
-				if _, ok := resolver.ResolveEnv(model.APIKeyEnv); ok {
-					secretAvailable = true
-					secretStatus = "available"
-				}
-			}
-		}
 		sanitized = append(sanitized, consoleModelProfile{
 			ID:              model.ID,
 			Name:            model.Name,
@@ -344,8 +327,6 @@ func sanitizeModelProfiles(models []*providers.Profile, resolver *secrets.Resolv
 			BaseURL:         model.BaseURL,
 			Model:           model.Model,
 			APIKeyEnv:       sharedcontext.RedactText(model.APIKeyEnv),
-			SecretStatus:    secretStatus,
-			SecretAvailable: secretAvailable,
 			Capabilities:    model.Capabilities,
 			ContextWindow:   model.ContextWindow,
 			CostPer1MInput:  model.CostPer1MInput,

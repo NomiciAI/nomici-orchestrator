@@ -28,13 +28,12 @@ const (
 )
 
 type Options struct {
-	Host       string
-	Port       int
-	Version    string
-	DBPath     string
-	ConfigPath string
-	TokenPath  string
-	AuthToken  string
+	Host      string
+	Port      int
+	Version   string
+	DBPath    string
+	TokenPath string
+	AuthToken string
 }
 
 type Server struct {
@@ -53,9 +52,6 @@ func NewServer(options Options) *Server {
 
 	if options.DBPath == "" {
 		options.DBPath = store.DefaultDBPath
-	}
-	if options.ConfigPath == "" {
-		options.ConfigPath = "nomici.yaml"
 	}
 
 	return &Server{options: options}

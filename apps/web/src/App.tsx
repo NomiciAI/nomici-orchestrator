@@ -24,8 +24,6 @@ type ProviderProfile = {
   base_url: string;
   model: string;
   api_key_env: string;
-  secret_status?: string;
-  secret_available?: boolean;
   capabilities?: Record<string, string>;
 };
 
@@ -117,8 +115,6 @@ type Overview = {
     status: string;
     service: string;
     version: string;
-    config_path?: string;
-    db_path?: string;
   };
   counts: {
     models: number;
@@ -165,12 +161,6 @@ export function App() {
   const [tokenInput, setTokenInput] = useState(gatewayToken);
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [setupMessage, setSetupMessage] = useState("");
-  const [runPrompt, setRunPrompt] = useState(
-    "Plan a useful local automation task for this machine.",
-  );
-  const [runResult, setRunResult] = useState("");
-  const [actionBusy, setActionBusy] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "failed" | "auth">(
     "loading",
   );
@@ -212,91 +202,6 @@ export function App() {
       );
       setStatus("failed");
     }
-  }
-
-  async function postJSON<T>(path: string, body: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    };
-    if (gatewayToken.trim() !== "") {
-      headers.Authorization = `Bearer ${gatewayToken.trim()}`;
-    }
-    const response = await fetch(path, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-    const payload = (await response.json()) as
-      | ApiEnvelope<T>
-      | { error?: { code?: string; message?: string; remediation?: string } };
-    if (!response.ok) {
-      const error = "error" in payload ? payload.error : undefined;
-      throw new Error(
-        [error?.code, error?.message, error?.remediation]
-          .filter(Boolean)
-          .join(": ") || `Gateway API returned ${response.status}`,
-      );
-    }
-    return (payload as ApiEnvelope<T>).data;
-  }
-
-  async function runAction(label: string, action: () => Promise<void>) {
-    setActionBusy(label);
-    setSetupMessage("");
-    setRunResult("");
-    try {
-      await action();
-    } catch (actionError) {
-      setSetupMessage(
-        actionError instanceof Error ? actionError.message : "Action failed",
-      );
-    } finally {
-      setActionBusy("");
-    }
-  }
-
-  async function setupDeepSeek() {
-    await postJSON("/api/models", { preset: "deepseek_v4" });
-    setSetupMessage(
-      "DeepSeek V4 profile saved. Gateway env must include DEEPSEEK_API_KEY before running it.",
-    );
-    await loadOverview();
-  }
-
-  async function installDeveloperTeam() {
-    const modelID = preferredModelID(overview);
-    if (modelID === "") {
-      setSetupMessage("Set up a model profile before installing Developer Team.");
-      return;
-    }
-    await postJSON(`/api/packs/developer-team/install`, {
-      model_id: modelID,
-      force: true,
-    });
-    setSetupMessage("Developer Team installed. Run product_pm from Console or CLI.");
-    await loadOverview();
-  }
-
-  async function runProductPM() {
-    type AgentRunResponse = {
-      run_id: string;
-      status: string;
-      messages?: Array<{ role: string; content: string }>;
-    };
-    const result = await postJSON<AgentRunResponse>("/api/runs/agent", {
-      agent_id: "product_pm",
-      prompt: runPrompt,
-    });
-    setRunResult(
-      [
-        `Run ${result.run_id} ${result.status}`,
-        result.messages?.[0]?.content ?? "",
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    );
-    await loadOverview();
   }
 
   useEffect(() => {
@@ -419,86 +324,6 @@ export function App() {
       ))}
 
       {isAuthenticated ? (
-        <>
-          <section className="quick-actions" aria-label="First-run actions">
-            <div className="action-card">
-              <div>
-                <h2>Set Up Model</h2>
-                <p>{modelSetupText(overview)}</p>
-              </div>
-              <button
-                className="button"
-                disabled={actionBusy !== ""}
-                onClick={() => runAction("model", setupDeepSeek)}
-                type="button"
-              >
-                {hasModel(overview, "deepseek_v4")
-                  ? "Refresh DeepSeek"
-                  : "Set Up DeepSeek V4"}
-              </button>
-            </div>
-            <div className="action-card">
-              <div>
-                <h2>Install Team</h2>
-                <p>{developerTeamText(overview)}</p>
-              </div>
-              <button
-                className="button"
-                disabled={actionBusy !== "" || overview.models.length === 0}
-                onClick={() => runAction("pack", installDeveloperTeam)}
-                type="button"
-              >
-                {developerTeamInstalled(overview)
-                  ? "Reinstall Developer Team"
-                  : "Install Developer Team"}
-              </button>
-            </div>
-            <div className="action-card action-card-wide">
-              <div>
-                <h2>Run product_pm</h2>
-                <p>{runReadinessText(overview)}</p>
-              </div>
-              <div className="run-inline">
-                <input
-                  aria-label="product_pm task"
-                  onChange={(event) => setRunPrompt(event.target.value)}
-                  value={runPrompt}
-                />
-                <button
-                  className="button"
-                  disabled={
-                    actionBusy !== "" ||
-                    !developerTeamInstalled(overview) ||
-                    !selectedModelReady(overview)
-                  }
-                  onClick={() => runAction("run", runProductPM)}
-                  type="button"
-                >
-                  Run
-                </button>
-              </div>
-            </div>
-            <div className="action-card">
-              <div>
-                <h2>Gateway Env</h2>
-                <p>{gatewayEnvText(overview)}</p>
-              </div>
-              <button
-                className="theme-toggle"
-                disabled={actionBusy !== ""}
-                onClick={() => void loadOverview()}
-                type="button"
-              >
-                Check Env
-              </button>
-            </div>
-          </section>
-          {setupMessage ? <div className="banner">{setupMessage}</div> : null}
-          {runResult ? <pre className="run-output">{runResult}</pre> : null}
-        </>
-      ) : null}
-
-      {isAuthenticated ? (
         <section className="workspace">
           <section className="panel graph-panel" aria-label="Agent graph">
             <div className="panel-heading">
@@ -544,10 +369,10 @@ export function App() {
                 <div className="table-row" key={model.id}>
                   <span>{model.name}</span>
                   <span>{model.kind}</span>
-                <span>{model.model}</span>
-                <span>{model.secret_status || model.api_key_env || "-"}</span>
-              </div>
-            ))}
+                  <span>{model.model}</span>
+                  <span>{model.api_key_env || "-"}</span>
+                </div>
+              ))}
               {overview.models.length === 0 ? (
                 <EmptyRow text="No models configured. Run model setup in this workspace." />
               ) : null}
@@ -755,74 +580,6 @@ function normalizeOverview(next: Overview): Overview {
     pending_approvals: next.pending_approvals ?? [],
     unavailable: next.unavailable ?? [],
   };
-}
-
-function hasModel(overview: Overview, id: string): boolean {
-  return overview.models.some((model) => model.id === id);
-}
-
-function preferredModelID(overview: Overview): string {
-  const deepseek = overview.models.find((model) => model.id === "deepseek_v4");
-  return deepseek?.id ?? overview.models[0]?.id ?? "";
-}
-
-function selectedModel(overview: Overview): ProviderProfile | undefined {
-  const modelID = preferredModelID(overview);
-  return overview.models.find((model) => model.id === modelID);
-}
-
-function selectedModelReady(overview: Overview): boolean {
-  const model = selectedModel(overview);
-  return model?.secret_status === "available" || model?.api_key_env === "";
-}
-
-function developerTeamInstalled(overview: Overview): boolean {
-  return overview.packs.some(
-    (pack) => pack.manifest.id === "developer-team" && pack.installed,
-  );
-}
-
-function modelSetupText(overview: Overview): string {
-  const deepseek = overview.models.find((model) => model.id === "deepseek_v4");
-  if (!deepseek) {
-    return "Save a DeepSeek V4 profile using DEEPSEEK_API_KEY. Raw keys are not stored.";
-  }
-  return `deepseek_v4 is configured; secret is ${deepseek.secret_status ?? "unknown"}.`;
-}
-
-function developerTeamText(overview: Overview): string {
-  if (developerTeamInstalled(overview)) {
-    return `Installed with entrypoint product_pm on ${preferredModelID(overview) || "a model"}.`;
-  }
-  if (overview.models.length === 0) {
-    return "Set up a model first, then install the Developer Team pack.";
-  }
-  return `Install product_pm and architect using ${preferredModelID(overview)}.`;
-}
-
-function runReadinessText(overview: Overview): string {
-  if (!developerTeamInstalled(overview)) {
-    return "Install Developer Team before running product_pm.";
-  }
-  const model = selectedModel(overview);
-  if (!model) {
-    return "No model is configured for product_pm.";
-  }
-  if (!selectedModelReady(overview)) {
-    return `Gateway cannot see ${model.api_key_env}; restart it from a shell where that env var is exported.`;
-  }
-  return `Ready on ${model.id}. Runs are traced.`;
-}
-
-function gatewayEnvText(overview: Overview): string {
-  const missing = overview.models.filter(
-    (model) => model.api_key_env && model.secret_status !== "available",
-  );
-  if (missing.length === 0) {
-    return "All configured model secrets are visible to this Gateway process.";
-  }
-  const envs = missing.map((model) => model.api_key_env).join(", ");
-  return `Missing ${envs}. Export it, then run nomici down && nomici up.`;
 }
 
 function EmptyRow({ text }: { text: string }) {

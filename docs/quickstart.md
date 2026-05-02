@@ -50,14 +50,7 @@ nomici gateway open
 
 Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici up` started Gateway. Each `.nomici` state directory has its own Gateway token.
 
-The Console now includes first-run action buttons for the common alpha path:
-
-- Set up a DeepSeek V4 model profile.
-- Install the Developer Team pack.
-- Run `product_pm`.
-- Check whether the Gateway process can see the required API key environment variable.
-
-Model setup stores only an environment variable reference such as `DEEPSEEK_API_KEY`; it does not store raw API keys.
+The current Console is read-only. It shows the latest graph snapshot saved by `nomici up`, `nomici graph validate`, `nomici run`, or `nomici pack install`.
 
 When finished:
 

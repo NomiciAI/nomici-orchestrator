@@ -22,7 +22,6 @@ type StartGatewayOptions struct {
 	Port       int
 	Version    string
 	DBPath     string
-	ConfigPath string
 }
 
 func StartGateway(ctx context.Context, options StartGatewayOptions) (State, error) {
@@ -47,16 +46,12 @@ func StartGateway(ctx context.Context, options StartGatewayOptions) (State, erro
 	if options.Port == 0 {
 		options.Port = gateway.DefaultPort
 	}
-	if options.ConfigPath == "" {
-		options.ConfigPath = "nomici.yaml"
-	}
 
 	args := []string{
 		"gateway", "run",
 		"--host", options.Host,
 		"--port", fmt.Sprintf("%d", options.Port),
 		"--db-path", paths.DBPath,
-		"--config", options.ConfigPath,
 	}
 	logFile, err := openLog(paths.GatewayLog)
 	if err != nil {
@@ -73,14 +68,13 @@ func StartGateway(ctx context.Context, options StartGatewayOptions) (State, erro
 	}
 
 	state := State{
-		RuntimeID:  RuntimeGateway,
-		Kind:       "gateway",
-		Status:     StatusRunning,
-		PID:        command.Process.Pid,
-		Command:    append([]string{options.Executable}, args...),
-		LogPath:    paths.GatewayLog,
-		ConfigPath: options.ConfigPath,
-		StartedAt:  time.Now().UTC(),
+		RuntimeID: RuntimeGateway,
+		Kind:      "gateway",
+		Status:    StatusRunning,
+		PID:       command.Process.Pid,
+		Command:   append([]string{options.Executable}, args...),
+		LogPath:   paths.GatewayLog,
+		StartedAt: time.Now().UTC(),
 	}
 	if err := SaveState(paths, state); err != nil {
 		return State{}, err
