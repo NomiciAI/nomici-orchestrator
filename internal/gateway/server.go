@@ -126,6 +126,10 @@ func (server *Server) initialize() error {
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),
 		Handler:           NewRouter(server.options, services),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      180 * time.Second,
+		IdleTimeout:       15 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	return nil
