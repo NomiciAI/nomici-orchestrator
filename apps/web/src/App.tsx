@@ -1,7 +1,15 @@
-import { Background, Controls, ReactFlow, type Edge, type Node } from '@xyflow/react';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import '@xyflow/react/dist/style.css';
-import './styles.css';
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import "@xyflow/react/dist/style.css";
+import "./styles.css";
+
+type Theme = "dark" | "light";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -57,7 +65,10 @@ type GraphSnapshot = {
   ir: {
     models: Record<string, { id: string; kind: string; model: string }>;
     runtimes?: Record<string, { id: string; kind: string; workspace?: string }>;
-    agents: Record<string, { id: string; kind: string; model?: string; runtime?: string }>;
+    agents: Record<
+      string,
+      { id: string; kind: string; model?: string; runtime?: string }
+    >;
     edges: Array<{ id: string; from: string; to: string; mode: string }>;
   };
 };
@@ -124,7 +135,7 @@ type Overview = {
 };
 
 const emptyOverview: Overview = {
-  gateway: { status: 'unknown', service: 'nomici-gateway', version: 'dev' },
+  gateway: { status: "unknown", service: "nomici-gateway", version: "dev" },
   counts: {
     models: 0,
     packs_installed: 0,
@@ -143,27 +154,32 @@ const emptyOverview: Overview = {
 };
 
 export function App() {
-  const [gatewayToken, setGatewayToken] = useState(() => window.localStorage.getItem('nomici.gateway.token') ?? '');
+  const [gatewayToken, setGatewayToken] = useState(
+    () => window.localStorage.getItem("nomici.gateway.token") ?? "",
+  );
+  const [theme, setTheme] = useState<Theme>(() => readTheme());
   const [tokenInput, setTokenInput] = useState(gatewayToken);
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'auth'>('loading');
-  const [error, setError] = useState('');
+  const [status, setStatus] = useState<"loading" | "ready" | "failed" | "auth">(
+    "loading",
+  );
+  const [error, setError] = useState("");
 
   async function loadOverview(nextToken = gatewayToken) {
-    setStatus('loading');
-    setError('');
+    setStatus("loading");
+    setError("");
     try {
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (nextToken.trim() !== '') {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (nextToken.trim() !== "") {
         headers.Authorization = `Bearer ${nextToken.trim()}`;
       }
-      const response = await fetch('/api/console/overview', {
+      const response = await fetch("/api/console/overview", {
         headers,
       });
       if (response.status === 401) {
-        setStatus('auth');
-        setError('Gateway token required');
+        setStatus("auth");
+        setError("Gateway token required");
         return;
       }
       if (!response.ok) {
@@ -172,10 +188,14 @@ export function App() {
       const envelope = (await response.json()) as ApiEnvelope<Overview>;
       setOverview(normalizeOverview(envelope.data));
       setWarnings(envelope.warnings ?? []);
-      setStatus('ready');
+      setStatus("ready");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Gateway API unavailable');
-      setStatus('failed');
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Gateway API unavailable",
+      );
+      setStatus("failed");
     }
   }
 
@@ -183,32 +203,64 @@ export function App() {
     void loadOverview();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("nomici.console.theme", theme);
+  }, [theme]);
+
   function submitToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextToken = tokenInput.trim();
-    if (nextToken === '') {
-      window.localStorage.removeItem('nomici.gateway.token');
+    if (nextToken === "") {
+      window.localStorage.removeItem("nomici.gateway.token");
     } else {
-      window.localStorage.setItem('nomici.gateway.token', nextToken);
+      window.localStorage.setItem("nomici.gateway.token", nextToken);
     }
     setGatewayToken(nextToken);
     void loadOverview(nextToken);
   }
 
-  const flow = useMemo(() => buildFlow(overview.graph_snapshot), [overview.graph_snapshot]);
+  const flow = useMemo(
+    () => buildFlow(overview.graph_snapshot),
+    [overview.graph_snapshot],
+  );
 
   return (
-    <main className="shell">
+    <main className={`shell theme-${theme}`}>
       <header className="topbar">
         <div className="brand">
-          <p className="eyebrow">Nomici Console</p>
-          <h1>Agent Control Plane</h1>
+          <img
+            alt="Nomici"
+            className="brand-logo"
+            src="/logo/logo-solid-black.svg"
+          />
+          <div>
+            <p className="eyebrow">Nomici Console</p>
+            <h1>Agent Control Plane</h1>
+          </div>
         </div>
         <div className="topbar-actions">
-          <span className={`status ${overview.gateway.status === 'ok' ? 'status-ok' : ''}`}>
+          <span
+            className={`status ${overview.gateway.status === "ok" ? "status-ok" : ""}`}
+          >
             {overview.gateway.status}
           </span>
-          <button className="button" type="button" onClick={() => void loadOverview()}>
+          <button
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            className="theme-toggle"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            type="button"
+          >
+            <span className="theme-toggle-track" aria-hidden="true">
+              <span className="theme-toggle-thumb" />
+            </span>
+            <span>{theme === "dark" ? "Dark" : "Light"}</span>
+          </button>
+          <button
+            className="button"
+            type="button"
+            onClick={() => void loadOverview()}
+          >
             Refresh
           </button>
         </div>
@@ -220,15 +272,23 @@ export function App() {
         <Metric label="Agents" value={overview.counts.agents} />
         <Metric label="Runtimes" value={overview.counts.runtimes} />
         <Metric label="Runs" value={overview.counts.runs} />
-        <Metric label="Approvals" value={overview.counts.pending_approvals} tone="attention" />
+        <Metric
+          label="Approvals"
+          value={overview.counts.pending_approvals}
+          tone="attention"
+        />
       </section>
 
-      {status === 'failed' ? <div className="banner banner-error">{error}</div> : null}
-      {status === 'auth' ? (
+      {status === "failed" ? (
+        <div className="banner banner-error">{error}</div>
+      ) : null}
+      {status === "auth" ? (
         <form className="auth-banner" onSubmit={submitToken}>
           <div>
             <strong>Gateway token required</strong>
-            <span>Run `nomici gateway token show` locally and paste the token here.</span>
+            <span>
+              Run `nomici gateway token show` locally and paste the token here.
+            </span>
           </div>
           <input
             aria-label="Gateway token"
@@ -254,9 +314,11 @@ export function App() {
           <div className="panel-heading">
             <div>
               <h2>Graph</h2>
-              <p>{overview.graph_snapshot?.project_id ?? 'No snapshot'}</p>
+              <p>{overview.graph_snapshot?.project_id ?? "No snapshot"}</p>
             </div>
-            <span className="tag">{overview.graph_snapshot ? 'read-only' : 'empty'}</span>
+            <span className="tag">
+              {overview.graph_snapshot ? "read-only" : "empty"}
+            </span>
           </div>
           <div className="canvas">
             <ReactFlow
@@ -290,10 +352,12 @@ export function App() {
                 <span>{model.name}</span>
                 <span>{model.kind}</span>
                 <span>{model.model}</span>
-                <span>{model.api_key_env || '-'}</span>
+                <span>{model.api_key_env || "-"}</span>
               </div>
             ))}
-            {overview.models.length === 0 ? <EmptyRow text="No models configured" /> : null}
+            {overview.models.length === 0 ? (
+              <EmptyRow text="No models configured" />
+            ) : null}
           </div>
         </section>
 
@@ -310,8 +374,10 @@ export function App() {
                   <span>{pack.manifest.id}</span>
                 </div>
                 <div className="list-meta">
-                  <span className={pack.installed ? 'pill pill-green' : 'pill'}>{pack.installed ? 'installed' : 'available'}</span>
-                  <span>{pack.manifest.trust?.level ?? 'local'}</span>
+                  <span className={pack.installed ? "pill pill-green" : "pill"}>
+                    {pack.installed ? "installed" : "available"}
+                  </span>
+                  <span>{pack.manifest.trust?.level ?? "local"}</span>
                 </div>
               </div>
             ))}
@@ -335,10 +401,12 @@ export function App() {
                 <span>{runtime.id}</span>
                 <span>{runtime.kind}</span>
                 <span>{runtime.status}</span>
-                <span>{runtime.agents?.join(', ') || '-'}</span>
+                <span>{runtime.agents?.join(", ") || "-"}</span>
               </div>
             ))}
-            {overview.runtimes.length === 0 ? <EmptyRow text="No runtimes in graph" /> : null}
+            {overview.runtimes.length === 0 ? (
+              <EmptyRow text="No runtimes in graph" />
+            ) : null}
           </div>
         </section>
 
@@ -360,7 +428,9 @@ export function App() {
                 </div>
               </div>
             ))}
-            {overview.recent_runs.length === 0 ? <p className="empty">No runs traced</p> : null}
+            {overview.recent_runs.length === 0 ? (
+              <p className="empty">No runs traced</p>
+            ) : null}
           </div>
         </section>
 
@@ -376,7 +446,9 @@ export function App() {
                   <strong>
                     {event.sequence}. {event.type}
                   </strong>
-                  <span>{event.node_id || event.runtime_id || event.run_id}</span>
+                  <span>
+                    {event.node_id || event.runtime_id || event.run_id}
+                  </span>
                 </div>
                 <div className="list-meta">
                   <span>{formatTime(event.time)}</span>
@@ -384,14 +456,22 @@ export function App() {
                 </div>
               </div>
             ))}
-            {overview.latest_trace.length === 0 ? <p className="empty">No trace events</p> : null}
+            {overview.latest_trace.length === 0 ? (
+              <p className="empty">No trace events</p>
+            ) : null}
           </div>
         </section>
 
         <section className="panel" aria-label="Pending approvals">
           <div className="panel-heading">
             <h2>Approvals</h2>
-            <span className={overview.pending_approvals.length > 0 ? 'tag tag-attention' : 'tag'}>
+            <span
+              className={
+                overview.pending_approvals.length > 0
+                  ? "tag tag-attention"
+                  : "tag"
+              }
+            >
               {overview.pending_approvals.length}
             </span>
           </div>
@@ -408,7 +488,9 @@ export function App() {
                 </div>
               </div>
             ))}
-            {overview.pending_approvals.length === 0 ? <p className="empty">No pending approvals</p> : null}
+            {overview.pending_approvals.length === 0 ? (
+              <p className="empty">No pending approvals</p>
+            ) : null}
           </div>
         </section>
 
@@ -434,9 +516,27 @@ export function App() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: 'attention' }) {
+function readTheme(): Theme {
+  const saved = window.localStorage.getItem("nomici.console.theme");
+  if (saved === "light" || saved === "dark") {
+    return saved;
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "attention";
+}) {
   return (
-    <div className={`metric ${tone === 'attention' ? 'metric-attention' : ''}`}>
+    <div className={`metric ${tone === "attention" ? "metric-attention" : ""}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -475,10 +575,10 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
     return {
       nodes: [
         {
-          id: 'empty',
+          id: "empty",
           position: { x: 80, y: 80 },
-          data: { label: 'No graph snapshot' },
-          type: 'input',
+          data: { label: "No graph snapshot" },
+          type: "input",
         },
       ],
       edges: [],
@@ -494,7 +594,7 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
       id: `model:${id}`,
       position: { x: 40, y: 60 + index * 92 },
       data: { label: `model ${id}` },
-      type: 'input',
+      type: "input",
     })),
     ...agentIds.map((id, index) => ({
       id: `agent:${id}`,
@@ -505,7 +605,7 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
       id: `runtime:${id}`,
       position: { x: 650, y: 60 + index * 92 },
       data: { label: `runtime ${id}` },
-      type: 'output',
+      type: "output",
     })),
   ];
 
@@ -516,7 +616,7 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
         id: `model-edge:${id}`,
         source: `model:${snapshot.ir.agents[id].model}`,
         target: `agent:${id}`,
-        label: 'brain',
+        label: "brain",
       })),
     ...agentIds
       .filter((id) => snapshot.ir.agents[id].runtime)
@@ -524,7 +624,7 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
         id: `runtime-edge:${id}`,
         source: `agent:${id}`,
         target: `runtime:${snapshot.ir.agents[id].runtime}`,
-        label: 'runtime',
+        label: "runtime",
       })),
     ...snapshot.ir.edges.map((edge) => ({
       id: edge.id,
@@ -539,16 +639,16 @@ function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {
 
 function formatTime(value: string) {
   if (!value) {
-    return '-';
+    return "-";
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
   return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
