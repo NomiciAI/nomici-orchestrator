@@ -102,7 +102,16 @@ func newPackInstallCommand(dbPath *string, configPath *string) *cobra.Command {
 				fmt.Fprintf(command.OutOrStdout(), "Model:      %s\n", result.ModelID)
 				fmt.Fprintf(command.OutOrStdout(), "Entrypoint: product_pm\n")
 				fmt.Fprintf(command.OutOrStdout(), "Permissions: filesystem read/write ./workspace; shell approval\n")
-				fmt.Fprintf(command.OutOrStdout(), "Next:       nomici graph validate --config %s\n", result.ConfigPath)
+				snapshot, err := compileGraphFromConfig(result.ConfigPath, command)
+				if err != nil {
+					return err
+				}
+				if err := saveGraphSnapshot(command.Context(), *dbPath, snapshot); err != nil {
+					return err
+				}
+				fmt.Fprintf(command.OutOrStdout(), "Graph:      %s\n", snapshot.SnapshotID)
+				fmt.Fprintf(command.OutOrStdout(), "Run:        nomici run product_pm \"Plan the next local automation task\"\n")
+				fmt.Fprintf(command.OutOrStdout(), "Console:    refresh the Console if this Gateway was started from the same workspace\n")
 				return nil
 			default:
 				_, err := packs.RequireBuiltin(args[0])

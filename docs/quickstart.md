@@ -48,7 +48,9 @@ nomici gateway token show
 nomici gateway open
 ```
 
-Paste the token into Nomici Console when prompted. The current Console is read-only.
+Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici up` started Gateway. Each `.nomici` state directory has its own Gateway token.
+
+The current Console is read-only. It shows the latest graph snapshot saved by `nomici up`, `nomici graph validate`, `nomici run`, or `nomici pack install`.
 
 When finished:
 
@@ -81,10 +83,11 @@ After configuring at least one model profile:
 
 ```bash
 nomici pack install developer-team --model gpt
-nomici graph validate --config nomici.yaml
 nomici run product_pm "Draft a tiny implementation plan."
 nomici trace show <run_id>
 ```
+
+`pack install` writes the pack into `nomici.yaml` and saves a graph snapshot for Console. If Console is already open, refresh it after installing the pack.
 
 ## Current Limits
 

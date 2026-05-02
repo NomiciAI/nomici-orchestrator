@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -33,12 +34,7 @@ func newGraphValidateCommand(configPath *string, dbPath *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			db, err := openMigratedDB(*dbPath)
-			if err != nil {
-				return err
-			}
-			defer db.Close()
-			if err := graph.NewStore(db).Save(command.Context(), snapshot); err != nil {
+			if err := saveGraphSnapshot(command.Context(), *dbPath, snapshot); err != nil {
 				return err
 			}
 			fmt.Fprintf(command.OutOrStdout(), "Graph valid: %s\n", snapshot.SnapshotID)
@@ -80,4 +76,13 @@ func compileGraphFromConfig(configPath string, command *cobra.Command) (*graph.S
 		return nil, fmt.Errorf("AgentGraph validation failed with %d error(s)", len(errors))
 	}
 	return snapshot, nil
+}
+
+func saveGraphSnapshot(ctx context.Context, dbPath string, snapshot *graph.Snapshot) error {
+	db, err := openMigratedDB(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return graph.NewStore(db).Save(ctx, snapshot)
 }

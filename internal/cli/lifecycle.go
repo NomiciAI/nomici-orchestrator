@@ -9,6 +9,7 @@ import (
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway"
+	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/lifecycle"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
@@ -33,6 +34,7 @@ func newUpCommand(version string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(command.OutOrStdout(), "gateway\t%s\tpid=%d\tlog=%s\n", gatewayState.Status, gatewayState.PID, gatewayState.LogPath)
+			fmt.Fprintf(command.OutOrStdout(), "console\thttp://%s:%d\ttoken-command=%q\n", host, port, gatewayTokenCommand(dbPath))
 
 			loaded, exists, err := loadSpecIfExists(configPath)
 			if err != nil {
@@ -46,6 +48,15 @@ func newUpCommand(version string) *cobra.Command {
 				printValidationErrors(command, errors)
 				return fmt.Errorf("AgentSpec validation failed with %d error(s)", len(errors))
 			}
+			snapshot, errors := graph.Compile(loaded)
+			if len(errors) > 0 {
+				printValidationErrors(command, errors)
+				return fmt.Errorf("AgentGraph validation failed with %d error(s)", len(errors))
+			}
+			if err := saveGraphSnapshot(command.Context(), dbPath, snapshot); err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "graph\tvalid\tsnapshot=%s\n", snapshot.SnapshotID)
 
 			for id, runtimeSpec := range loaded.Spec.Runtimes {
 				switch runtimeSpec.Kind {

@@ -324,6 +324,11 @@ h2 {
   -webkit-backdrop-filter: blur(28px) saturate(1.5);
 }
 
+.auth-screen {
+  max-width: 940px;
+  margin: 48px auto 0;
+}
+
 .auth-banner div {
   min-width: 0;
   display: grid;
@@ -338,6 +343,25 @@ h2 {
 .auth-banner span {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.auth-banner .auth-error {
+  color: var(--danger);
+}
+
+.auth-banner code {
+  width: fit-content;
+  max-width: 100%;
+  margin: 3px 0;
+  overflow: hidden;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .auth-banner input {
@@ -401,10 +425,9 @@ h2 {
 
 .table-row {
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(86px, 0.8fr) minmax(
-      110px,
-      1fr
-    ) minmax(90px, 0.9fr);
+  grid-template-columns:
+    minmax(110px, 1fr) minmax(86px, 0.8fr) minmax(110px, 1fr)
+    minmax(90px, 0.9fr);
   gap: 12px;
   align-items: center;
   min-height: 44px;
@@ -578,6 +601,10 @@ h2 {
   .auth-banner {
     grid-template-columns: 1fr;
     margin: 12px;
+  }
+
+  .auth-screen {
+    margin: 24px 12px 0;
   }
 
   .canvas {
