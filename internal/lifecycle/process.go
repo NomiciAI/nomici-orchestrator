@@ -16,6 +16,8 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway"
 )
 
+var gatewayHealthClient = &http.Client{Timeout: 2 * time.Second}
+
 type StartGatewayOptions struct {
 	Executable string
 	Host       string
@@ -290,7 +292,7 @@ func waitForGatewayHealth(host string, port int) error {
 	url := fmt.Sprintf("http://%s:%d/api/health", host, port)
 	var lastErr error
 	for i := 0; i < 50; i++ {
-		response, err := http.Get(url)
+		response, err := gatewayHealthClient.Get(url)
 		if err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {

@@ -17,7 +17,13 @@ type OpenAICompatibleAdapter struct {
 
 func NewOpenAICompatibleAdapter() *OpenAICompatibleAdapter {
 	return &OpenAICompatibleAdapter{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConns:        8,
+				MaxIdleConnsPerHost: 2,
+				IdleConnTimeout:     10 * time.Second,
+			},
+		},
 	}
 }
 
@@ -52,6 +58,9 @@ func (adapter *OpenAICompatibleAdapter) Invoke(ctx context.Context, baseURL stri
 	httpClient := adapter.httpClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
+	}
+	if transport, ok := httpClient.Transport.(interface{ CloseIdleConnections() }); ok {
+		defer transport.CloseIdleConnections()
 	}
 	response, err := httpClient.Do(httpRequest)
 	if err != nil {

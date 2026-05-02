@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
@@ -248,7 +249,8 @@ func getGatewayHealth(gatewayURL string) (*gateway.HealthResponse, error) {
 		return nil, fmt.Errorf("invalid gateway URL: %w", err)
 	}
 	endpoint := baseURL.ResolveReference(&url.URL{Path: "/api/health"})
-	response, err := http.Get(endpoint.String())
+	client := &http.Client{Timeout: 5 * time.Second}
+	response, err := client.Get(endpoint.String())
 	if err != nil {
 		return nil, fmt.Errorf("Gateway is not reachable. Remediation: run `nomici gateway start` or `nomici up`: %w", err)
 	}
