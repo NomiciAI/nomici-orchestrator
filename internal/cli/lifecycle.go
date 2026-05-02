@@ -25,10 +25,11 @@ func newUpCommand(version string) *cobra.Command {
 		Short: "Start Nomici Gateway and configured local runtimes",
 		RunE: func(command *cobra.Command, args []string) error {
 			gatewayState, err := lifecycle.StartGateway(command.Context(), lifecycle.StartGatewayOptions{
-				Host:    host,
-				Port:    port,
-				Version: version,
-				DBPath:  dbPath,
+				Host:       host,
+				Port:       port,
+				Version:    version,
+				DBPath:     dbPath,
+				ConfigPath: configPath,
 			})
 			if err != nil {
 				return err

@@ -203,13 +203,20 @@ h2 {
 
 .button:focus-visible,
 .theme-toggle:focus-visible,
-.auth-banner input:focus-visible {
+.auth-banner input:focus-visible,
+.run-inline input:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
   outline-offset: 2px;
 }
 
 .button:hover {
   background: color-mix(in srgb, var(--accent) 82%, transparent);
+}
+
+.button:disabled,
+.theme-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .theme-toggle {
@@ -373,6 +380,74 @@ h2 {
   color: var(--text);
   background: var(--surface-muted);
   outline: none;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 20px 0;
+}
+
+.action-card {
+  min-width: 0;
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-height: 148px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+}
+
+.action-card h2 {
+  margin-bottom: 6px;
+}
+
+.action-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.action-card-wide {
+  grid-column: span 2;
+}
+
+.run-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.run-inline input {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-muted);
+  outline: none;
+}
+
+.run-output {
+  max-height: 320px;
+  overflow: auto;
+  margin: 16px 20px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .workspace {
@@ -569,6 +644,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .graph-panel {
     grid-row: auto;
   }
@@ -596,6 +675,19 @@ h2 {
 
   .workspace {
     padding: 12px;
+  }
+
+  .quick-actions {
+    grid-template-columns: 1fr;
+    padding: 12px 12px 0;
+  }
+
+  .action-card-wide {
+    grid-column: auto;
+  }
+
+  .run-inline {
+    grid-template-columns: 1fr;
   }
 
   .auth-banner {

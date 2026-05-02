@@ -32,10 +32,13 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		}
 		api.Get("/api/console/overview", consoleOverviewHandler(options, services))
 		api.Get("/api/models", modelListHandler(services))
+		api.Post("/api/models", modelSetupHandler(services))
 		api.Get("/api/packs", packListHandler(services))
+		api.Post("/api/packs/{packID}/install", packInstallHandler(options, services))
 		api.Get("/api/graphs/latest", latestGraphHandler(services))
 		api.Get("/api/runtimes", runtimeListHandler(services))
 		api.Get("/api/runs", runListHandler(services))
+		api.Post("/api/runs/agent", agentRunHandler(services))
 		api.Get("/api/approvals", approvalListHandler(services))
 		if services.Providers != nil && services.Trace != nil && services.Secrets != nil && services.Adapter != nil {
 			api.Post("/api/models/test", modelTestHandler(services))
