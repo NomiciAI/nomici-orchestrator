@@ -42,7 +42,6 @@ nomici pack list
 nomici pack inspect developer-team
 nomici pack install developer-team --model gpt
 nomici spec validate --config nomici.yaml
-nomici graph validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
 nomici up
@@ -70,9 +69,9 @@ nomici down
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
-The bundled `developer-team` pack installs a runnable `product_pm` entrypoint and `architect` subagent using an existing model provider profile. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
+The bundled `developer-team` pack installs a runnable `product_pm` entrypoint and `architect` subagent using an existing model provider profile. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
-The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent runs, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` and paste it into the Console when prompted.
+The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent runs, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or one `handoff` edge between two `cli_agent`-backed `external_agent` nodes. General multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 

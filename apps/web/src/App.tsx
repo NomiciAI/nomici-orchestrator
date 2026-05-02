@@ -165,6 +165,7 @@ export function App() {
     "loading",
   );
   const [error, setError] = useState("");
+  const isAuthenticated = status !== "auth";
 
   async function loadOverview(nextToken = gatewayToken) {
     setStatus("loading");
@@ -179,7 +180,11 @@ export function App() {
       });
       if (response.status === 401) {
         setStatus("auth");
-        setError("Gateway token required");
+        setError(
+          nextToken.trim() === ""
+            ? "Gateway token required"
+            : "Gateway token did not match this Gateway",
+        );
         return;
       }
       if (!response.ok) {
@@ -266,29 +271,38 @@ export function App() {
         </div>
       </header>
 
-      <section className="metric-strip" aria-label="Control plane metrics">
-        <Metric label="Models" value={overview.counts.models} />
-        <Metric label="Packs" value={overview.counts.packs_installed} />
-        <Metric label="Agents" value={overview.counts.agents} />
-        <Metric label="Runtimes" value={overview.counts.runtimes} />
-        <Metric label="Runs" value={overview.counts.runs} />
-        <Metric
-          label="Approvals"
-          value={overview.counts.pending_approvals}
-          tone="attention"
-        />
-      </section>
+      {isAuthenticated ? (
+        <section className="metric-strip" aria-label="Control plane metrics">
+          <Metric label="Models" value={overview.counts.models} />
+          <Metric label="Packs" value={overview.counts.packs_installed} />
+          <Metric label="Agents" value={overview.counts.agents} />
+          <Metric label="Runtimes" value={overview.counts.runtimes} />
+          <Metric label="Runs" value={overview.counts.runs} />
+          <Metric
+            label="Approvals"
+            value={overview.counts.pending_approvals}
+            tone="attention"
+          />
+        </section>
+      ) : null}
 
       {status === "failed" ? (
         <div className="banner banner-error">{error}</div>
       ) : null}
       {status === "auth" ? (
-        <form className="auth-banner" onSubmit={submitToken}>
+        <form className="auth-banner auth-screen" onSubmit={submitToken}>
           <div>
             <strong>Gateway token required</strong>
             <span>
-              Run `nomici gateway token show` locally and paste the token here.
+              Run this in the same directory where you started `nomici up`, then
+              paste the token here.
             </span>
+            <code>nomici gateway token show</code>
+            <span>
+              Tokens are workspace-specific because each `.nomici` state
+              directory has its own Gateway token.
+            </span>
+            {error ? <span className="auth-error">{error}</span> : null}
           </div>
           <input
             aria-label="Gateway token"
@@ -309,209 +323,218 @@ export function App() {
         </div>
       ))}
 
-      <section className="workspace">
-        <section className="panel graph-panel" aria-label="Agent graph">
-          <div className="panel-heading">
-            <div>
-              <h2>Graph</h2>
-              <p>{overview.graph_snapshot?.project_id ?? "No snapshot"}</p>
+      {isAuthenticated ? (
+        <section className="workspace">
+          <section className="panel graph-panel" aria-label="Agent graph">
+            <div className="panel-heading">
+              <div>
+                <h2>Graph</h2>
+                <p>
+                  {overview.graph_snapshot?.project_id ??
+                    "No graph snapshot yet. Run graph validate or install a pack."}
+                </p>
+              </div>
+              <span className="tag">
+                {overview.graph_snapshot ? "read-only" : "empty"}
+              </span>
             </div>
-            <span className="tag">
-              {overview.graph_snapshot ? "read-only" : "empty"}
-            </span>
-          </div>
-          <div className="canvas">
-            <ReactFlow
-              nodes={flow.nodes}
-              edges={flow.edges}
-              fitView
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-            >
-              <Background />
-              <Controls />
-            </ReactFlow>
-          </div>
-        </section>
-
-        <section className="panel" aria-label="Provider profiles">
-          <div className="panel-heading">
-            <h2>Models</h2>
-            <span className="tag">{overview.models.length}</span>
-          </div>
-          <div className="table">
-            <div className="table-row table-head">
-              <span>Name</span>
-              <span>Kind</span>
-              <span>Model</span>
-              <span>Secret</span>
+            <div className="canvas">
+              <ReactFlow
+                nodes={flow.nodes}
+                edges={flow.edges}
+                fitView
+                nodesDraggable={false}
+                nodesConnectable={false}
+                elementsSelectable={false}
+              >
+                <Background />
+                <Controls />
+              </ReactFlow>
             </div>
-            {overview.models.map((model) => (
-              <div className="table-row" key={model.id}>
-                <span>{model.name}</span>
-                <span>{model.kind}</span>
-                <span>{model.model}</span>
-                <span>{model.api_key_env || "-"}</span>
-              </div>
-            ))}
-            {overview.models.length === 0 ? (
-              <EmptyRow text="No models configured" />
-            ) : null}
-          </div>
-        </section>
+          </section>
 
-        <section className="panel" aria-label="Packs">
-          <div className="panel-heading">
-            <h2>Packs</h2>
-            <span className="tag">{overview.packs.length}</span>
-          </div>
-          <div className="stack">
-            {overview.packs.map((pack) => (
-              <div className="list-item" key={pack.manifest.id}>
-                <div>
-                  <strong>{pack.manifest.name}</strong>
-                  <span>{pack.manifest.id}</span>
-                </div>
-                <div className="list-meta">
-                  <span className={pack.installed ? "pill pill-green" : "pill"}>
-                    {pack.installed ? "installed" : "available"}
-                  </span>
-                  <span>{pack.manifest.trust?.level ?? "local"}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel" aria-label="Runtimes">
-          <div className="panel-heading">
-            <h2>Runtimes</h2>
-            <span className="tag">{overview.runtimes.length}</span>
-          </div>
-          <div className="table">
-            <div className="table-row table-head">
-              <span>Name</span>
-              <span>Kind</span>
-              <span>Status</span>
-              <span>Agents</span>
+          <section className="panel" aria-label="Provider profiles">
+            <div className="panel-heading">
+              <h2>Models</h2>
+              <span className="tag">{overview.models.length}</span>
             </div>
-            {overview.runtimes.map((runtime) => (
-              <div className="table-row" key={runtime.id}>
-                <span>{runtime.id}</span>
-                <span>{runtime.kind}</span>
-                <span>{runtime.status}</span>
-                <span>{runtime.agents?.join(", ") || "-"}</span>
+            <div className="table">
+              <div className="table-row table-head">
+                <span>Name</span>
+                <span>Kind</span>
+                <span>Model</span>
+                <span>Secret</span>
               </div>
-            ))}
-            {overview.runtimes.length === 0 ? (
-              <EmptyRow text="No runtimes in graph" />
-            ) : null}
-          </div>
-        </section>
+              {overview.models.map((model) => (
+                <div className="table-row" key={model.id}>
+                  <span>{model.name}</span>
+                  <span>{model.kind}</span>
+                  <span>{model.model}</span>
+                  <span>{model.api_key_env || "-"}</span>
+                </div>
+              ))}
+              {overview.models.length === 0 ? (
+                <EmptyRow text="No models configured. Run model setup in this workspace." />
+              ) : null}
+            </div>
+          </section>
 
-        <section className="panel" aria-label="Recent runs">
-          <div className="panel-heading">
-            <h2>Runs</h2>
-            <span className="tag">{overview.recent_runs.length}</span>
-          </div>
-          <div className="stack">
-            {overview.recent_runs.map((run) => (
-              <div className="list-item" key={run.run_id}>
-                <div>
-                  <strong>{run.run_id}</strong>
-                  <span>{run.last_type}</span>
+          <section className="panel" aria-label="Packs">
+            <div className="panel-heading">
+              <h2>Packs</h2>
+              <span className="tag">{overview.packs.length}</span>
+            </div>
+            <div className="stack">
+              {overview.packs.map((pack) => (
+                <div className="list-item" key={pack.manifest.id}>
+                  <div>
+                    <strong>{pack.manifest.name}</strong>
+                    <span>{packUsageText(pack)}</span>
+                  </div>
+                  <div className="list-meta">
+                    <span
+                      className={pack.installed ? "pill pill-green" : "pill"}
+                    >
+                      {pack.installed ? "installed" : "available"}
+                    </span>
+                    <span>{pack.manifest.trust?.level ?? "local"}</span>
+                  </div>
                 </div>
-                <div className="list-meta">
-                  <span>{run.event_count} events</span>
-                  <span>{formatTime(run.last_time)}</span>
-                </div>
-              </div>
-            ))}
-            {overview.recent_runs.length === 0 ? (
-              <p className="empty">No runs traced</p>
-            ) : null}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
 
-        <section className="panel" aria-label="Latest trace">
-          <div className="panel-heading">
-            <h2>Trace</h2>
-            <span className="tag">{overview.latest_trace.length}</span>
-          </div>
-          <div className="stack">
-            {overview.latest_trace.map((event) => (
-              <div className="list-item" key={event.event_id}>
-                <div>
-                  <strong>
-                    {event.sequence}. {event.type}
-                  </strong>
-                  <span>
-                    {event.node_id || event.runtime_id || event.run_id}
-                  </span>
-                </div>
-                <div className="list-meta">
-                  <span>{formatTime(event.time)}</span>
-                  <span>{event.event_id}</span>
-                </div>
+          <section className="panel" aria-label="Runtimes">
+            <div className="panel-heading">
+              <h2>Runtimes</h2>
+              <span className="tag">{overview.runtimes.length}</span>
+            </div>
+            <div className="table">
+              <div className="table-row table-head">
+                <span>Name</span>
+                <span>Kind</span>
+                <span>Status</span>
+                <span>Agents</span>
               </div>
-            ))}
-            {overview.latest_trace.length === 0 ? (
-              <p className="empty">No trace events</p>
-            ) : null}
-          </div>
-        </section>
+              {overview.runtimes.map((runtime) => (
+                <div className="table-row" key={runtime.id}>
+                  <span>{runtime.id}</span>
+                  <span>{runtime.kind}</span>
+                  <span>{runtime.status}</span>
+                  <span>{runtime.agents?.join(", ") || "-"}</span>
+                </div>
+              ))}
+              {overview.runtimes.length === 0 ? (
+                <EmptyRow text="No runtimes in graph" />
+              ) : null}
+            </div>
+          </section>
 
-        <section className="panel" aria-label="Pending approvals">
-          <div className="panel-heading">
-            <h2>Approvals</h2>
-            <span
-              className={
-                overview.pending_approvals.length > 0
-                  ? "tag tag-attention"
-                  : "tag"
-              }
-            >
-              {overview.pending_approvals.length}
-            </span>
-          </div>
-          <div className="stack">
-            {overview.pending_approvals.map((approval) => (
-              <div className="list-item" key={approval.approval_id}>
-                <div>
-                  <strong>{approval.summary}</strong>
-                  <span>{approval.approval_id}</span>
+          <section className="panel" aria-label="Recent runs">
+            <div className="panel-heading">
+              <h2>Runs</h2>
+              <span className="tag">{overview.recent_runs.length}</span>
+            </div>
+            <div className="stack">
+              {overview.recent_runs.map((run) => (
+                <div className="list-item" key={run.run_id}>
+                  <div>
+                    <strong>{run.run_id}</strong>
+                    <span>{run.last_type}</span>
+                  </div>
+                  <div className="list-meta">
+                    <span>{run.event_count} events</span>
+                    <span>{formatTime(run.last_time)}</span>
+                  </div>
                 </div>
-                <div className="list-meta">
-                  <span className="pill pill-amber">{approval.risk}</span>
-                  <span>{approval.requested_by_agent || approval.status}</span>
-                </div>
-              </div>
-            ))}
-            {overview.pending_approvals.length === 0 ? (
-              <p className="empty">No pending approvals</p>
-            ) : null}
-          </div>
-        </section>
+              ))}
+              {overview.recent_runs.length === 0 ? (
+                <p className="empty">No runs traced</p>
+              ) : null}
+            </div>
+          </section>
 
-        <section className="panel" aria-label="Unavailable actions">
-          <div className="panel-heading">
-            <h2>Unavailable</h2>
-            <span className="tag">Gate 8</span>
-          </div>
-          <div className="stack">
-            {overview.unavailable.map((item) => (
-              <div className="list-item" key={item.name}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <span>{item.reason}</span>
+          <section className="panel" aria-label="Latest trace">
+            <div className="panel-heading">
+              <h2>Trace</h2>
+              <span className="tag">{overview.latest_trace.length}</span>
+            </div>
+            <div className="stack">
+              {overview.latest_trace.map((event) => (
+                <div className="list-item" key={event.event_id}>
+                  <div>
+                    <strong>
+                      {event.sequence}. {event.type}
+                    </strong>
+                    <span>
+                      {event.node_id || event.runtime_id || event.run_id}
+                    </span>
+                  </div>
+                  <div className="list-meta">
+                    <span>{formatTime(event.time)}</span>
+                    <span>{event.event_id}</span>
+                  </div>
                 </div>
-                <span className="pill">{item.status}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+              {overview.latest_trace.length === 0 ? (
+                <p className="empty">No trace events</p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="panel" aria-label="Pending approvals">
+            <div className="panel-heading">
+              <h2>Approvals</h2>
+              <span
+                className={
+                  overview.pending_approvals.length > 0
+                    ? "tag tag-attention"
+                    : "tag"
+                }
+              >
+                {overview.pending_approvals.length}
+              </span>
+            </div>
+            <div className="stack">
+              {overview.pending_approvals.map((approval) => (
+                <div className="list-item" key={approval.approval_id}>
+                  <div>
+                    <strong>{approval.summary}</strong>
+                    <span>{approval.approval_id}</span>
+                  </div>
+                  <div className="list-meta">
+                    <span className="pill pill-amber">{approval.risk}</span>
+                    <span>
+                      {approval.requested_by_agent || approval.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {overview.pending_approvals.length === 0 ? (
+                <p className="empty">No pending approvals</p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="panel" aria-label="Unavailable actions">
+            <div className="panel-heading">
+              <h2>Unavailable</h2>
+              <span className="tag">Gate 8</span>
+            </div>
+            <div className="stack">
+              {overview.unavailable.map((item) => (
+                <div className="list-item" key={item.name}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.reason}</span>
+                  </div>
+                  <span className="pill">{item.status}</span>
+                </div>
+              ))}
+            </div>
+          </section>
         </section>
-      </section>
+      ) : null}
     </main>
   );
 }
@@ -568,6 +591,18 @@ function EmptyRow({ text }: { text: string }) {
       <span>-</span>
     </div>
   );
+}
+
+function packUsageText(pack: PackStatus): string {
+  if (pack.installed) {
+    const entrypoint =
+      pack.installation?.entrypoints?.[0] ??
+      pack.manifest.agents?.entrypoints?.[0];
+    return entrypoint
+      ? `Run: nomici run ${entrypoint} "..."`
+      : `${pack.manifest.id} installed`;
+  }
+  return `Install: nomici pack install ${pack.manifest.id} --model <profile>`;
 }
 
 function buildFlow(snapshot?: GraphSnapshot): { nodes: Node[]; edges: Edge[] } {

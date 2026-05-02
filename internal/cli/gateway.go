@@ -81,6 +81,7 @@ func newGatewayStartCommand(version string) *cobra.Command {
 			}
 			fmt.Fprintf(command.OutOrStdout(), "Gateway %s pid=%d log=%s\n", state.Status, state.PID, state.LogPath)
 			fmt.Fprintf(command.OutOrStdout(), "Console: http://%s:%d\n", host, port)
+			fmt.Fprintf(command.OutOrStdout(), "Token:   %s\n", gatewayTokenCommand(dbPath))
 			return nil
 		},
 	}
@@ -88,6 +89,10 @@ func newGatewayStartCommand(version string) *cobra.Command {
 	command.Flags().StringVar(&host, "host", gateway.DefaultHost, "Gateway bind host")
 	command.Flags().IntVar(&port, "port", gateway.DefaultPort, "Gateway bind port")
 	return command
+}
+
+func gatewayTokenCommand(dbPath string) string {
+	return fmt.Sprintf("nomici gateway token show --db-path %s", dbPath)
 }
 
 func newGatewayStopCommand() *cobra.Command {
