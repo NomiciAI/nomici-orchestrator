@@ -47,6 +47,7 @@ The project follows semantic versioning once the first public release is cut.
 - Documented `NOMICI_GATEWAY_URL`, `NOMICI_GATEWAY_TOKEN`, and local token-file behavior for alpha bootstrap.
 - AgentSpec and internal AgentGraph now accept `local_process` runtimes with `start` commands for managed long-running processes.
 - Source install now checks build tools and activates `pnpm` through Corepack when needed, so Quickstart users do not need to run Corepack commands manually.
+- Console styling now follows the Nomici web brand language with the official solid logo, a dark default, neutral glass surfaces, and a persisted light/dark mode toggle.
 
 ### Deprecated
 
