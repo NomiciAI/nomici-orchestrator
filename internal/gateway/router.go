@@ -8,6 +8,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/go-chi/chi/v5"
 )
@@ -20,6 +21,7 @@ type Services struct {
 	Graph     *graph.Store
 	Packs     *packs.Store
 	Policy    *policy.Service
+	Context   *sharedcontext.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -36,7 +38,11 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		api.Get("/api/graphs/latest", latestGraphHandler(services))
 		api.Get("/api/runtimes", runtimeListHandler(services))
 		api.Get("/api/runs", runListHandler(services))
+		api.Post("/api/runs", runCreateHandler(options, services))
+		api.Get("/api/runs/{run_id}/events", runEventsHandler(services))
 		api.Get("/api/approvals", approvalListHandler(services))
+		api.Post("/api/approvals/{approval_id}/grant", approvalGrantHandler(services))
+		api.Post("/api/approvals/{approval_id}/deny", approvalDenyHandler(services))
 		if services.Providers != nil && services.Trace != nil && services.Secrets != nil && services.Adapter != nil {
 			api.Post("/api/models/test", modelTestHandler(services))
 		}

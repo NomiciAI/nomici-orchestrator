@@ -24,6 +24,7 @@ type StartGatewayOptions struct {
 	Port       int
 	Version    string
 	DBPath     string
+	ConfigPath string
 }
 
 func StartGateway(ctx context.Context, options StartGatewayOptions) (State, error) {
@@ -54,6 +55,9 @@ func StartGateway(ctx context.Context, options StartGatewayOptions) (State, erro
 		"--host", options.Host,
 		"--port", fmt.Sprintf("%d", options.Port),
 		"--db-path", paths.DBPath,
+	}
+	if options.ConfigPath != "" {
+		args = append(args, "--config", options.ConfigPath)
 	}
 	logFile, err := openLog(paths.GatewayLog)
 	if err != nil {

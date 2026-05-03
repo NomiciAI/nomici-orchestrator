@@ -17,6 +17,14 @@ type ApiEnvelope<T> = {
   request_id: string;
 };
 
+type ApiErrorEnvelope = {
+  error?: {
+    code: string;
+    message: string;
+    remediation?: string;
+  };
+};
+
 type ProviderProfile = {
   id: string;
   name: string;
@@ -98,6 +106,9 @@ type TraceEvent = {
   time: string;
   node_id?: string;
   runtime_id?: string;
+  payload?: Record<string, unknown>;
+  redactions?: string[];
+  metadata?: Record<string, unknown>;
 };
 
 type Approval = {
@@ -165,6 +176,19 @@ export function App() {
     "loading",
   );
   const [error, setError] = useState("");
+  const [runAgentId, setRunAgentId] = useState("");
+  const [runPrompt, setRunPrompt] = useState("");
+  const [runEvents, setRunEvents] = useState<TraceEvent[]>([]);
+  const [activeRunId, setActiveRunId] = useState("");
+  const [runStatus, setRunStatus] = useState<
+    "idle" | "starting" | "running" | "completed" | "failed"
+  >("idle");
+  const [runError, setRunError] = useState("");
+  const [approvalError, setApprovalError] = useState("");
+  const [mutatingApproval, setMutatingApproval] = useState("");
+  const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>(
+    {},
+  );
   const isAuthenticated = status !== "auth";
 
   async function loadOverview(nextToken = gatewayToken) {
@@ -229,6 +253,161 @@ export function App() {
     () => buildFlow(overview.graph_snapshot),
     [overview.graph_snapshot],
   );
+  const agentOptions = useMemo(
+    () => buildAgentOptions(overview.graph_snapshot),
+    [overview.graph_snapshot],
+  );
+  const selectedAgent = agentOptions.find((agent) => agent.id === runAgentId);
+  const traceEvents = runEvents.length > 0 ? runEvents : overview.latest_trace;
+
+  useEffect(() => {
+    if (runAgentId === "" && agentOptions.length > 0) {
+      const firstRunnable = agentOptions.find((agent) => agent.supported);
+      setRunAgentId(firstRunnable?.id ?? agentOptions[0].id);
+    }
+  }, [agentOptions, runAgentId]);
+
+  useEffect(() => {
+    if (!activeRunId || runStatus !== "running") {
+      return;
+    }
+    const state = { cancelled: false };
+    const timer = window.setInterval(() => {
+      void pollRunEvents(activeRunId, state);
+    }, 1200);
+    void pollRunEvents(activeRunId, state);
+    return () => {
+      state.cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRunId, runEvents, runStatus]);
+
+  async function apiRequest<T>(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+    };
+    if (gatewayToken.trim() !== "") {
+      headers.Authorization = `Bearer ${gatewayToken.trim()}`;
+    }
+    const response = await fetch(path, {
+      ...init,
+      headers: { ...headers, ...init.headers },
+    });
+    if (response.status === 401) {
+      setStatus("auth");
+      throw new Error("Gateway token did not match this Gateway");
+    }
+    const payload = (await response.json()) as ApiEnvelope<T> &
+      ApiErrorEnvelope;
+    if (!response.ok) {
+      throw new Error(
+        payload.error?.message ?? `Gateway API returned ${response.status}`,
+      );
+    }
+    return payload.data;
+  }
+
+  async function startRun(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedAgent?.supported) {
+      setRunError(selectedAgent?.reason ?? "Choose a supported agent.");
+      return;
+    }
+    setRunStatus("starting");
+    setRunError("");
+    setRunEvents([]);
+    try {
+      const started = await apiRequest<{
+        run_id: string;
+        status: string;
+        agent_id: string;
+        graph_snapshot_id: string;
+      }>("/api/runs", {
+        method: "POST",
+        body: JSON.stringify({ agent_id: selectedAgent.id, prompt: runPrompt }),
+      });
+      setActiveRunId(started.run_id);
+      setRunStatus("running");
+      void loadOverview();
+    } catch (startError) {
+      setRunStatus("failed");
+      setRunError(
+        startError instanceof Error
+          ? startError.message
+          : "Run could not be started",
+      );
+    }
+  }
+
+  async function pollRunEvents(runId: string, state: { cancelled: boolean }) {
+    const lastSequence = runEvents.reduce(
+      (max, event) => Math.max(max, event.sequence),
+      0,
+    );
+    try {
+      const events = await apiRequest<TraceEvent[]>(
+        `/api/runs/${encodeURIComponent(runId)}/events?after_sequence=${lastSequence}`,
+      );
+      if (state.cancelled || events.length === 0) {
+        return;
+      }
+      setRunEvents((current) => mergeEvents(current, events));
+      const terminal = [...events]
+        .reverse()
+        .find(
+          (event) =>
+            event.type === "run.completed" || event.type === "run.failed",
+        );
+      if (terminal) {
+        setRunStatus(
+          terminal.type === "run.completed" ? "completed" : "failed",
+        );
+        void loadOverview();
+      }
+    } catch (pollError) {
+      if (!state.cancelled) {
+        setRunError(
+          pollError instanceof Error
+            ? pollError.message
+            : "Run events could not be loaded",
+        );
+      }
+    }
+  }
+
+  async function resolveApproval(
+    approvalID: string,
+    action: "grant" | "deny",
+    scope?: "once" | "run",
+  ) {
+    setApprovalError("");
+    setMutatingApproval(`${approvalID}:${action}:${scope ?? ""}`);
+    try {
+      await apiRequest<Approval>(
+        `/api/approvals/${encodeURIComponent(approvalID)}/${action}`,
+        {
+          method: "POST",
+          body: action === "grant" ? JSON.stringify({ scope }) : undefined,
+        },
+      );
+      await loadOverview();
+      if (activeRunId) {
+        await pollRunEvents(activeRunId, { cancelled: false });
+      }
+    } catch (approvalActionError) {
+      setApprovalError(
+        approvalActionError instanceof Error
+          ? approvalActionError.message
+          : "Approval update failed",
+      );
+    } finally {
+      setMutatingApproval("");
+    }
+  }
 
   return (
     <main className={`shell theme-${theme}`}>
@@ -353,6 +532,68 @@ export function App() {
             </div>
           </section>
 
+          <section className="panel run-panel" aria-label="Run agent">
+            <div className="panel-heading">
+              <div>
+                <h2>Run</h2>
+                <p>{activeRunId || "Start a supported graph agent"}</p>
+              </div>
+              <span
+                className={`tag ${runStatus === "failed" ? "tag-danger" : runStatus === "running" ? "tag-attention" : ""}`}
+              >
+                {runStatus}
+              </span>
+            </div>
+            <form className="run-form" onSubmit={startRun}>
+              <label>
+                <span>Agent</span>
+                <select
+                  value={runAgentId}
+                  onChange={(event) => setRunAgentId(event.target.value)}
+                >
+                  {agentOptions.map((agent) => (
+                    <option
+                      value={agent.id}
+                      key={agent.id}
+                      disabled={!agent.supported}
+                    >
+                      {agent.id}
+                      {agent.supported ? "" : ` - ${agent.reason}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedAgent && !selectedAgent.supported ? (
+                <p className="form-hint">{selectedAgent.reason}</p>
+              ) : null}
+              <label>
+                <span>Prompt</span>
+                <textarea
+                  rows={5}
+                  value={runPrompt}
+                  onChange={(event) => setRunPrompt(event.target.value)}
+                  placeholder="Ask this agent to do one task"
+                />
+              </label>
+              {runError ? <div className="inline-error">{runError}</div> : null}
+              <div className="run-actions">
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={
+                    runStatus === "starting" ||
+                    runStatus === "running" ||
+                    !selectedAgent?.supported ||
+                    runPrompt.trim() === ""
+                  }
+                >
+                  {runStatus === "starting" ? "Starting" : "Run"}
+                </button>
+                <span>{humanOutput(traceEvents) || "No output yet"}</span>
+              </div>
+            </form>
+          </section>
+
           <section className="panel" aria-label="Provider profiles">
             <div className="panel-heading">
               <h2>Models</h2>
@@ -457,26 +698,43 @@ export function App() {
           <section className="panel" aria-label="Latest trace">
             <div className="panel-heading">
               <h2>Trace</h2>
-              <span className="tag">{overview.latest_trace.length}</span>
+              <span className="tag">{traceEvents.length}</span>
             </div>
             <div className="stack">
-              {overview.latest_trace.map((event) => (
-                <div className="list-item" key={event.event_id}>
-                  <div>
-                    <strong>
-                      {event.sequence}. {event.type}
-                    </strong>
-                    <span>
-                      {event.node_id || event.runtime_id || event.run_id}
-                    </span>
-                  </div>
-                  <div className="list-meta">
-                    <span>{formatTime(event.time)}</span>
-                    <span>{event.event_id}</span>
-                  </div>
+              {traceEvents.map((event) => (
+                <div className="trace-item" key={event.event_id}>
+                  <button
+                    className="trace-summary"
+                    type="button"
+                    onClick={() =>
+                      setExpandedEvents((current) => ({
+                        ...current,
+                        [event.event_id]: !current[event.event_id],
+                      }))
+                    }
+                  >
+                    <div>
+                      <strong>
+                        {event.sequence}. {event.type}
+                      </strong>
+                      <span>
+                        {eventOutput(event) ||
+                          event.node_id ||
+                          event.runtime_id ||
+                          event.run_id}
+                      </span>
+                    </div>
+                    <div className="list-meta">
+                      <span>{formatTime(event.time)}</span>
+                      <span>{event.event_id}</span>
+                    </div>
+                  </button>
+                  {expandedEvents[event.event_id] ? (
+                    <pre className="payload">{formatPayload(event)}</pre>
+                  ) : null}
                 </div>
               ))}
-              {overview.latest_trace.length === 0 ? (
+              {traceEvents.length === 0 ? (
                 <p className="empty">No trace events</p>
               ) : null}
             </div>
@@ -495,18 +753,59 @@ export function App() {
                 {overview.pending_approvals.length}
               </span>
             </div>
+            {approvalError ? (
+              <div className="inline-error panel-inline">{approvalError}</div>
+            ) : null}
             <div className="stack">
               {overview.pending_approvals.map((approval) => (
-                <div className="list-item" key={approval.approval_id}>
-                  <div>
+                <div className="approval-item" key={approval.approval_id}>
+                  <div className="approval-copy">
                     <strong>{approval.summary}</strong>
                     <span>{approval.approval_id}</span>
-                  </div>
-                  <div className="list-meta">
-                    <span className="pill pill-amber">{approval.risk}</span>
                     <span>
                       {approval.requested_by_agent || approval.status}
                     </span>
+                  </div>
+                  <div className="approval-actions">
+                    <span className="pill pill-amber">{approval.risk}</span>
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      disabled={mutatingApproval !== ""}
+                      onClick={() =>
+                        void resolveApproval(
+                          approval.approval_id,
+                          "grant",
+                          "once",
+                        )
+                      }
+                    >
+                      Grant once
+                    </button>
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      disabled={mutatingApproval !== ""}
+                      onClick={() =>
+                        void resolveApproval(
+                          approval.approval_id,
+                          "grant",
+                          "run",
+                        )
+                      }
+                    >
+                      Grant run
+                    </button>
+                    <button
+                      className="button button-danger"
+                      type="button"
+                      disabled={mutatingApproval !== ""}
+                      onClick={() =>
+                        void resolveApproval(approval.approval_id, "deny")
+                      }
+                    >
+                      Deny
+                    </button>
                   </div>
                 </div>
               ))}
@@ -566,6 +865,76 @@ function Metric({
   );
 }
 
+type AgentOption = {
+  id: string;
+  supported: boolean;
+  reason: string;
+};
+
+function buildAgentOptions(snapshot?: GraphSnapshot): AgentOption[] {
+  if (!snapshot) {
+    return [];
+  }
+  return Object.keys(snapshot.ir.agents)
+    .sort()
+    .map((id) => {
+      const agent = snapshot.ir.agents[id];
+      const outgoing = snapshot.ir.edges.filter((edge) => edge.from === id);
+      if (agent.kind === "gateway_agent" || agent.kind === "model_agent") {
+        if (outgoing.length > 0) {
+          return {
+            id,
+            supported: false,
+            reason: "model agents with outgoing edges are not executable yet",
+          };
+        }
+        return {
+          id,
+          supported: Boolean(agent.model),
+          reason: agent.model ? "" : "missing model",
+        };
+      }
+      if (agent.kind !== "external_agent") {
+        return {
+          id,
+          supported: false,
+          reason: `${agent.kind} is not executable`,
+        };
+      }
+      if (!agent.runtime) {
+        return { id, supported: false, reason: "missing runtime" };
+      }
+      const runtime = snapshot.ir.runtimes?.[agent.runtime];
+      if (!runtime || runtime.kind !== "cli_agent") {
+        return { id, supported: false, reason: "runtime is not a cli_agent" };
+      }
+      if (outgoing.length === 0) {
+        return { id, supported: true, reason: "" };
+      }
+      if (outgoing.length === 1 && outgoing[0].mode === "handoff") {
+        const target = snapshot.ir.agents[outgoing[0].to];
+        const targetRuntime = target?.runtime
+          ? snapshot.ir.runtimes?.[target.runtime]
+          : undefined;
+        const supported =
+          target?.kind === "external_agent" &&
+          targetRuntime?.kind === "cli_agent";
+        return {
+          id,
+          supported,
+          reason: supported
+            ? ""
+            : "handoff target is not a cli_agent external agent",
+        };
+      }
+      return {
+        id,
+        supported: false,
+        reason: "multiple outgoing edges are not executable yet",
+      };
+    });
+}
+
 function normalizeOverview(next: Overview): Overview {
   return {
     ...emptyOverview,
@@ -580,6 +949,56 @@ function normalizeOverview(next: Overview): Overview {
     pending_approvals: next.pending_approvals ?? [],
     unavailable: next.unavailable ?? [],
   };
+}
+
+function mergeEvents(current: TraceEvent[], next: TraceEvent[]): TraceEvent[] {
+  const byID = new Map<string, TraceEvent>();
+  for (const event of current) {
+    byID.set(event.event_id, event);
+  }
+  for (const event of next) {
+    byID.set(event.event_id, event);
+  }
+  return [...byID.values()].sort((a, b) => a.sequence - b.sequence);
+}
+
+function eventOutput(event: TraceEvent): string {
+  const payload = event.payload ?? {};
+  for (const key of [
+    "output_preview",
+    "stdout_preview",
+    "stderr_preview",
+    "message",
+    "error",
+  ]) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function humanOutput(events: TraceEvent[]): string {
+  for (const event of [...events].reverse()) {
+    const output = eventOutput(event);
+    if (output) {
+      return output;
+    }
+  }
+  return "";
+}
+
+function formatPayload(event: TraceEvent): string {
+  return JSON.stringify(
+    {
+      payload: event.payload ?? {},
+      metadata: event.metadata ?? {},
+      redactions: event.redactions ?? [],
+    },
+    null,
+    2,
+  );
 }
 
 function EmptyRow({ text }: { text: string }) {

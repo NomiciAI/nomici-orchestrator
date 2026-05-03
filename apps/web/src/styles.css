@@ -23,7 +23,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -196,6 +198,22 @@ h2 {
   font-weight: 680;
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.button-secondary {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.button-danger {
+  border-color: color-mix(in srgb, var(--danger) 44%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
 .button:hover,
 .theme-toggle:hover {
   border-color: var(--border-strong);
@@ -258,6 +276,12 @@ h2 {
   border-color: color-mix(in srgb, var(--warning) 45%, transparent);
   color: var(--warning);
   background: var(--warning-bg);
+}
+
+.tag-danger {
+  border-color: color-mix(in srgb, var(--danger) 48%, transparent);
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 
 .metric-strip {
@@ -397,6 +421,10 @@ h2 {
   grid-row: span 3;
 }
 
+.run-panel {
+  align-self: start;
+}
+
 .panel-heading {
   min-height: 56px;
   display: flex;
@@ -417,6 +445,85 @@ h2 {
 .canvas {
   height: 520px;
   background: color-mix(in srgb, var(--base-1) 72%, transparent);
+}
+
+.run-form {
+  display: grid;
+  gap: 12px;
+  padding: 14px 15px 15px;
+}
+
+.run-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.run-form label span,
+.form-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.run-form select,
+.run-form textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-muted);
+  outline: none;
+}
+
+.run-form select {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.run-form textarea {
+  resize: vertical;
+  min-height: 112px;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.run-form select:focus-visible,
+.run-form textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.form-hint {
+  margin: -4px 0 0;
+}
+
+.inline-error {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 48%, transparent);
+  border-radius: 8px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  font-size: 12px;
+}
+
+.panel-inline {
+  margin: 12px 15px 0;
+}
+
+.run-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.run-actions span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table {
@@ -516,6 +623,122 @@ h2 {
   text-align: right;
 }
 
+.trace-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.trace-item:last-child {
+  border-bottom: 0;
+}
+
+.trace-summary {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 15px;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trace-summary:hover {
+  background: var(--surface-muted);
+}
+
+.trace-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.trace-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payload {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 15px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--base-1) 62%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.approval-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 72px;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.approval-item:last-child {
+  border-bottom: 0;
+}
+
+.approval-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.approval-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-copy span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.approval-actions .button,
+.approval-actions .pill {
+  min-height: 30px;
+}
+
 .react-flow {
   --xy-background-color: transparent;
   --xy-controls-button-background-color: var(--surface-solid);
@@ -609,6 +832,15 @@ h2 {
 
   .canvas {
     height: 420px;
+  }
+
+  .run-actions,
+  .approval-item {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-actions {
+    justify-content: flex-start;
   }
 
   .table-row {

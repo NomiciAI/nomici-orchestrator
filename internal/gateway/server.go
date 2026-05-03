@@ -18,6 +18,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 )
@@ -28,12 +29,13 @@ const (
 )
 
 type Options struct {
-	Host      string
-	Port      int
-	Version   string
-	DBPath    string
-	TokenPath string
-	AuthToken string
+	Host       string
+	Port       int
+	Version    string
+	DBPath     string
+	ConfigPath string
+	TokenPath  string
+	AuthToken  string
 }
 
 type Server struct {
@@ -52,6 +54,9 @@ func NewServer(options Options) *Server {
 
 	if options.DBPath == "" {
 		options.DBPath = store.DefaultDBPath
+	}
+	if options.ConfigPath == "" {
+		options.ConfigPath = "nomici.yaml"
 	}
 
 	return &Server{options: options}
@@ -121,6 +126,7 @@ func (server *Server) initialize() error {
 		Graph:     graph.NewStore(db),
 		Packs:     packs.NewStore(db),
 		Policy:    policy.NewService(db),
+		Context:   sharedcontext.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),
