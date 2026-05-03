@@ -76,12 +76,16 @@ INSERT INTO trace_events (
 }
 
 func (store *Store) ListByRun(ctx context.Context, runID string) ([]*Event, error) {
+	return store.ListByRunAfter(ctx, runID, 0)
+}
+
+func (store *Store) ListByRunAfter(ctx context.Context, runID string, afterSequence int) ([]*Event, error) {
 	rows, err := store.db.QueryContext(ctx, `
 SELECT event_id, run_id, sequence, type, time, node_id, runtime_id,
 	payload_json, redactions_json, metadata_json
 FROM trace_events
-WHERE run_id = ?
-ORDER BY sequence`, runID)
+WHERE run_id = ? AND sequence > ?
+ORDER BY sequence`, runID, afterSequence)
 	if err != nil {
 		return nil, fmt.Errorf("list trace events: %w", err)
 	}

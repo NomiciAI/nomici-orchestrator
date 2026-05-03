@@ -5,9 +5,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
-	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/runs"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -95,35 +97,46 @@ func runGraphEntrypoint(command *cobra.Command, configPath string, dbPath string
 		return err
 	}
 
-	if len(outgoing) > 0 {
-		if agent.Kind == agentspec.AgentKindExternal && len(outgoing) == 1 && outgoing[0].Mode == "handoff" {
-			return runExternalCLIHandoff(command, snapshot, agent, outgoing[0], configPath, prompt, db)
-		}
-		return fmt.Errorf("agent %q has outgoing graph edges; Gate 5 only supports one handoff edge between cli_agent-backed external_agent nodes", entrypoint)
-	}
-
-	if agent.Kind == agentspec.AgentKindExternal {
-		return runExternalCLIAgent(command, snapshot, agent, configPath, prompt, db)
-	}
-
-	model, ok := snapshot.IR.Models[agent.Model]
-	if !ok {
-		return fmt.Errorf("agent %q references missing compiled model %q", entrypoint, agent.Model)
-	}
-	if err := providers.NewStore(db).Save(command.Context(), graphModelToProvider(model)); err != nil {
-		return err
-	}
-
-	result, err := postModelTest(command.Context(), gatewayURL, dbPath, model.ID, graphPrompt(agent, prompt))
+	executor := runs.DBExecutor(db, adapters.NewOpenAICompatibleAdapter(), secrets.NewResolver(), configPath)
+	result, err := executor.Execute(command.Context(), runs.Request{
+		Snapshot: snapshot,
+		AgentID:  entrypoint,
+		Prompt:   prompt,
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(command.OutOrStdout(), "Graph:     %s\n", snapshot.SnapshotID)
-	fmt.Fprintf(command.OutOrStdout(), "Agent:     %s\n", agent.ID)
+	if len(outgoing) > 0 {
+		fmt.Fprintf(command.OutOrStdout(), "Graph:     %s\n", snapshot.SnapshotID)
+		fmt.Fprintf(command.OutOrStdout(), "Handoff:   %s -> %s\n", agent.ID, outgoing[0].To)
+	} else {
+		fmt.Fprintf(command.OutOrStdout(), "Graph:     %s\n", snapshot.SnapshotID)
+		fmt.Fprintf(command.OutOrStdout(), "Agent:     %s\n", agent.ID)
+	}
+	if result.RuntimeID != "" {
+		fmt.Fprintf(command.OutOrStdout(), "Runtime:   %s\n", result.RuntimeID)
+	}
 	fmt.Fprintf(command.OutOrStdout(), "Run ID:    %s\n", result.RunID)
 	fmt.Fprintf(command.OutOrStdout(), "Status:    %s\n", result.Status)
+	if result.ContextSnapshotID != "" {
+		fmt.Fprintf(command.OutOrStdout(), "Context:   %s\n", result.ContextSnapshotID)
+	}
 	if len(result.Messages) > 0 {
 		fmt.Fprintf(command.OutOrStdout(), "Response:  %s\n", result.Messages[0].Content)
+	}
+	if result.CLI != nil {
+		if result.CLI.Error != "" {
+			fmt.Fprintf(command.OutOrStdout(), "Error:     %s\n", result.CLI.Error)
+		}
+		if strings.TrimSpace(result.CLI.Stdout) != "" {
+			fmt.Fprintf(command.OutOrStdout(), "Response:  %s\n", displayOutput(result.CLI.Stdout, 500))
+		}
+		if result.CLI.DiffRef != "" {
+			fmt.Fprintf(command.OutOrStdout(), "Diff:      %s\n", result.CLI.DiffRef)
+		}
+		if len(result.CLI.ChangedFiles) > 0 {
+			fmt.Fprintf(command.OutOrStdout(), "Changed:   %s\n", strings.Join(result.CLI.ChangedFiles, ", "))
+		}
 	}
 	return nil
 }

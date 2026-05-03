@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -89,13 +90,16 @@ type consoleRuntimeStatus struct {
 }
 
 type consoleTraceEvent struct {
-	EventID   string `json:"event_id"`
-	RunID     string `json:"run_id"`
-	Sequence  int    `json:"sequence"`
-	Type      string `json:"type"`
-	Time      string `json:"time"`
-	NodeID    string `json:"node_id,omitempty"`
-	RuntimeID string `json:"runtime_id,omitempty"`
+	EventID    string          `json:"event_id"`
+	RunID      string          `json:"run_id"`
+	Sequence   int             `json:"sequence"`
+	Type       string          `json:"type"`
+	Time       string          `json:"time"`
+	NodeID     string          `json:"node_id,omitempty"`
+	RuntimeID  string          `json:"runtime_id,omitempty"`
+	Payload    json.RawMessage `json:"payload"`
+	Redactions []string        `json:"redactions"`
+	Metadata   json.RawMessage `json:"metadata,omitempty"`
 }
 
 type consoleUnavailableAPI struct {
@@ -349,13 +353,16 @@ func loadLatestTrace(request *http.Request, services Services, runs []*trace.Run
 	timeline := make([]consoleTraceEvent, 0, len(events))
 	for _, event := range events {
 		timeline = append(timeline, consoleTraceEvent{
-			EventID:   event.EventID,
-			RunID:     event.RunID,
-			Sequence:  event.Sequence,
-			Type:      event.Type,
-			Time:      event.Time.Format("2006-01-02T15:04:05Z07:00"),
-			NodeID:    event.NodeID,
-			RuntimeID: event.RuntimeID,
+			EventID:    event.EventID,
+			RunID:      event.RunID,
+			Sequence:   event.Sequence,
+			Type:       event.Type,
+			Time:       event.Time.Format("2006-01-02T15:04:05Z07:00"),
+			NodeID:     event.NodeID,
+			RuntimeID:  event.RuntimeID,
+			Payload:    event.Payload,
+			Redactions: event.Redactions,
+			Metadata:   event.Metadata,
 		})
 	}
 	return timeline, nil

@@ -38,10 +38,11 @@ func newGatewayCommand(version string) *cobra.Command {
 
 func newGatewayRunCommand(version string) *cobra.Command {
 	options := gateway.Options{
-		Host:    gateway.DefaultHost,
-		Port:    gateway.DefaultPort,
-		Version: version,
-		DBPath:  store.DefaultDBPath,
+		Host:       gateway.DefaultHost,
+		Port:       gateway.DefaultPort,
+		Version:    version,
+		DBPath:     store.DefaultDBPath,
+		ConfigPath: "nomici.yaml",
 	}
 
 	command := &cobra.Command{
@@ -58,6 +59,7 @@ func newGatewayRunCommand(version string) *cobra.Command {
 	command.Flags().StringVar(&options.Host, "host", options.Host, "Gateway bind host")
 	command.Flags().IntVar(&options.Port, "port", options.Port, "Gateway bind port")
 	command.Flags().StringVar(&options.DBPath, "db-path", options.DBPath, "Gateway SQLite database path")
+	command.Flags().StringVar(&options.ConfigPath, "config", options.ConfigPath, "AgentSpec config path for Console run workspace resolution")
 	command.Flags().StringVar(&options.TokenPath, "token-path", options.TokenPath, "Gateway token file path")
 
 	return command
@@ -65,6 +67,7 @@ func newGatewayRunCommand(version string) *cobra.Command {
 
 func newGatewayStartCommand(version string) *cobra.Command {
 	var dbPath string
+	var configPath string
 	var host string
 	var port int
 	command := &cobra.Command{
@@ -72,10 +75,11 @@ func newGatewayStartCommand(version string) *cobra.Command {
 		Short: "Start Nomici Gateway in the background",
 		RunE: func(command *cobra.Command, args []string) error {
 			state, err := lifecycle.StartGateway(command.Context(), lifecycle.StartGatewayOptions{
-				Host:    host,
-				Port:    port,
-				Version: version,
-				DBPath:  dbPath,
+				Host:       host,
+				Port:       port,
+				Version:    version,
+				DBPath:     dbPath,
+				ConfigPath: configPath,
 			})
 			if err != nil {
 				return err
@@ -87,6 +91,7 @@ func newGatewayStartCommand(version string) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "Gateway SQLite database path")
+	command.Flags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path for Console run workspace resolution")
 	command.Flags().StringVar(&host, "host", gateway.DefaultHost, "Gateway bind host")
 	command.Flags().IntVar(&port, "port", gateway.DefaultPort, "Gateway bind port")
 	return command
