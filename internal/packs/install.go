@@ -60,9 +60,41 @@ func InstallDeveloperTeam(ctx context.Context, options InstallOptions) (*Install
 	if err := addAgent(spec, "product_pm", agentspec.Agent{
 		Kind:         agentspec.AgentKindGateway,
 		Model:        modelID,
-		Role:         "Act as the product PM for a small developer team. Clarify the task, define implementation intent, and produce a concise plan with acceptance criteria.",
-		Instructions: "Keep the plan actionable. Call out risks, assumptions, test strategy, and what an implementer should do next.",
-		Subagents:    []string{"architect"},
+		Role:         "Act as the coordinator for a small developer team. Clarify the task, decide which specialist role should own each step, and keep the run pointed at a concrete deliverable.",
+		Instructions: "Keep the plan actionable. Call out risks, assumptions, test strategy, and what planner, researcher, coder, and reporter roles should do next. Do not pretend subagents executed unless the trace shows that they did.",
+		Subagents:    []string{"planner", "researcher", "coder", "reporter"},
+	}, options.Force); err != nil {
+		return nil, err
+	}
+	if err := addAgent(spec, "planner", agentspec.Agent{
+		Kind:         agentspec.AgentKindModel,
+		Model:        modelID,
+		Role:         "Break the user goal into a bounded plan with phases, acceptance criteria, dependencies, and open questions.",
+		Instructions: "Prefer short plans with explicit sequencing. Separate what can run now from work blocked on tools, data, or approvals.",
+	}, options.Force); err != nil {
+		return nil, err
+	}
+	if err := addAgent(spec, "researcher", agentspec.Agent{
+		Kind:         agentspec.AgentKindModel,
+		Model:        modelID,
+		Role:         "Gather and verify external or project information needed for the task.",
+		Instructions: "Summarize sources, confidence, contradictions, and follow-up checks. Do not invent citations or claim live search if no search tool was available.",
+	}, options.Force); err != nil {
+		return nil, err
+	}
+	if err := addAgent(spec, "coder", agentspec.Agent{
+		Kind:         agentspec.AgentKindModel,
+		Model:        modelID,
+		Role:         "Analyze implementation options and produce code-oriented guidance for the task.",
+		Instructions: "Focus on boundaries, data model, testability, security implications, and verification strategy.",
+	}, options.Force); err != nil {
+		return nil, err
+	}
+	if err := addAgent(spec, "reporter", agentspec.Agent{
+		Kind:         agentspec.AgentKindModel,
+		Model:        modelID,
+		Role:         "Turn completed work and evidence into a concise final report or handoff.",
+		Instructions: "Report what changed, what was verified, residual risks, and the next concrete step. Keep evidence tied to trace, artifacts, or context snapshots.",
 	}, options.Force); err != nil {
 		return nil, err
 	}
