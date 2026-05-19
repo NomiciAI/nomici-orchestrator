@@ -17,6 +17,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
@@ -127,6 +128,7 @@ func (server *Server) initialize() error {
 		Packs:     packs.NewStore(db),
 		Policy:    policy.NewService(db),
 		Context:   sharedcontext.NewStore(db),
+		Runs:      runpkg.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

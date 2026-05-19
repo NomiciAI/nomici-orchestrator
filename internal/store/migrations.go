@@ -157,4 +157,44 @@ CREATE TABLE IF NOT EXISTS pack_installations (
 CREATE INDEX IF NOT EXISTS idx_pack_installations_updated_at ON pack_installations(updated_at DESC);
 `,
 	},
+	{
+		Version: 7,
+		SQL: `
+CREATE TABLE IF NOT EXISTS run_sessions (
+	session_id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL UNIQUE,
+	project_id TEXT NOT NULL,
+	graph_snapshot_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	source_channel TEXT NOT NULL DEFAULT 'console',
+	status TEXT NOT NULL,
+	started_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	completed_at TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_sessions_updated ON run_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_run_sessions_status ON run_sessions(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS run_tasks (
+	task_id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	parent_task_id TEXT NOT NULL DEFAULT '',
+	agent_id TEXT NOT NULL,
+	runtime_id TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	context_snapshot_id TEXT NOT NULL DEFAULT '',
+	artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+	approval_refs_json TEXT NOT NULL DEFAULT '[]',
+	started_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	completed_at TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_tasks_run ON run_tasks(run_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_run_tasks_status ON run_tasks(status, updated_at DESC);
+`,
+	},
 }

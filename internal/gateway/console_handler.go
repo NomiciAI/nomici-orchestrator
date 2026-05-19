@@ -11,6 +11,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 )
@@ -26,6 +27,7 @@ type consoleOverview struct {
 	GraphSnapshot    *graph.Snapshot         `json:"graph_snapshot,omitempty"`
 	Runtimes         []consoleRuntimeStatus  `json:"runtimes"`
 	RecentRuns       []*trace.RunSummary     `json:"recent_runs"`
+	RecentSessions   []*runpkg.Session       `json:"recent_sessions"`
 	LatestTrace      []consoleTraceEvent     `json:"latest_trace"`
 	PendingApprovals []*policy.Approval      `json:"pending_approvals"`
 	Unavailable      []consoleUnavailableAPI `json:"unavailable"`
@@ -230,6 +232,13 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 	if err != nil {
 		return nil, nil, err
 	}
+	var sessions []*runpkg.Session
+	if services.Runs != nil {
+		sessions, err = services.Runs.ListSessions(request.Context(), consoleRunLimit)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	pendingApprovals, err := services.Policy.List(request.Context(), policy.StatusPending)
 	if err != nil {
 		return nil, nil, err
@@ -287,6 +296,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		GraphSnapshot:    snapshot,
 		Runtimes:         runtimes,
 		RecentRuns:       limitRuns(runs),
+		RecentSessions:   sessions,
 		LatestTrace:      latestTrace,
 		PendingApprovals: pendingApprovals,
 		Unavailable: []consoleUnavailableAPI{
