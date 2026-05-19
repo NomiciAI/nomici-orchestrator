@@ -56,7 +56,7 @@ nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
 nomici run product_pm "Say hello through a single-node graph"
 nomici agent run implementer "Use a configured cli_agent runtime"
-nomici run implementer "Run one supported cli_agent handoff"
+nomici run implementer "Run a supported cli_agent handoff chain"
 nomici context list
 nomici policy check
 nomici approvals list
@@ -73,7 +73,7 @@ The bundled `developer-team` pack installs a runnable `product_pm` entrypoint an
 
 The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent runs, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
-The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or one `handoff` edge between two `cli_agent`-backed `external_agent` nodes. General multi-node handoff, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
+The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or a linear `handoff` chain across `cli_agent`-backed `external_agent` nodes. Branching handoffs, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 
 The intended v0.1 flow:
 

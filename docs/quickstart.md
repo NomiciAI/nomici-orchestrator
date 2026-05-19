@@ -93,5 +93,5 @@ nomici trace show <run_id>
 
 - The hosted `curl` installer and release artifacts are not live yet.
 - Console editing and provider setup are not implemented yet.
-- General multi-node graph execution is not implemented yet.
+- Linear `handoff` chains across `cli_agent`-backed `external_agent` nodes are executable. Branching, parallel, A2A, and tool-edge graph execution is not implemented yet.
 - MCP, A2A, broader tool policy, and deep Hermes/OpenClaw adapters are deferred.
