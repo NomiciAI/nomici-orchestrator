@@ -7,6 +7,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
@@ -22,6 +23,7 @@ type Services struct {
 	Packs     *packs.Store
 	Policy    *policy.Service
 	Context   *sharedcontext.Store
+	Runs      *runpkg.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -39,6 +41,7 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		api.Get("/api/runtimes", runtimeListHandler(services))
 		api.Get("/api/runs", runListHandler(services))
 		api.Post("/api/runs", runCreateHandler(options, services))
+		api.Get("/api/runs/{run_id}", runDetailHandler(services))
 		api.Get("/api/runs/{run_id}/events", runEventsHandler(services))
 		api.Get("/api/approvals", approvalListHandler(services))
 		api.Post("/api/approvals/{approval_id}/grant", approvalGrantHandler(services))
