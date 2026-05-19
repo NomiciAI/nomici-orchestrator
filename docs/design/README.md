@@ -10,6 +10,7 @@ Current deep dives:
 - [v0.1 Boundaries](v0.1-boundaries.md)
 - [Shared Context](shared-context.md)
 - [Shared Context and Autonomy](shared-context-autonomy.md)
+- [Long-Horizon Agent Surface](long-horizon-agent-surface.md)
 - [CLI Agent Runtimes](cli-agent-runtimes.md)
 - [Provider Setup](provider-setup.md)
 - [Pack System](packs.md)
@@ -53,5 +54,7 @@ Scope and naming clarifications are documented in [v0.1 Boundaries](v0.1-boundar
 Shared Context data models, lifecycle, snapshot creation, and adapter boundaries are covered in [Shared Context](shared-context.md).
 
 Agent-native memory boundaries and long-running autonomy are covered in [Shared Context and Autonomy](shared-context-autonomy.md).
+
+Sandbox, memory/session, skills/tools, subagents, message gateway, and minutes-to-hours task surfaces are covered in [Long-Horizon Agent Surface](long-horizon-agent-surface.md).
 
 Claude Code, Codex, opencode, Aider, custom commands, and editor-native agents with automation surfaces are covered in [CLI Agent Runtimes](cli-agent-runtimes.md).
