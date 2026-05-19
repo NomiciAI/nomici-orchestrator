@@ -19,12 +19,14 @@ git clone https://github.com/NomiciAI/nomici-orchestrator.git
 cd nomici-orchestrator
 scripts/install.sh --from-source .
 nomici doctor
-nomici run local_assistant "Explain what this example demonstrates." --config examples/basic-local-agent/nomici.yaml
+nomici setup
+nomici up
+nomici run product_pm "Plan the first useful task."
 ```
 
 The source installer checks the required build tools and activates `pnpm` through Corepack when needed. The hosted `curl` install endpoint and release artifacts are still planned.
 
-See [Quickstart](docs/quickstart.md) for a no-API-key local example and an optional model-provider path.
+See [Quickstart](docs/quickstart.md) for the guided setup path, a no-API-key local example, and scriptable setup flags.
 
 ## Implemented Bootstrap Commands
 
@@ -35,6 +37,7 @@ scripts/install.sh --from-source .
 cd examples/basic-local-agent
 nomici run local_assistant "Verify local agent execution." --config nomici.yaml
 cd ../..
+nomici setup
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
@@ -66,6 +69,14 @@ nomici trace list
 nomici trace show <run_id>
 nomici down
 ```
+
+`nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici pack install`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
+
+```text
+LLM provider -> starter pack -> sandbox policy -> nomici.yaml -> next run command
+```
+
+The setup command writes sandbox intent under `deployment.sandbox` in `nomici.yaml`. v0.1 treats this as control-plane policy metadata that adapters enforce where supported. `nomici doctor` reports whether sandbox config exists and whether a requested container sandbox has a local container runtime such as Docker or Podman.
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 

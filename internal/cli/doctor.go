@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"text/tabwriter"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
@@ -28,6 +29,7 @@ func newDoctorCommand() *cobra.Command {
 				checkToken(dbPath),
 				checkGateway(gatewayURL),
 				checkAgentSpec(configPath),
+				checkSandbox(configPath),
 				checkProviders(command, dbPath),
 				checkManagedRuntimes(dbPath),
 			}
@@ -90,6 +92,40 @@ func checkAgentSpec(configPath string) doctorResult {
 	return doctorResult{Name: "agentspec", Status: "ok", Message: configPath + " valid"}
 }
 
+func checkSandbox(configPath string) doctorResult {
+	loaded, exists, err := loadSpecIfExists(configPath)
+	if err != nil {
+		return doctorResult{Name: "sandbox", Status: "failed", Message: err.Error()}
+	}
+	if !exists {
+		return doctorResult{Name: "sandbox", Status: "warning", Message: "no sandbox config; run `nomici setup`"}
+	}
+	raw, ok := loaded.Spec.Deployment["sandbox"]
+	if !ok {
+		return doctorResult{Name: "sandbox", Status: "warning", Message: "deployment.sandbox not configured; run `nomici setup --sandbox local`"}
+	}
+	sandbox, ok := raw.(map[string]any)
+	if !ok {
+		return doctorResult{Name: "sandbox", Status: "failed", Message: "deployment.sandbox must be a map"}
+	}
+	mode, _ := sandbox["mode"].(string)
+	switch mode {
+	case sandboxModeLocal:
+		return doctorResult{Name: "sandbox", Status: "ok", Message: "local workspace policy configured"}
+	case sandboxModeContainer:
+		if binary, ok := firstAvailableBinary("docker", "podman", "container"); ok {
+			return doctorResult{Name: "sandbox", Status: "ok", Message: "container sandbox intent configured via " + binary}
+		}
+		return doctorResult{Name: "sandbox", Status: "warning", Message: "container sandbox configured but docker, podman, or container was not found"}
+	case sandboxModeNone:
+		return doctorResult{Name: "sandbox", Status: "warning", Message: "sandbox disabled"}
+	case "":
+		return doctorResult{Name: "sandbox", Status: "failed", Message: "deployment.sandbox.mode is required"}
+	default:
+		return doctorResult{Name: "sandbox", Status: "failed", Message: "unsupported sandbox mode " + mode}
+	}
+}
+
 func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 	db, err := openMigratedDB(dbPath)
 	if err != nil {
@@ -104,6 +140,15 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 		return doctorResult{Name: "models", Status: "warning", Message: "no model profiles configured"}
 	}
 	return doctorResult{Name: "models", Status: "ok", Message: fmt.Sprintf("%d profile(s)", len(profiles))}
+}
+
+func firstAvailableBinary(names ...string) (string, bool) {
+	for _, name := range names {
+		if _, err := exec.LookPath(name); err == nil {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func checkManagedRuntimes(dbPath string) doctorResult {

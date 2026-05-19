@@ -170,6 +170,7 @@ Recovery:
 ## CLI Behavior
 
 ```bash
+nomici setup
 nomici model setup
 nomici model setup --provider ollama
 nomici model setup --provider openai-compatible --base-url http://127.0.0.1:8000/v1
@@ -181,6 +182,7 @@ nomici model show local_qwen --json
 
 Rules:
 
+- `nomici setup` is the first-run umbrella flow: provider profile, starter pack, sandbox policy, graph snapshot, and next-step commands.
 - interactive by default
 - non-interactive flags for scripts
 - `--json` for machine output
@@ -190,6 +192,28 @@ Rules:
 CLI setup can run before Gateway is started.
 
 Console setup requires a Gateway process because Console is served by Gateway. v0.1 may support `nomici gateway run --setup` as a bootstrap mode; otherwise the hard setup path is CLI-first.
+
+## First-Run Sandbox Policy
+
+The setup flow writes explicit sandbox intent into AgentSpec:
+
+```yaml
+deployment:
+  sandbox:
+    mode: local
+    workspace: ./workspace
+    bash_enabled: false
+    file_write_enabled: true
+    note: v0.1 policy intent; runtime adapters enforce capabilities where supported
+```
+
+Supported setup modes:
+
+- `local`: local workspace policy intent with approvals for risky actions
+- `container`: preferred isolation intent when Docker, Podman, or Apple Container is available
+- `none`: no sandbox policy intent
+
+This keeps Nomici aligned with the long-horizon run-workspace shape without pretending Gateway is already a full sandbox runtime. `nomici doctor` checks the configured sandbox mode and warns when `container` is selected but no local container runtime is found.
 
 ## Gateway API
 
