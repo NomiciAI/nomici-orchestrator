@@ -259,6 +259,11 @@ export function App() {
   );
   const selectedAgent = agentOptions.find((agent) => agent.id === runAgentId);
   const traceEvents = runEvents.length > 0 ? runEvents : overview.latest_trace;
+  const runnableAgents = agentOptions.filter((agent) => agent.supported);
+  const blockedAgents = agentOptions.filter((agent) => !agent.supported);
+  const latestOutput = humanOutput(traceEvents);
+  const runTitle = runPrompt.trim() || "No task started";
+  const runStages = buildRunStages(runStatus, traceEvents);
 
   useEffect(() => {
     if (runAgentId === "" && agentOptions.length > 0) {
@@ -420,7 +425,7 @@ export function App() {
           />
           <div>
             <p className="eyebrow">Nomici Console</p>
-            <h1>Agent Control Plane</h1>
+            <h1>Task Workspace</h1>
           </div>
         </div>
         <div className="topbar-actions">
@@ -451,16 +456,17 @@ export function App() {
       </header>
 
       {isAuthenticated ? (
-        <section className="metric-strip" aria-label="Control plane metrics">
-          <Metric label="Models" value={overview.counts.models} />
-          <Metric label="Packs" value={overview.counts.packs_installed} />
-          <Metric label="Agents" value={overview.counts.agents} />
-          <Metric label="Runtimes" value={overview.counts.runtimes} />
-          <Metric label="Runs" value={overview.counts.runs} />
+        <section className="task-strip" aria-label="Workspace status">
+          <Metric label="Runnable entries" value={runnableAgents.length} />
+          <Metric label="Recent runs" value={overview.counts.runs} />
           <Metric
-            label="Approvals"
+            label="Approvals waiting"
             value={overview.counts.pending_approvals}
             tone="attention"
+          />
+          <Metric
+            label="Installed packs"
+            value={overview.counts.packs_installed}
           />
         </section>
       ) : null}
@@ -503,336 +509,530 @@ export function App() {
       ))}
 
       {isAuthenticated ? (
-        <section className="workspace">
-          <section className="panel graph-panel" aria-label="Agent graph">
-            <div className="panel-heading">
-              <div>
-                <h2>Graph</h2>
+        <>
+          <section className="task-workspace" aria-label="Run workspace">
+            <section className="task-entry" aria-label="Start long task">
+              <div className="task-entry-copy">
+                <p className="eyebrow">Run workspace</p>
+                <h2>Start a long-horizon task</h2>
                 <p>
-                  {overview.graph_snapshot?.project_id ??
-                    "No graph snapshot yet. Run graph validate or install a pack."}
+                  Give Nomici one outcome. The run workspace keeps the agent,
+                  handoffs, approvals, trace, and output in one place.
                 </p>
               </div>
-              <span className="tag">
-                {overview.graph_snapshot ? "read-only" : "empty"}
-              </span>
-            </div>
-            <div className="canvas">
-              <ReactFlow
-                nodes={flow.nodes}
-                edges={flow.edges}
-                fitView
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable={false}
-              >
-                <Background />
-                <Controls />
-              </ReactFlow>
-            </div>
-          </section>
-
-          <section className="panel run-panel" aria-label="Run agent">
-            <div className="panel-heading">
-              <div>
-                <h2>Run</h2>
-                <p>{activeRunId || "Start a supported graph agent"}</p>
-              </div>
-              <span
-                className={`tag ${runStatus === "failed" ? "tag-danger" : runStatus === "running" ? "tag-attention" : ""}`}
-              >
-                {runStatus}
-              </span>
-            </div>
-            <form className="run-form" onSubmit={startRun}>
-              <label>
-                <span>Agent</span>
-                <select
-                  value={runAgentId}
-                  onChange={(event) => setRunAgentId(event.target.value)}
-                >
-                  {agentOptions.map((agent) => (
-                    <option
-                      value={agent.id}
-                      key={agent.id}
-                      disabled={!agent.supported}
+              <form className="task-form" onSubmit={startRun}>
+                <label>
+                  <span>Task</span>
+                  <textarea
+                    rows={7}
+                    value={runPrompt}
+                    onChange={(event) => setRunPrompt(event.target.value)}
+                    placeholder="Describe the outcome you want delivered"
+                  />
+                </label>
+                <div className="task-controls">
+                  <label>
+                    <span>Entrypoint</span>
+                    <select
+                      value={runAgentId}
+                      onChange={(event) => setRunAgentId(event.target.value)}
                     >
-                      {agent.id}
-                      {agent.supported ? "" : ` - ${agent.reason}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedAgent && !selectedAgent.supported ? (
-                <p className="form-hint">{selectedAgent.reason}</p>
-              ) : null}
-              <label>
-                <span>Prompt</span>
-                <textarea
-                  rows={5}
-                  value={runPrompt}
-                  onChange={(event) => setRunPrompt(event.target.value)}
-                  placeholder="Ask this agent to do one task"
-                />
-              </label>
-              {runError ? <div className="inline-error">{runError}</div> : null}
-              <div className="run-actions">
-                <button
-                  className="button"
-                  type="submit"
-                  disabled={
-                    runStatus === "starting" ||
-                    runStatus === "running" ||
-                    !selectedAgent?.supported ||
-                    runPrompt.trim() === ""
-                  }
-                >
-                  {runStatus === "starting" ? "Starting" : "Run"}
-                </button>
-                <span>{humanOutput(traceEvents) || "No output yet"}</span>
-              </div>
-            </form>
-          </section>
-
-          <section className="panel" aria-label="Provider profiles">
-            <div className="panel-heading">
-              <h2>Models</h2>
-              <span className="tag">{overview.models.length}</span>
-            </div>
-            <div className="table">
-              <div className="table-row table-head">
-                <span>Name</span>
-                <span>Kind</span>
-                <span>Model</span>
-                <span>Secret</span>
-              </div>
-              {overview.models.map((model) => (
-                <div className="table-row" key={model.id}>
-                  <span>{model.name}</span>
-                  <span>{model.kind}</span>
-                  <span>{model.model}</span>
-                  <span>{model.api_key_env || "-"}</span>
-                </div>
-              ))}
-              {overview.models.length === 0 ? (
-                <EmptyRow text="No models configured. Run model setup in this workspace." />
-              ) : null}
-            </div>
-          </section>
-
-          <section className="panel" aria-label="Packs">
-            <div className="panel-heading">
-              <h2>Packs</h2>
-              <span className="tag">{overview.packs.length}</span>
-            </div>
-            <div className="stack">
-              {overview.packs.map((pack) => (
-                <div className="list-item" key={pack.manifest.id}>
-                  <div>
-                    <strong>{pack.manifest.name}</strong>
-                    <span>{packUsageText(pack)}</span>
-                  </div>
-                  <div className="list-meta">
-                    <span
-                      className={pack.installed ? "pill pill-green" : "pill"}
-                    >
-                      {pack.installed ? "installed" : "available"}
-                    </span>
-                    <span>{pack.manifest.trust?.level ?? "local"}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel" aria-label="Runtimes">
-            <div className="panel-heading">
-              <h2>Runtimes</h2>
-              <span className="tag">{overview.runtimes.length}</span>
-            </div>
-            <div className="table">
-              <div className="table-row table-head">
-                <span>Name</span>
-                <span>Kind</span>
-                <span>Status</span>
-                <span>Agents</span>
-              </div>
-              {overview.runtimes.map((runtime) => (
-                <div className="table-row" key={runtime.id}>
-                  <span>{runtime.id}</span>
-                  <span>{runtime.kind}</span>
-                  <span>{runtime.status}</span>
-                  <span>{runtime.agents?.join(", ") || "-"}</span>
-                </div>
-              ))}
-              {overview.runtimes.length === 0 ? (
-                <EmptyRow text="No runtimes in graph" />
-              ) : null}
-            </div>
-          </section>
-
-          <section className="panel" aria-label="Recent runs">
-            <div className="panel-heading">
-              <h2>Runs</h2>
-              <span className="tag">{overview.recent_runs.length}</span>
-            </div>
-            <div className="stack">
-              {overview.recent_runs.map((run) => (
-                <div className="list-item" key={run.run_id}>
-                  <div>
-                    <strong>{run.run_id}</strong>
-                    <span>{run.last_type}</span>
-                  </div>
-                  <div className="list-meta">
-                    <span>{run.event_count} events</span>
-                    <span>{formatTime(run.last_time)}</span>
-                  </div>
-                </div>
-              ))}
-              {overview.recent_runs.length === 0 ? (
-                <p className="empty">No runs traced</p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="panel" aria-label="Latest trace">
-            <div className="panel-heading">
-              <h2>Trace</h2>
-              <span className="tag">{traceEvents.length}</span>
-            </div>
-            <div className="stack">
-              {traceEvents.map((event) => (
-                <div className="trace-item" key={event.event_id}>
+                      {agentOptions.map((agent) => (
+                        <option
+                          value={agent.id}
+                          key={agent.id}
+                          disabled={!agent.supported}
+                        >
+                          {agent.id}
+                          {agent.supported ? "" : ` - ${agent.reason}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <button
-                    className="trace-summary"
-                    type="button"
-                    onClick={() =>
-                      setExpandedEvents((current) => ({
-                        ...current,
-                        [event.event_id]: !current[event.event_id],
-                      }))
+                    className="button task-submit"
+                    type="submit"
+                    disabled={
+                      runStatus === "starting" ||
+                      runStatus === "running" ||
+                      !selectedAgent?.supported ||
+                      runPrompt.trim() === ""
                     }
                   >
-                    <div>
-                      <strong>
-                        {event.sequence}. {event.type}
-                      </strong>
-                      <span>
-                        {eventOutput(event) ||
-                          event.node_id ||
-                          event.runtime_id ||
-                          event.run_id}
-                      </span>
-                    </div>
-                    <div className="list-meta">
-                      <span>{formatTime(event.time)}</span>
-                      <span>{event.event_id}</span>
-                    </div>
+                    {runStatus === "starting" ? "Starting" : "Start task"}
                   </button>
-                  {expandedEvents[event.event_id] ? (
-                    <pre className="payload">{formatPayload(event)}</pre>
+                </div>
+                {agentOptions.length === 0 ? (
+                  <p className="form-hint">
+                    No runnable entrypoint found in this workspace yet.
+                  </p>
+                ) : selectedAgent && !selectedAgent.supported ? (
+                  <p className="form-hint">{selectedAgent.reason}</p>
+                ) : null}
+                {runError ? (
+                  <div className="inline-error">{runError}</div>
+                ) : null}
+              </form>
+            </section>
+
+            <section className="run-workspace" aria-label="Current run">
+              <div className="run-header">
+                <div>
+                  <p className="eyebrow">Current run</p>
+                  <h2>{runTitle}</h2>
+                  <p>{activeRunId || "No active run yet"}</p>
+                </div>
+                <span
+                  className={`tag ${runStatus === "failed" ? "tag-danger" : runStatus === "running" ? "tag-attention" : ""}`}
+                >
+                  {runStatus}
+                </span>
+              </div>
+              <div className="stage-track" aria-label="Run stages">
+                {runStages.map((stage) => (
+                  <div
+                    className={`stage stage-${stage.state}`}
+                    key={stage.label}
+                  >
+                    <span />
+                    <strong>{stage.label}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="workspace-output">
+                <span>Latest output</span>
+                <p>
+                  {latestOutput || "Output appears here once the run starts."}
+                </p>
+              </div>
+              <div className="workspace-lists">
+                <div>
+                  <div className="mini-heading">
+                    <strong>Live trace</strong>
+                    <span>{traceEvents.length}</span>
+                  </div>
+                  <div className="event-list">
+                    {traceEvents.slice(-5).map((event) => (
+                      <button
+                        className="event-row"
+                        type="button"
+                        key={event.event_id}
+                        onClick={() =>
+                          setExpandedEvents((current) => ({
+                            ...current,
+                            [event.event_id]: !current[event.event_id],
+                          }))
+                        }
+                      >
+                        <span>{event.type}</span>
+                        <strong>
+                          {eventOutput(event) ||
+                            event.node_id ||
+                            event.runtime_id ||
+                            formatTime(event.time)}
+                        </strong>
+                      </button>
+                    ))}
+                    {traceEvents.length === 0 ? (
+                      <p className="empty compact-empty">No trace events</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <div className="mini-heading">
+                    <strong>Approvals</strong>
+                    <span>{overview.pending_approvals.length}</span>
+                  </div>
+                  <div className="approval-queue">
+                    {overview.pending_approvals.slice(0, 2).map((approval) => (
+                      <div className="approval-card" key={approval.approval_id}>
+                        <strong>{approval.summary}</strong>
+                        <span>{approval.risk}</span>
+                        <div>
+                          <button
+                            className="button button-secondary"
+                            type="button"
+                            disabled={mutatingApproval !== ""}
+                            onClick={() =>
+                              void resolveApproval(
+                                approval.approval_id,
+                                "grant",
+                                "once",
+                              )
+                            }
+                          >
+                            Grant once
+                          </button>
+                          <button
+                            className="button button-danger"
+                            type="button"
+                            disabled={mutatingApproval !== ""}
+                            onClick={() =>
+                              void resolveApproval(approval.approval_id, "deny")
+                            }
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {overview.pending_approvals.length === 0 ? (
+                      <p className="empty compact-empty">
+                        No pending approvals
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <details className="diagnostics">
+            <summary>
+              <span>Operational details</span>{" "}
+              <strong>
+                {overview.counts.models} models, {overview.counts.agents}{" "}
+                agents, {blockedAgents.length} blocked entries
+              </strong>
+            </summary>
+            <section className="workspace diagnostics-workspace">
+              <section className="panel graph-panel" aria-label="Agent graph">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Graph</h2>
+                    <p>
+                      {overview.graph_snapshot?.project_id ??
+                        "No graph snapshot yet. Run graph validate or install a pack."}
+                    </p>
+                  </div>
+                  <span className="tag">
+                    {overview.graph_snapshot ? "read-only" : "empty"}
+                  </span>
+                </div>
+                <div className="canvas">
+                  <ReactFlow
+                    nodes={flow.nodes}
+                    edges={flow.edges}
+                    fitView
+                    nodesDraggable={false}
+                    nodesConnectable={false}
+                    elementsSelectable={false}
+                  >
+                    <Background />
+                    <Controls />
+                  </ReactFlow>
+                </div>
+              </section>
+
+              <section className="panel run-panel" aria-label="Run agent">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Run</h2>
+                    <p>{activeRunId || "Start a supported graph agent"}</p>
+                  </div>
+                  <span
+                    className={`tag ${runStatus === "failed" ? "tag-danger" : runStatus === "running" ? "tag-attention" : ""}`}
+                  >
+                    {runStatus}
+                  </span>
+                </div>
+                <form className="run-form" onSubmit={startRun}>
+                  <label>
+                    <span>Agent</span>
+                    <select
+                      value={runAgentId}
+                      onChange={(event) => setRunAgentId(event.target.value)}
+                    >
+                      {agentOptions.map((agent) => (
+                        <option
+                          value={agent.id}
+                          key={agent.id}
+                          disabled={!agent.supported}
+                        >
+                          {agent.id}
+                          {agent.supported ? "" : ` - ${agent.reason}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedAgent && !selectedAgent.supported ? (
+                    <p className="form-hint">{selectedAgent.reason}</p>
+                  ) : null}
+                  <label>
+                    <span>Prompt</span>
+                    <textarea
+                      rows={5}
+                      value={runPrompt}
+                      onChange={(event) => setRunPrompt(event.target.value)}
+                      placeholder="Ask this agent to do one task"
+                    />
+                  </label>
+                  {runError ? (
+                    <div className="inline-error">{runError}</div>
+                  ) : null}
+                  <div className="run-actions">
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={
+                        runStatus === "starting" ||
+                        runStatus === "running" ||
+                        !selectedAgent?.supported ||
+                        runPrompt.trim() === ""
+                      }
+                    >
+                      {runStatus === "starting" ? "Starting" : "Run"}
+                    </button>
+                    <span>{humanOutput(traceEvents) || "No output yet"}</span>
+                  </div>
+                </form>
+              </section>
+
+              <section className="panel" aria-label="Provider profiles">
+                <div className="panel-heading">
+                  <h2>Models</h2>
+                  <span className="tag">{overview.models.length}</span>
+                </div>
+                <div className="table">
+                  <div className="table-row table-head">
+                    <span>Name</span>
+                    <span>Kind</span>
+                    <span>Model</span>
+                    <span>Secret</span>
+                  </div>
+                  {overview.models.map((model) => (
+                    <div className="table-row" key={model.id}>
+                      <span>{model.name}</span>
+                      <span>{model.kind}</span>
+                      <span>{model.model}</span>
+                      <span>{model.api_key_env || "-"}</span>
+                    </div>
+                  ))}
+                  {overview.models.length === 0 ? (
+                    <EmptyRow text="No models configured. Run model setup in this workspace." />
                   ) : null}
                 </div>
-              ))}
-              {traceEvents.length === 0 ? (
-                <p className="empty">No trace events</p>
-              ) : null}
-            </div>
-          </section>
+              </section>
 
-          <section className="panel" aria-label="Pending approvals">
-            <div className="panel-heading">
-              <h2>Approvals</h2>
-              <span
-                className={
-                  overview.pending_approvals.length > 0
-                    ? "tag tag-attention"
-                    : "tag"
-                }
-              >
-                {overview.pending_approvals.length}
-              </span>
-            </div>
-            {approvalError ? (
-              <div className="inline-error panel-inline">{approvalError}</div>
-            ) : null}
-            <div className="stack">
-              {overview.pending_approvals.map((approval) => (
-                <div className="approval-item" key={approval.approval_id}>
-                  <div className="approval-copy">
-                    <strong>{approval.summary}</strong>
-                    <span>{approval.approval_id}</span>
-                    <span>
-                      {approval.requested_by_agent || approval.status}
-                    </span>
-                  </div>
-                  <div className="approval-actions">
-                    <span className="pill pill-amber">{approval.risk}</span>
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      disabled={mutatingApproval !== ""}
-                      onClick={() =>
-                        void resolveApproval(
-                          approval.approval_id,
-                          "grant",
-                          "once",
-                        )
-                      }
-                    >
-                      Grant once
-                    </button>
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      disabled={mutatingApproval !== ""}
-                      onClick={() =>
-                        void resolveApproval(
-                          approval.approval_id,
-                          "grant",
-                          "run",
-                        )
-                      }
-                    >
-                      Grant run
-                    </button>
-                    <button
-                      className="button button-danger"
-                      type="button"
-                      disabled={mutatingApproval !== ""}
-                      onClick={() =>
-                        void resolveApproval(approval.approval_id, "deny")
-                      }
-                    >
-                      Deny
-                    </button>
-                  </div>
+              <section className="panel" aria-label="Packs">
+                <div className="panel-heading">
+                  <h2>Packs</h2>
+                  <span className="tag">{overview.packs.length}</span>
                 </div>
-              ))}
-              {overview.pending_approvals.length === 0 ? (
-                <p className="empty">No pending approvals</p>
-              ) : null}
-            </div>
-          </section>
+                <div className="stack">
+                  {overview.packs.map((pack) => (
+                    <div className="list-item" key={pack.manifest.id}>
+                      <div>
+                        <strong>{pack.manifest.name}</strong>
+                        <span>{packUsageText(pack)}</span>
+                      </div>
+                      <div className="list-meta">
+                        <span
+                          className={
+                            pack.installed ? "pill pill-green" : "pill"
+                          }
+                        >
+                          {pack.installed ? "installed" : "available"}
+                        </span>
+                        <span>{pack.manifest.trust?.level ?? "local"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-          <section className="panel" aria-label="Unavailable actions">
-            <div className="panel-heading">
-              <h2>Unavailable</h2>
-              <span className="tag">Gate 8</span>
-            </div>
-            <div className="stack">
-              {overview.unavailable.map((item) => (
-                <div className="list-item" key={item.name}>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <span>{item.reason}</span>
-                  </div>
-                  <span className="pill">{item.status}</span>
+              <section className="panel" aria-label="Runtimes">
+                <div className="panel-heading">
+                  <h2>Runtimes</h2>
+                  <span className="tag">{overview.runtimes.length}</span>
                 </div>
-              ))}
-            </div>
-          </section>
-        </section>
+                <div className="table">
+                  <div className="table-row table-head">
+                    <span>Name</span>
+                    <span>Kind</span>
+                    <span>Status</span>
+                    <span>Agents</span>
+                  </div>
+                  {overview.runtimes.map((runtime) => (
+                    <div className="table-row" key={runtime.id}>
+                      <span>{runtime.id}</span>
+                      <span>{runtime.kind}</span>
+                      <span>{runtime.status}</span>
+                      <span>{runtime.agents?.join(", ") || "-"}</span>
+                    </div>
+                  ))}
+                  {overview.runtimes.length === 0 ? (
+                    <EmptyRow text="No runtimes in graph" />
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="panel" aria-label="Recent runs">
+                <div className="panel-heading">
+                  <h2>Runs</h2>
+                  <span className="tag">{overview.recent_runs.length}</span>
+                </div>
+                <div className="stack">
+                  {overview.recent_runs.map((run) => (
+                    <div className="list-item" key={run.run_id}>
+                      <div>
+                        <strong>{run.run_id}</strong>
+                        <span>{run.last_type}</span>
+                      </div>
+                      <div className="list-meta">
+                        <span>{run.event_count} events</span>
+                        <span>{formatTime(run.last_time)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {overview.recent_runs.length === 0 ? (
+                    <p className="empty">No runs traced</p>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="panel" aria-label="Latest trace">
+                <div className="panel-heading">
+                  <h2>Trace</h2>
+                  <span className="tag">{traceEvents.length}</span>
+                </div>
+                <div className="stack">
+                  {traceEvents.map((event) => (
+                    <div className="trace-item" key={event.event_id}>
+                      <button
+                        className="trace-summary"
+                        type="button"
+                        onClick={() =>
+                          setExpandedEvents((current) => ({
+                            ...current,
+                            [event.event_id]: !current[event.event_id],
+                          }))
+                        }
+                      >
+                        <div>
+                          <strong>
+                            {event.sequence}. {event.type}
+                          </strong>
+                          <span>
+                            {eventOutput(event) ||
+                              event.node_id ||
+                              event.runtime_id ||
+                              event.run_id}
+                          </span>
+                        </div>
+                        <div className="list-meta">
+                          <span>{formatTime(event.time)}</span>
+                          <span>{event.event_id}</span>
+                        </div>
+                      </button>
+                      {expandedEvents[event.event_id] ? (
+                        <pre className="payload">{formatPayload(event)}</pre>
+                      ) : null}
+                    </div>
+                  ))}
+                  {traceEvents.length === 0 ? (
+                    <p className="empty">No trace events</p>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="panel" aria-label="Pending approvals">
+                <div className="panel-heading">
+                  <h2>Approvals</h2>
+                  <span
+                    className={
+                      overview.pending_approvals.length > 0
+                        ? "tag tag-attention"
+                        : "tag"
+                    }
+                  >
+                    {overview.pending_approvals.length}
+                  </span>
+                </div>
+                {approvalError ? (
+                  <div className="inline-error panel-inline">
+                    {approvalError}
+                  </div>
+                ) : null}
+                <div className="stack">
+                  {overview.pending_approvals.map((approval) => (
+                    <div className="approval-item" key={approval.approval_id}>
+                      <div className="approval-copy">
+                        <strong>{approval.summary}</strong>
+                        <span>{approval.approval_id}</span>
+                        <span>
+                          {approval.requested_by_agent || approval.status}
+                        </span>
+                      </div>
+                      <div className="approval-actions">
+                        <span className="pill pill-amber">{approval.risk}</span>
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={mutatingApproval !== ""}
+                          onClick={() =>
+                            void resolveApproval(
+                              approval.approval_id,
+                              "grant",
+                              "once",
+                            )
+                          }
+                        >
+                          Grant once
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={mutatingApproval !== ""}
+                          onClick={() =>
+                            void resolveApproval(
+                              approval.approval_id,
+                              "grant",
+                              "run",
+                            )
+                          }
+                        >
+                          Grant run
+                        </button>
+                        <button
+                          className="button button-danger"
+                          type="button"
+                          disabled={mutatingApproval !== ""}
+                          onClick={() =>
+                            void resolveApproval(approval.approval_id, "deny")
+                          }
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {overview.pending_approvals.length === 0 ? (
+                    <p className="empty">No pending approvals</p>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="panel" aria-label="Unavailable actions">
+                <div className="panel-heading">
+                  <h2>Unavailable</h2>
+                  <span className="tag">Gate 8</span>
+                </div>
+                <div className="stack">
+                  {overview.unavailable.map((item) => (
+                    <div className="list-item" key={item.name}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.reason}</span>
+                      </div>
+                      <span className="pill">{item.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </section>
+          </details>
+        </>
       ) : null}
     </main>
   );
@@ -1023,6 +1223,62 @@ function humanOutput(events: TraceEvent[]): string {
     }
   }
   return "";
+}
+
+type RunStage = {
+  label: string;
+  state: "waiting" | "active" | "done" | "blocked";
+};
+
+function buildRunStages(
+  runStatus: "idle" | "starting" | "running" | "completed" | "failed",
+  events: TraceEvent[],
+): RunStage[] {
+  const types = new Set(events.map((event) => event.type));
+  const hasOutput = events.some((event) => eventOutput(event));
+  const isTerminal = runStatus === "completed" || runStatus === "failed";
+  const isBlocked =
+    runStatus === "failed" ||
+    types.has("approval.requested") ||
+    types.has("policy.blocked");
+
+  return [
+    {
+      label: "Intake",
+      state: runStatus === "idle" ? "waiting" : "done",
+    },
+    {
+      label: "Plan",
+      state:
+        events.length === 0
+          ? runStatus === "starting"
+            ? "active"
+            : "waiting"
+          : "done",
+    },
+    {
+      label: "Execute",
+      state:
+        isTerminal || hasOutput
+          ? "done"
+          : runStatus === "running"
+            ? "active"
+            : "waiting",
+    },
+    {
+      label: "Review",
+      state: isBlocked ? "blocked" : isTerminal ? "done" : "waiting",
+    },
+    {
+      label: "Deliver",
+      state:
+        runStatus === "completed"
+          ? "done"
+          : runStatus === "failed"
+            ? "blocked"
+            : "waiting",
+    },
+  ];
 }
 
 function formatPayload(event: TraceEvent): string {
