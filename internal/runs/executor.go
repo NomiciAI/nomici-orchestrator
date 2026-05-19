@@ -69,23 +69,14 @@ func (executor *Executor) Validate(request Request) (*graph.Agent, []graph.Edge,
 	}
 	outgoing := outgoingEdges(request.Snapshot, request.AgentID)
 	if len(outgoing) > 0 {
-		if agent.Kind == agentspec.AgentKindExternal && len(outgoing) == 1 && outgoing[0].Mode == "handoff" {
-			toAgent, ok := request.Snapshot.IR.Agents[outgoing[0].To]
-			if !ok {
-				return nil, nil, fmt.Errorf("handoff target %q was not found in compiled graph", outgoing[0].To)
-			}
-			if toAgent.Kind != agentspec.AgentKindExternal {
-				return nil, nil, fmt.Errorf("handoff target %q has kind %q; only external_agent targets are supported", toAgent.ID, toAgent.Kind)
-			}
-			if _, err := cliRuntimeForAgent(request.Snapshot, agent); err != nil {
+		if agent.Kind == agentspec.AgentKindExternal {
+			chain, err := executableHandoffChain(request.Snapshot, agent)
+			if err != nil {
 				return nil, nil, err
 			}
-			if _, err := cliRuntimeForAgent(request.Snapshot, toAgent); err != nil {
-				return nil, nil, err
-			}
-			return &agent, outgoing, nil
+			return &agent, chain, nil
 		}
-		return nil, nil, fmt.Errorf("agent %q has outgoing graph edges; only one handoff edge between cli_agent-backed external_agent nodes is executable", request.AgentID)
+		return nil, nil, fmt.Errorf("agent %q has outgoing graph edges; only linear handoff chains between cli_agent-backed external_agent nodes are executable", request.AgentID)
 	}
 	if agent.Kind == agentspec.AgentKindExternal {
 		if _, err := cliRuntimeForAgent(request.Snapshot, agent); err != nil {
@@ -121,7 +112,7 @@ func (executor *Executor) Execute(ctx context.Context, request Request) (*Result
 	}
 
 	if len(outgoing) > 0 {
-		return executor.executeHandoff(ctx, request, *agent, outgoing[0], runID, taskID)
+		return executor.executeHandoffChain(ctx, request, *agent, outgoing, runID, taskID)
 	}
 	if agent.Kind == agentspec.AgentKindExternal {
 		return executor.executeExternal(ctx, request, *agent, runID, taskID)
@@ -281,13 +272,8 @@ func (executor *Executor) executeExternal(ctx context.Context, request Request, 
 	return result, nil
 }
 
-func (executor *Executor) executeHandoff(ctx context.Context, request Request, fromAgent graph.Agent, edge graph.Edge, runID string, taskID string) (*Result, error) {
-	toAgent := request.Snapshot.IR.Agents[edge.To]
-	fromRuntime, err := cliRuntimeForAgent(request.Snapshot, fromAgent)
-	if err != nil {
-		return nil, err
-	}
-	toRuntime, err := cliRuntimeForAgent(request.Snapshot, toAgent)
+func (executor *Executor) executeHandoffChain(ctx context.Context, request Request, fromAgent graph.Agent, edges []graph.Edge, runID string, taskID string) (*Result, error) {
+	agents, runtimes, err := handoffChainAgents(request.Snapshot, fromAgent, edges)
 	if err != nil {
 		return nil, err
 	}
@@ -298,56 +284,76 @@ func (executor *Executor) executeHandoff(ctx context.Context, request Request, f
 		RunID:     runID,
 		Type:      tracepkg.EventRunStarted,
 		NodeID:    fromAgent.ID,
-		RuntimeID: fromRuntime.ID,
+		RuntimeID: runtimes[0].ID,
 		Payload: jsonPayload(map[string]any{
-			"graph_id": request.Snapshot.SnapshotID,
-			"agent_id": fromAgent.ID,
-			"task_id":  taskID,
+			"graph_id":     request.Snapshot.SnapshotID,
+			"agent_id":     fromAgent.ID,
+			"task_id":      taskID,
+			"handoff_path": handoffAgentIDs(agents),
 		}),
 	}); err != nil {
 		return nil, err
 	}
-	first, err := executor.invokeExternalCLIAgent(ctx, request.Snapshot.ProjectID, fromRuntime, fromAgent, runID, taskID, GraphPrompt(fromAgent, request.Prompt), nil)
-	if err != nil {
-		_ = appendExternalFailure(ctx, executor.Trace, runID, fromAgent.ID, fromRuntime.ID, err.Error())
-		return nil, err
-	}
-	handoffSnapshot, err := executor.saveCLIContextSnapshot(ctx, request.Snapshot.ProjectID, runID, taskID, fromAgent.ID, toAgent.ID, first, sharedcontext.KindHandoffBriefing)
-	if err != nil {
-		return nil, err
-	}
-	if err := appendHandoffCreated(ctx, executor.Trace, runID, fromAgent, toAgent, fromRuntime, edge, handoffSnapshot); err != nil {
-		return nil, err
-	}
-	if err := appendHandoffContextAttached(ctx, executor.Trace, runID, fromAgent, toAgent, toRuntime, handoffSnapshot); err != nil {
-		return nil, err
-	}
-	var second *clirunner.Result
-	runType := tracepkg.EventRunCompleted
-	if first.Status == clirunner.StatusCompleted {
-		second, err = executor.acceptAndInvokeHandoff(ctx, request.Snapshot, fromAgent, toAgent, toRuntime, runID, taskID, request.Prompt, handoffSnapshot)
+
+	var upstream *sharedcontext.Snapshot
+	var lastHandoffID string
+	var currentResult *clirunner.Result
+	for index, agent := range agents {
+		runtime := runtimes[index]
+		if index > 0 {
+			if err := executor.Trace.Append(ctx, &tracepkg.Event{
+				RunID:     runID,
+				Type:      tracepkg.EventHandoffAccepted,
+				NodeID:    agent.ID,
+				RuntimeID: runtime.ID,
+				Payload: jsonPayload(map[string]any{
+					"from":        agents[index-1].ID,
+					"to":          agent.ID,
+					"snapshot_id": upstream.SnapshotID,
+				}),
+			}); err != nil {
+				return nil, err
+			}
+		}
+
+		currentResult, err = executor.invokeExternalCLIAgent(ctx, request.Snapshot.ProjectID, runtime, agent, runID, taskID, GraphPrompt(agent, request.Prompt), upstream)
+		if err != nil {
+			_ = appendExternalFailure(ctx, executor.Trace, runID, agent.ID, runtime.ID, err.Error())
+			return &Result{RunID: runID, Status: clirunner.StatusFailed, AgentID: fromAgent.ID, RuntimeID: runtime.ID, GraphSnapshotID: request.Snapshot.SnapshotID, ContextSnapshotID: lastHandoffID}, err
+		}
+		if currentResult.Status != clirunner.StatusCompleted {
+			_ = executor.Trace.Append(ctx, &tracepkg.Event{RunID: runID, Type: tracepkg.EventRunFailed})
+			return &Result{RunID: runID, Status: currentResult.Status, AgentID: fromAgent.ID, RuntimeID: runtime.ID, GraphSnapshotID: request.Snapshot.SnapshotID, ContextSnapshotID: lastHandoffID, CLI: currentResult}, fmt.Errorf("cli_agent %q run failed: %s", agent.ID, currentResult.Error)
+		}
+
+		if index == len(agents)-1 {
+			if _, err := executor.saveCLIContextSnapshot(ctx, request.Snapshot.ProjectID, runID, taskID, agent.ID, "", currentResult, sharedcontext.KindRunSummary); err != nil {
+				return nil, err
+			}
+			break
+		}
+
+		nextAgent := agents[index+1]
+		nextRuntime := runtimes[index+1]
+		handoffSnapshot, err := executor.saveCLIContextSnapshot(ctx, request.Snapshot.ProjectID, runID, taskID, agent.ID, nextAgent.ID, currentResult, sharedcontext.KindHandoffBriefing)
 		if err != nil {
 			return nil, err
 		}
-		if second.Status != clirunner.StatusCompleted {
-			runType = tracepkg.EventRunFailed
+		lastHandoffID = handoffSnapshot.SnapshotID
+		if err := appendHandoffCreated(ctx, executor.Trace, runID, agent, nextAgent, runtime, edges[index], handoffSnapshot); err != nil {
+			return nil, err
 		}
-	} else {
-		runType = tracepkg.EventRunFailed
+		if err := appendHandoffContextAttached(ctx, executor.Trace, runID, agent, nextAgent, nextRuntime, handoffSnapshot); err != nil {
+			return nil, err
+		}
+		upstream = handoffSnapshot
 	}
-	if err := executor.Trace.Append(ctx, &tracepkg.Event{RunID: runID, Type: runType}); err != nil {
+
+	if err := executor.Trace.Append(ctx, &tracepkg.Event{RunID: runID, Type: tracepkg.EventRunCompleted}); err != nil {
 		return nil, err
 	}
-	status := handoffRunStatus(first, second)
-	result := &Result{RunID: runID, Status: status, AgentID: fromAgent.ID, RuntimeID: fromRuntime.ID, GraphSnapshotID: request.Snapshot.SnapshotID, ContextSnapshotID: handoffSnapshot.SnapshotID, CLI: second}
-	if first.Status != clirunner.StatusCompleted {
-		result.CLI = first
-		return result, fmt.Errorf("upstream cli_agent run failed: %s", first.Error)
-	}
-	if second != nil && second.Status != clirunner.StatusCompleted {
-		return result, fmt.Errorf("downstream cli_agent run failed: %s", second.Error)
-	}
-	return result, nil
+	lastRuntime := runtimes[len(runtimes)-1]
+	return &Result{RunID: runID, Status: clirunner.StatusCompleted, AgentID: fromAgent.ID, RuntimeID: lastRuntime.ID, GraphSnapshotID: request.Snapshot.SnapshotID, ContextSnapshotID: lastHandoffID, CLI: currentResult}, nil
 }
 
 func (executor *Executor) invokeExternalCLIAgent(ctx context.Context, projectID string, runtime graph.Runtime, agent graph.Agent, runID string, taskID string, prompt string, upstream *sharedcontext.Snapshot) (*clirunner.Result, error) {
@@ -442,31 +448,6 @@ func (executor *Executor) checkCLIAgentPolicy(ctx context.Context, projectID str
 		return nil, err
 	}
 	return decision, nil
-}
-
-func (executor *Executor) acceptAndInvokeHandoff(ctx context.Context, snapshot *graph.Snapshot, fromAgent graph.Agent, toAgent graph.Agent, toRuntime graph.Runtime, runID string, taskID string, prompt string, handoffSnapshot *sharedcontext.Snapshot) (*clirunner.Result, error) {
-	if err := executor.Trace.Append(ctx, &tracepkg.Event{
-		RunID:     runID,
-		Type:      tracepkg.EventHandoffAccepted,
-		NodeID:    toAgent.ID,
-		RuntimeID: toRuntime.ID,
-		Payload: jsonPayload(map[string]any{
-			"from":        fromAgent.ID,
-			"to":          toAgent.ID,
-			"snapshot_id": handoffSnapshot.SnapshotID,
-		}),
-	}); err != nil {
-		return nil, err
-	}
-	result, err := executor.invokeExternalCLIAgent(ctx, snapshot.ProjectID, toRuntime, toAgent, runID, taskID, GraphPrompt(toAgent, prompt), handoffSnapshot)
-	if err != nil {
-		_ = appendExternalFailure(ctx, executor.Trace, runID, toAgent.ID, toRuntime.ID, err.Error())
-		return nil, err
-	}
-	if _, err := executor.saveCLIContextSnapshot(ctx, snapshot.ProjectID, runID, taskID, toAgent.ID, "", result, sharedcontext.KindRunSummary); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 func (executor *Executor) saveCLIContextSnapshot(ctx context.Context, projectID string, runID string, taskID string, fromAgent string, toAgent string, result *clirunner.Result, kind string) (*sharedcontext.Snapshot, error) {
@@ -591,6 +572,79 @@ func cliRuntimeForAgent(snapshot *graph.Snapshot, agent graph.Agent) (graph.Runt
 	return runtime, nil
 }
 
+func executableHandoffChain(snapshot *graph.Snapshot, start graph.Agent) ([]graph.Edge, error) {
+	if _, err := cliRuntimeForAgent(snapshot, start); err != nil {
+		return nil, err
+	}
+	visited := map[string]bool{start.ID: true}
+	current := start
+	var chain []graph.Edge
+	for {
+		outgoing := outgoingEdges(snapshot, current.ID)
+		if len(outgoing) == 0 {
+			return chain, nil
+		}
+		if len(outgoing) > 1 {
+			return nil, fmt.Errorf("agent %q has multiple outgoing graph edges; only linear handoff chains are executable", current.ID)
+		}
+		edge := outgoing[0]
+		if edge.Mode != "handoff" {
+			return nil, fmt.Errorf("agent %q has outgoing edge mode %q; only handoff chains are executable", current.ID, edge.Mode)
+		}
+		next, ok := snapshot.IR.Agents[edge.To]
+		if !ok {
+			return nil, fmt.Errorf("handoff target %q was not found in compiled graph", edge.To)
+		}
+		if visited[next.ID] {
+			return nil, fmt.Errorf("handoff chain from agent %q contains a cycle at %q", start.ID, next.ID)
+		}
+		if next.Kind != agentspec.AgentKindExternal {
+			return nil, fmt.Errorf("handoff target %q has kind %q; only external_agent targets are supported", next.ID, next.Kind)
+		}
+		if _, err := cliRuntimeForAgent(snapshot, next); err != nil {
+			return nil, err
+		}
+		chain = append(chain, edge)
+		visited[next.ID] = true
+		current = next
+	}
+}
+
+func handoffChainAgents(snapshot *graph.Snapshot, start graph.Agent, edges []graph.Edge) ([]graph.Agent, []graph.Runtime, error) {
+	agents := []graph.Agent{start}
+	runtime, err := cliRuntimeForAgent(snapshot, start)
+	if err != nil {
+		return nil, nil, err
+	}
+	runtimes := []graph.Runtime{runtime}
+	current := start.ID
+	for _, edge := range edges {
+		if edge.From != current {
+			return nil, nil, fmt.Errorf("handoff chain is not contiguous at edge %q", edge.ID)
+		}
+		agent, ok := snapshot.IR.Agents[edge.To]
+		if !ok {
+			return nil, nil, fmt.Errorf("handoff target %q was not found in compiled graph", edge.To)
+		}
+		runtime, err := cliRuntimeForAgent(snapshot, agent)
+		if err != nil {
+			return nil, nil, err
+		}
+		agents = append(agents, agent)
+		runtimes = append(runtimes, runtime)
+		current = agent.ID
+	}
+	return agents, runtimes, nil
+}
+
+func handoffAgentIDs(agents []graph.Agent) []string {
+	ids := make([]string, 0, len(agents))
+	for _, agent := range agents {
+		ids = append(ids, agent.ID)
+	}
+	return ids
+}
+
 func outgoingEdges(snapshot *graph.Snapshot, agentID string) []graph.Edge {
 	var outgoing []graph.Edge
 	for _, edge := range snapshot.IR.Edges {
@@ -599,19 +653,6 @@ func outgoingEdges(snapshot *graph.Snapshot, agentID string) []graph.Edge {
 		}
 	}
 	return outgoing
-}
-
-func handoffRunStatus(first *clirunner.Result, second *clirunner.Result) string {
-	if first == nil {
-		return clirunner.StatusFailed
-	}
-	if first.Status != clirunner.StatusCompleted {
-		return first.Status
-	}
-	if second == nil {
-		return clirunner.StatusFailed
-	}
-	return second.Status
 }
 
 func appendExternalFailure(ctx context.Context, traceStore *tracepkg.Store, runID string, agentID string, runtimeID string, message string) error {

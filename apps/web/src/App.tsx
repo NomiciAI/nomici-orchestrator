@@ -911,28 +911,64 @@ function buildAgentOptions(snapshot?: GraphSnapshot): AgentOption[] {
       if (outgoing.length === 0) {
         return { id, supported: true, reason: "" };
       }
-      if (outgoing.length === 1 && outgoing[0].mode === "handoff") {
-        const target = snapshot.ir.agents[outgoing[0].to];
-        const targetRuntime = target?.runtime
-          ? snapshot.ir.runtimes?.[target.runtime]
-          : undefined;
-        const supported =
-          target?.kind === "external_agent" &&
-          targetRuntime?.kind === "cli_agent";
-        return {
-          id,
-          supported,
-          reason: supported
-            ? ""
-            : "handoff target is not a cli_agent external agent",
-        };
+      const chainCheck = checkHandoffChain(snapshot, id);
+      if (chainCheck.supported) {
+        return { id, supported: true, reason: "" };
       }
       return {
         id,
         supported: false,
-        reason: "multiple outgoing edges are not executable yet",
+        reason: chainCheck.reason,
       };
     });
+}
+
+function checkHandoffChain(
+  snapshot: GraphSnapshot,
+  startAgentId: string,
+): { supported: boolean; reason: string } {
+  const visited = new Set<string>([startAgentId]);
+  let current = startAgentId;
+  for (;;) {
+    const outgoing = snapshot.ir.edges.filter((edge) => edge.from === current);
+    if (outgoing.length === 0) {
+      return { supported: true, reason: "" };
+    }
+    if (outgoing.length > 1) {
+      return {
+        supported: false,
+        reason: "handoff chain has multiple outgoing edges",
+      };
+    }
+    const edge = outgoing[0];
+    if (edge.mode !== "handoff") {
+      return {
+        supported: false,
+        reason: "only handoff chains are executable",
+      };
+    }
+    const target = snapshot.ir.agents[edge.to];
+    const targetRuntime = target?.runtime
+      ? snapshot.ir.runtimes?.[target.runtime]
+      : undefined;
+    if (
+      target?.kind !== "external_agent" ||
+      targetRuntime?.kind !== "cli_agent"
+    ) {
+      return {
+        supported: false,
+        reason: "handoff target is not a cli_agent external agent",
+      };
+    }
+    if (visited.has(edge.to)) {
+      return {
+        supported: false,
+        reason: "handoff chain contains a cycle",
+      };
+    }
+    visited.add(edge.to);
+    current = edge.to;
+  }
 }
 
 function normalizeOverview(next: Overview): Overview {
