@@ -54,6 +54,14 @@ See `docs/development-plan.md`.
 
 Planned:
 
+- Run sessions and durable task ledger
+- Graph-native subagent roles
+- Sandbox provider interface
+- Skill registry and progressive loading
+- Tool registry and default research/fetch tools
+- Knowledge and memory bridge
+- Message Gateway channel adapters
+- Human-in-the-loop planning and artifact editing
 - A2A server and client
 - MCP registry
 - A2A sidecars
@@ -61,6 +69,8 @@ Planned:
 - Parallel fan-out and fan-in
 - Timeline replay improvements
 - Policy engine v1
+
+See `docs/design/deerflow-reference-roadmap.md` for the DeerFlow-inspired capability sequence and per-PR acceptance criteria.
 
 ## v0.3: Framework Adapters
 
