@@ -19,10 +19,59 @@ git clone https://github.com/NomiciAI/nomici-orchestrator.git
 cd nomici-orchestrator
 scripts/install.sh --from-source .
 nomici doctor
-nomici run local_assistant "Explain what this example demonstrates." --config examples/basic-local-agent/nomici.yaml
+nomici setup
+nomici up
+nomici gateway open
 ```
 
 If `nomici` is not on your `PATH`, add `~/.local/bin` or run `./bin/nomici` from the repository root.
+
+## Guided Setup
+
+The recommended first-run path is:
+
+```bash
+nomici setup
+nomici doctor
+nomici up
+nomici run product_pm "Plan the first useful task."
+```
+
+`nomici setup` guides you through:
+
+- choosing an LLM provider profile
+- installing the `developer-team` starter pack
+- writing sandbox policy intent to `deployment.sandbox`
+- saving a graph snapshot for Gateway and Console
+
+The same flow is scriptable for automation:
+
+```bash
+nomici setup \
+  --provider openai-compatible \
+  --name gpt \
+  --model <model> \
+  --api-key-env OPENAI_API_KEY \
+  --pack developer-team \
+  --sandbox local \
+  --enable-file-write \
+  --yes
+```
+
+For local Ollama:
+
+```bash
+nomici setup \
+  --provider ollama \
+  --name local-llama \
+  --model llama3.2 \
+  --sandbox container \
+  --enable-bash \
+  --enable-file-write \
+  --yes
+```
+
+Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. `nomici doctor` checks that sandbox config exists and warns if `container` is selected but Docker, Podman, or Apple `container` is not available.
 
 ## Run A Local Agent Without An API Key
 
@@ -67,6 +116,8 @@ export OPENAI_API_KEY=...
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model test gpt "Say hello from Nomici."
 ```
+
+This lower-level command remains useful for scripts and advanced setups. For a new workspace, prefer `nomici setup` because it also installs a starter pack and configures sandbox policy.
 
 You can also test the OpenAI-compatible Gateway surface:
 
