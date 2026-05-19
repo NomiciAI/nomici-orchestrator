@@ -23,7 +23,7 @@ func DeveloperTeamManifest() Manifest {
 		Name:        "Developer Team",
 		Version:     "0.1.0",
 		Kind:        "agent_pack",
-		Description: "A first-run developer team with a product PM entrypoint and architecture subagent.",
+		Description: "A first-run developer team with coordinator, planner, researcher, coder, and reporter roles.",
 		Publisher:   "NomiciAI",
 		License:     "Apache-2.0",
 		Requires: map[string]string{
@@ -38,8 +38,8 @@ func DeveloperTeamManifest() Manifest {
 		},
 		Agents: PackAgents{
 			Entrypoints: []string{"product_pm"},
-			Includes:    []string{"product_pm", "architect"},
-			Optional:    []string{"implementer", "reviewer", "test_runner"},
+			Includes:    []string{"product_pm", "planner", "researcher", "coder", "reporter"},
+			Optional:    []string{"architect", "implementer", "reviewer", "test_runner"},
 		},
 		Trust: Trust{Level: "official"},
 	}

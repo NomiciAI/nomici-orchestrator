@@ -40,8 +40,13 @@ func TestInstallDeveloperTeamCreatesRunnableSpec(t *testing.T) {
 	if loaded.Spec.Agents["product_pm"].Kind != agentspec.AgentKindGateway {
 		t.Fatalf("expected product_pm gateway agent")
 	}
-	if loaded.Spec.Agents["architect"].Kind != agentspec.AgentKindModel {
-		t.Fatalf("expected architect model agent")
+	for _, agentID := range []string{"planner", "researcher", "coder", "reporter"} {
+		if loaded.Spec.Agents[agentID].Kind != agentspec.AgentKindModel {
+			t.Fatalf("expected %s model agent", agentID)
+		}
+	}
+	if got := loaded.Spec.Agents["product_pm"].Subagents; len(got) != 4 {
+		t.Fatalf("expected product_pm subagent roles, got %+v", got)
 	}
 
 	db, err := store.Open(dbPath)
