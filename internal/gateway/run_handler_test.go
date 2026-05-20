@@ -169,6 +169,90 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if detailEnvelope.Data.Sandbox == nil || !filepath.IsAbs(detailEnvelope.Data.Sandbox.WorkspaceRoot) || !strings.Contains(detailEnvelope.Data.Sandbox.WorkspaceRoot, filepath.Join(".nomici", "runs")) {
 		t.Fatalf("expected absolute sandbox root anchored at config directory, got %+v", detailEnvelope.Data.Sandbox)
 	}
+
+	sessionsRequest := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=1", nil)
+	sessionsResponse := httptest.NewRecorder()
+	router.ServeHTTP(sessionsResponse, sessionsRequest)
+	if sessionsResponse.Code != http.StatusOK {
+		t.Fatalf("expected sessions status 200, got %d: %s", sessionsResponse.Code, sessionsResponse.Body.String())
+	}
+	if !strings.Contains(sessionsResponse.Body.String(), envelope.Data.SessionID) {
+		t.Fatalf("expected session in session list, got %s", sessionsResponse.Body.String())
+	}
+
+	sessionRequest := httptest.NewRequest(http.MethodGet, "/api/sessions/"+envelope.Data.SessionID, nil)
+	sessionResponse := httptest.NewRecorder()
+	router.ServeHTTP(sessionResponse, sessionRequest)
+	if sessionResponse.Code != http.StatusOK {
+		t.Fatalf("expected session detail status 200, got %d: %s", sessionResponse.Code, sessionResponse.Body.String())
+	}
+	if !strings.Contains(sessionResponse.Body.String(), `"session_id":"`+envelope.Data.SessionID+`"`) || !strings.Contains(sessionResponse.Body.String(), `"tasks"`) {
+		t.Fatalf("expected session detail with tasks, got %s", sessionResponse.Body.String())
+	}
+
+	tasksRequest := httptest.NewRequest(http.MethodGet, "/api/sessions/"+envelope.Data.SessionID+"/tasks", nil)
+	tasksResponse := httptest.NewRecorder()
+	router.ServeHTTP(tasksResponse, tasksRequest)
+	if tasksResponse.Code != http.StatusOK {
+		t.Fatalf("expected tasks status 200, got %d: %s", tasksResponse.Code, tasksResponse.Body.String())
+	}
+	if !strings.Contains(tasksResponse.Body.String(), `"agent_id":"product_pm"`) {
+		t.Fatalf("expected task list, got %s", tasksResponse.Body.String())
+	}
+}
+
+func TestSessionEndpointsValidationAndCancel(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	runStore := runpkg.NewStore(db)
+	session, err := runStore.CreateSession(context.Background(), runpkg.CreateSessionRequest{
+		RunID:           "run_session_api",
+		ProjectID:       "project",
+		GraphSnapshotID: "graph",
+		Title:           "Session API task",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runStore.CreateTask(context.Background(), runpkg.CreateTaskRequest{
+		RunID:   "run_session_api",
+		AgentID: "planner",
+		Status:  runpkg.TaskStatusRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	badLimit := httptest.NewRecorder()
+	router.ServeHTTP(badLimit, httptest.NewRequest(http.MethodGet, "/api/sessions?limit=0", nil))
+	if badLimit.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad limit 400, got %d: %s", badLimit.Code, badLimit.Body.String())
+	}
+
+	missing := httptest.NewRecorder()
+	router.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/sessions/session_missing", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("expected missing session 404, got %d: %s", missing.Code, missing.Body.String())
+	}
+
+	cancelResponse := httptest.NewRecorder()
+	router.ServeHTTP(cancelResponse, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.SessionID+"/cancel", nil))
+	if cancelResponse.Code != http.StatusOK {
+		t.Fatalf("expected cancel status 200, got %d: %s", cancelResponse.Code, cancelResponse.Body.String())
+	}
+	if !strings.Contains(cancelResponse.Body.String(), `"status":"cancelled"`) {
+		t.Fatalf("expected cancelled session response, got %s", cancelResponse.Body.String())
+	}
+	events, err := trace.NewStore(db).ListByRun(context.Background(), "run_session_api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Type != trace.EventRunSessionCompleted {
+		t.Fatalf("expected cancellation trace event, got %+v", events)
+	}
+	secondCancel := httptest.NewRecorder()
+	router.ServeHTTP(secondCancel, httptest.NewRequest(http.MethodPost, "/api/sessions/"+session.SessionID+"/cancel", nil))
+	if secondCancel.Code != http.StatusConflict {
+		t.Fatalf("expected terminal cancel conflict, got %d: %s", secondCancel.Code, secondCancel.Body.String())
+	}
 }
 
 func TestRunCreateFailsOnInvalidSandboxConfig(t *testing.T) {

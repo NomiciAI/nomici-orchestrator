@@ -20,6 +20,8 @@ const (
 	TaskStatusRunning            = "running"
 	TaskStatusWaitingForApproval = "waiting_for_approval"
 	TaskStatusBlocked            = "blocked"
+	TaskStatusNeedsClarification = "needs_clarification"
+	TaskStatusPlanReview         = "plan_review"
 	TaskStatusCompleted          = "completed"
 	TaskStatusFailed             = "failed"
 	TaskStatusCancelled          = "cancelled"
@@ -236,6 +238,57 @@ WHERE run_id = ? AND status IN (?, ?)`, status, now, now, runID, TaskStatusQueue
 	return nil
 }
 
+func (store *Store) CancelSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("cancel run session: session_id is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := store.db.ExecContext(ctx, `
+UPDATE run_sessions
+SET status = ?, updated_at = ?, completed_at = ?
+WHERE session_id = ? AND status = ?`, SessionStatusCancelled, now, now, sessionID, SessionStatusRunning)
+	if err != nil {
+		return fmt.Errorf("cancel run session: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("cancel run session: %w", err)
+	}
+	if affected == 0 {
+		existing, lookupErr := store.GetBySession(ctx, sessionID)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("cancel run session: session is %s", existing.Session.Status)
+	}
+	return nil
+}
+
+func (store *Store) CancelTasks(ctx context.Context, runID string) error {
+	if runID == "" {
+		return fmt.Errorf("cancel run tasks: run_id is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET status = ?, updated_at = ?, completed_at = ?
+WHERE run_id = ? AND status IN (?, ?, ?, ?, ?)`,
+		TaskStatusCancelled,
+		now,
+		now,
+		runID,
+		TaskStatusQueued,
+		TaskStatusRunning,
+		TaskStatusWaitingForApproval,
+		TaskStatusBlocked,
+		TaskStatusPlanReview,
+	)
+	if err != nil {
+		return fmt.Errorf("cancel run tasks: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) ListSessions(ctx context.Context, limit int) ([]*Session, error) {
 	if limit <= 0 {
 		limit = 20
@@ -279,6 +332,31 @@ WHERE run_id = ?`, runID)
 		return nil, err
 	}
 	return &SessionDetail{Session: session, Tasks: tasks}, nil
+}
+
+func (store *Store) GetBySession(ctx context.Context, sessionID string) (*SessionDetail, error) {
+	row := store.db.QueryRowContext(ctx, `
+SELECT session_id, run_id, project_id, graph_snapshot_id, title, source_channel,
+	status, started_at, updated_at, completed_at, metadata_json
+FROM run_sessions
+WHERE session_id = ?`, sessionID)
+	session, err := scanSession(row)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := store.ListTasks(ctx, session.RunID)
+	if err != nil {
+		return nil, err
+	}
+	return &SessionDetail{Session: session, Tasks: tasks}, nil
+}
+
+func (store *Store) ListTasksBySession(ctx context.Context, sessionID string) ([]*Task, error) {
+	detail, err := store.GetBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return detail.Tasks, nil
 }
 
 func (store *Store) ListTasks(ctx context.Context, runID string) ([]*Task, error) {
