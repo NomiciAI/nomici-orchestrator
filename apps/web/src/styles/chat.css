@@ -1,0 +1,139 @@
+.chat-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(520px, 0.95fr);
+  gap: 16px;
+  padding: 18px 20px 28px;
+}
+
+.chat-main {
+  min-width: 0;
+  min-height: calc(100vh - 116px);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.chat-transcript {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 18px;
+}
+
+.empty-chat {
+  min-height: 360px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.empty-chat h2 {
+  font-size: 28px;
+}
+
+.message {
+  max-width: min(760px, 92%);
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.message-user {
+  justify-self: end;
+  background: var(--surface-raised);
+}
+
+.message span {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.message p {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.composer {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-solid) 74%, transparent);
+}
+
+.composer textarea,
+.composer select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-muted);
+  outline: none;
+}
+
+.composer textarea {
+  resize: vertical;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.composer select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.advanced-agent-picker {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.advanced-agent-picker summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.composer-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.composer-skill-grid {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.composer-skill-grid label {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.workspace-cancel {
+  margin: 12px 14px;
+  justify-self: start;
+}

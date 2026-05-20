@@ -65,6 +65,16 @@ Artifacts
 Settings
 ```
 
+Console frontend boundaries:
+
+- `apps/web/src/App.tsx` owns only shell layout, navigation, and top-level view selection.
+- Gateway DTOs and shared domain types live in `apps/web/src/api/types.ts`; UI files should import those types instead of redefining response shapes.
+- API transport lives in `apps/web/src/api/client.ts`.
+- Long-lived data and mutation state lives under `apps/web/src/hooks/`.
+- Product surfaces live under `apps/web/src/features/` by area: `chat`, `workspace`, `orchestrate`, and `settings`.
+- Shared display helpers live under `apps/web/src/lib/`.
+- Styles are imported through `apps/web/src/styles/index.css` and split by surface. `apps/web/src/styles.css` should not return as the main stylesheet.
+
 Gateway:
 
 ```text
