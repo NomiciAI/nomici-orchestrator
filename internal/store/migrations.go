@@ -382,4 +382,26 @@ CREATE INDEX IF NOT EXISTS idx_blocked_actions_approval ON blocked_actions(appro
 CREATE INDEX IF NOT EXISTS idx_blocked_actions_artifact ON blocked_actions(artifact_id);
 `,
 	},
+	{
+		Version: 15,
+		SQL: `
+CREATE TABLE IF NOT EXISTS workspace_locks (
+	lock_id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	tool_call_id TEXT NOT NULL DEFAULT '',
+	resource TEXT NOT NULL,
+	mode TEXT NOT NULL DEFAULT 'exclusive',
+	status TEXT NOT NULL,
+	owner TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	acquired_at TEXT NOT NULL,
+	released_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_locks_held ON workspace_locks(run_id, resource) WHERE status = 'held';
+CREATE INDEX IF NOT EXISTS idx_workspace_locks_run ON workspace_locks(run_id, status, acquired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workspace_locks_tool_call ON workspace_locks(tool_call_id);
+`,
+	},
 }

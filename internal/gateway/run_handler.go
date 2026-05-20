@@ -1110,6 +1110,47 @@ func blockForToolApproval(ctx context.Context, services Services, session *runpk
 	return fmt.Errorf("tool approval pending: %s", record.ApprovalID)
 }
 
+func blockForToolLoopGuardrail(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, reason string, body string, metadata map[string]any) error {
+	if session == nil || task == nil {
+		return errors.New(reason)
+	}
+	if err := services.Runs.UpdateSessionStatus(ctx, session.RunID, runpkg.SessionStatusBlocked); err != nil {
+		return err
+	}
+	if err := services.Runs.SetTaskBlocked(ctx, task.TaskID, runpkg.TaskStatusBlocked, reason); err != nil {
+		return err
+	}
+	if services.Blocked != nil {
+		_, _ = services.Blocked.Create(ctx, blockedpkg.CreateRequest{
+			SessionID:          session.SessionID,
+			RunID:              session.RunID,
+			TaskID:             task.TaskID,
+			Kind:               blockedpkg.KindRetryDecision,
+			Title:              "Review tool loop",
+			Body:               body,
+			RequiredAction:     "retry_skip_or_stop",
+			ResumeTargetTaskID: task.TaskID,
+			Metadata:           rawJSON(metadata),
+		})
+	}
+	if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+		"summary":        body,
+		"failure_reason": reason,
+	}); err != nil {
+		return err
+	}
+	if err := appendRunLedgerTrace(ctx, services.Trace, session.RunID, trace.EventTaskBlocked, task.AgentID, map[string]any{
+		"session_id": session.SessionID,
+		"task_id":    task.TaskID,
+		"status":     runpkg.SessionStatusBlocked,
+		"reason":     reason,
+		"metadata":   metadata,
+	}); err != nil {
+		return err
+	}
+	return fmt.Errorf("%s: %s", reason, body)
+}
+
 func executeRoleToolPreparation(ctx context.Context, options Options, services Services, session *runpkg.Session, task *runpkg.Task, phase string) ([]string, error) {
 	if services.Tools == nil || session == nil || task == nil {
 		return nil, nil
@@ -1173,6 +1214,7 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 	broker := newToolBroker(options, services)
 	observations := []string{}
 	currentPrompt := prompt
+	failureCounts := map[string]int{}
 	for round := 0; round <= maxModelToolRounds; round++ {
 		if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
 			return nil, observations, err
@@ -1195,7 +1237,10 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 			return result, observations, nil
 		}
 		if round == maxModelToolRounds {
-			return result, observations, fmt.Errorf("tool loop budget exhausted after %d rounds", maxModelToolRounds)
+			return result, observations, blockForToolLoopGuardrail(ctx, services, session, task, "tool_loop_budget_exhausted", fmt.Sprintf("Tool loop reached the %d round budget. Review the observations and choose whether to retry, revise the plan, or stop.", maxModelToolRounds), map[string]any{
+				"rounds":       maxModelToolRounds,
+				"observations": redactedStrings(observations),
+			})
 		}
 		if len(calls) > maxModelToolCallsPerRound {
 			calls = calls[:maxModelToolCallsPerRound]
@@ -1248,6 +1293,19 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 				"status":         toolCallStatus(record, execErr),
 				"output_preview": sharedcontext.RedactText(observation),
 			})
+			if execErr != nil {
+				signature := modelToolFailureSignature(toolID, call.Input)
+				failureCounts[signature]++
+				if failureCounts[signature] >= 2 {
+					return result, append(observations, roundObservations...), blockForToolLoopGuardrail(ctx, services, session, task, "repeated_tool_failure", "The same tool request failed repeatedly. Choose whether to retry after changing inputs, skip the tool, or stop the run.", map[string]any{
+						"tool_id":       toolID,
+						"tool_call_id":  toolCallID(record),
+						"failure_count": failureCounts[signature],
+						"error":         sharedcontext.RedactText(execErr.Error()),
+						"observation":   sharedcontext.RedactText(observation),
+					})
+				}
+			}
 		}
 		observations = append(observations, roundObservations...)
 		currentPrompt = appendToolObservations(currentPrompt, roundObservations)
@@ -1376,6 +1434,22 @@ func normalizeModelToolID(toolID string) string {
 	}
 }
 
+func modelToolFailureSignature(toolID string, input map[string]any) string {
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return toolID
+	}
+	return toolID + ":" + string(payload)
+}
+
+func redactedStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, sharedcontext.RedactText(value))
+	}
+	return result
+}
+
 func appendToolObservations(prompt string, observations []string) string {
 	if len(observations) == 0 {
 		return prompt
@@ -1494,9 +1568,13 @@ func rolePrompt(ctx context.Context, configPath string, services Services, sessi
 		builder.WriteString("\n\nApproved reusable context:\n")
 		for _, item := range memory {
 			builder.WriteString("- ")
-			builder.WriteString(item)
+			builder.WriteString(item.Text)
 			builder.WriteString("\n")
 		}
+		_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "memory.context.loaded", task.AgentID, map[string]any{
+			"task_id":     task.TaskID,
+			"context_ids": memoryContextIDs(memory),
+		})
 	}
 	if len(summaries) > 0 {
 		builder.WriteString("\n\nPrior role summaries:\n")
@@ -1517,7 +1595,12 @@ func rolePrompt(ctx context.Context, configPath string, services Services, sessi
 	return builder.String()
 }
 
-func reusableMemoryBriefings(ctx context.Context, store *sharedcontext.Store, session *runpkg.Session) []string {
+type reusableMemoryBriefing struct {
+	ContextID string
+	Text      string
+}
+
+func reusableMemoryBriefings(ctx context.Context, store *sharedcontext.Store, session *runpkg.Session) []reusableMemoryBriefing {
 	if store == nil || session == nil || session.ProjectID == "" {
 		return nil
 	}
@@ -1525,7 +1608,7 @@ func reusableMemoryBriefings(ctx context.Context, store *sharedcontext.Store, se
 	if err != nil {
 		return nil
 	}
-	briefings := []string{}
+	briefings := []reusableMemoryBriefing{}
 	for _, item := range items {
 		body := strings.Join(strings.Fields(item.Body), " ")
 		if body == "" {
@@ -1534,9 +1617,19 @@ func reusableMemoryBriefings(ctx context.Context, store *sharedcontext.Store, se
 		if len(body) > 500 {
 			body = body[:497] + "..."
 		}
-		briefings = append(briefings, item.Title+": "+body)
+		briefings = append(briefings, reusableMemoryBriefing{ContextID: item.ContextID, Text: item.Title + ": " + body})
 	}
 	return briefings
+}
+
+func memoryContextIDs(items []reusableMemoryBriefing) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.ContextID != "" {
+			ids = append(ids, item.ContextID)
+		}
+	}
+	return ids
 }
 
 func shouldOfferToolProtocol(task *runpkg.Task) bool {

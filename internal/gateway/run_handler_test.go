@@ -33,6 +33,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
+	"github.com/NomiciAI/nomici-orchestrator/internal/worklocks"
 )
 
 func TestRunCreateEndpointValidation(t *testing.T) {
@@ -260,6 +261,43 @@ func TestRunCreateEndpointModelToolLoop(t *testing.T) {
 	}
 	if summary := taskMetadataString(detail.Tasks[0], "summary"); !strings.Contains(summary, "Final answer") {
 		t.Fatalf("expected final model output in task summary, got %q", summary)
+	}
+}
+
+func TestModelToolLoopRepeatedFailureCreatesRetryDecision(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{
+			"choices": [{"message": {"role": "assistant", "content": "{\"tool_calls\":[{\"tool_id\":\"read_file\",\"input\":{\"path\":\"missing.txt\"}}]}"}}],
+			"usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+		}`))
+	}))
+	defer providerServer.Close()
+
+	db, router := newRunTestRouter(t)
+	saveRunTestGraph(t, graph.NewStore(db), providerServer.URL, []graph.Edge{})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"inspect missing file"}`)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Data runCreateResponse `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode run create: %v", err)
+	}
+	detail := waitForSessionStatus(t, runpkg.NewStore(db), envelope.Data.SessionID, runpkg.SessionStatusBlocked)
+	if detail.Tasks[0].BlockedReason != "repeated_tool_failure" {
+		t.Fatalf("expected repeated failure block, got %+v", detail.Tasks[0])
+	}
+	actions, err := blocked.NewStore(db).ListBySession(context.Background(), envelope.Data.SessionID, blocked.StatusOpen, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Kind != blocked.KindRetryDecision {
+		t.Fatalf("expected retry decision action, got %+v", actions)
 	}
 }
 
@@ -788,6 +826,7 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 		Tools:     toolbroker.NewStore(db),
 		Memory:    memory.NewStore(db),
 		Blocked:   blocked.NewStore(db),
+		Locks:     worklocks.NewStore(db),
 	})
 }
 

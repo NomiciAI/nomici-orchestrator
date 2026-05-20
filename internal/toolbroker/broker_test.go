@@ -2,6 +2,7 @@ package toolbroker
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	"github.com/NomiciAI/nomici-orchestrator/internal/worklocks"
 )
 
 func TestBrokerExecutesWorkspaceReadWithinBoundary(t *testing.T) {
@@ -88,6 +90,78 @@ func TestBrokerRequiresApprovalForWorkspaceMutation(t *testing.T) {
 	}
 }
 
+func TestBrokerLocksWorkspaceMutation(t *testing.T) {
+	ctx := context.Background()
+	broker, session := testBroker(t)
+	pending, err := broker.Execute(ctx, ExecuteRequest{
+		SessionID: session.SessionID,
+		RunID:     session.RunID,
+		TaskID:    "task_write",
+		ToolID:    ToolWriteFile,
+		Input:     map[string]any{"path": "locked.txt", "content": "locked"},
+	})
+	if err != nil {
+		t.Fatalf("request write approval: %v", err)
+	}
+	if _, err := broker.Policy.Grant(ctx, pending.ApprovalID, policy.ScopeOnce); err != nil {
+		t.Fatalf("grant approval: %v", err)
+	}
+	completed, err := broker.Execute(ctx, ExecuteRequest{
+		SessionID: session.SessionID,
+		RunID:     session.RunID,
+		TaskID:    "task_write",
+		ToolID:    ToolWriteFile,
+		Input:     map[string]any{"path": "locked.txt", "content": "locked"},
+	})
+	if err != nil {
+		t.Fatalf("execute approved write: %v", err)
+	}
+	locks, err := broker.Locks.ListByRun(ctx, session.RunID, "", 10)
+	if err != nil {
+		t.Fatalf("list locks: %v", err)
+	}
+	if len(locks) != 1 || locks[0].Status != worklocks.StatusReleased || locks[0].ToolCallID != completed.ToolCallID {
+		t.Fatalf("expected released lock for tool call, got %+v", locks)
+	}
+}
+
+func TestBrokerBlocksCriticalBashCommand(t *testing.T) {
+	ctx := context.Background()
+	broker, session := testBroker(t)
+	failed, err := broker.Execute(ctx, ExecuteRequest{
+		SessionID: session.SessionID,
+		RunID:     session.RunID,
+		ToolID:    ToolBash,
+		Input:     map[string]any{"command": "rm -rf /", "cwd": "."},
+	})
+	if err == nil {
+		t.Fatalf("expected critical command to fail")
+	}
+	if failed == nil || failed.Status != StatusFailed || !strings.Contains(failed.Error, "safety policy") {
+		t.Fatalf("expected safety failure, got %+v err=%v", failed, err)
+	}
+}
+
+func TestContainerShellCommandBuildsWorkspaceMount(t *testing.T) {
+	workspace := t.TempDir()
+	record := &sandbox.Record{
+		Mode:          sandbox.ModeContainer,
+		WorkspaceRoot: workspace,
+		RuntimeBinary: "docker",
+		Metadata:      json.RawMessage(`{"container_image":"alpine:3.20"}`),
+	}
+	cmd, err := containerShellCommand(context.Background(), record, filepath.Join(workspace, "src"), "pwd")
+	if err != nil {
+		t.Fatalf("build container command: %v", err)
+	}
+	args := strings.Join(cmd.Args, " ")
+	if !strings.Contains(args, "-v "+workspace+":/workspace") ||
+		!strings.Contains(args, "-w /workspace/src") ||
+		!strings.Contains(args, "alpine:3.20") {
+		t.Fatalf("unexpected container args: %v", cmd.Args)
+	}
+}
+
 func testBroker(t *testing.T) (*Broker, *runs.Session) {
 	t.Helper()
 	ctx := context.Background()
@@ -133,6 +207,7 @@ func testBroker(t *testing.T) (*Broker, *runs.Session) {
 		Runs:      runStore,
 		Sandboxes: sandboxStore,
 		Artifacts: artifacts.NewStore(db),
+		Locks:     worklocks.NewStore(db),
 	}, session
 }
 

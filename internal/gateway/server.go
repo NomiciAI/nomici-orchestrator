@@ -29,6 +29,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
+	"github.com/NomiciAI/nomici-orchestrator/internal/worklocks"
 )
 
 const (
@@ -143,6 +144,7 @@ func (server *Server) initialize() error {
 		Tools:     toolbroker.NewStore(db),
 		Memory:    memory.NewStore(db),
 		Blocked:   blocked.NewStore(db),
+		Locks:     worklocks.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

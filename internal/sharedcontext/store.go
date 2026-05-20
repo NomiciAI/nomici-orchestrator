@@ -151,6 +151,24 @@ WHERE status = ?`
 	return items, nil
 }
 
+func (store *Store) SetItemStatus(ctx context.Context, contextID string, status string) error {
+	if contextID == "" {
+		return fmt.Errorf("set context item status: context_id is required")
+	}
+	if status == "" {
+		return fmt.Errorf("set context item status: status is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE context_items
+SET status = ?, updated_at = ?
+WHERE context_id = ?`, status, now, contextID)
+	if err != nil {
+		return fmt.Errorf("set context item status: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) ListSnapshots(ctx context.Context, projectID string, limit int) ([]*Snapshot, error) {
 	if limit <= 0 {
 		limit = 50

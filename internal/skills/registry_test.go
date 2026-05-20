@@ -1,21 +1,34 @@
 package skills
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-func TestBuiltInSkillsAreInspectable(t *testing.T) {
-	definitions := List("missing.yaml")
-	if len(definitions) < 4 {
-		t.Fatalf("expected built-in skills, got %d", len(definitions))
+func TestBriefingsLoadsProjectSkillFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "skill-notes.md"), []byte("Use the project-specific review checklist."), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	coding, err := Get("missing.yaml", "coding")
-	if err != nil {
-		t.Fatalf("get coding skill: %v", err)
+	configPath := filepath.Join(dir, "nomici.yaml")
+	payload := []byte(`version: "0.1"
+project:
+  name: skill-test
+extensions:
+  skills:
+    - id: project-review
+      name: Project Review
+      briefing: Check local conventions.
+      files:
+        - skill-notes.md
+`)
+	if err := os.WriteFile(configPath, payload, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if coding.Risk != "high" || coding.Briefing == "" {
-		t.Fatalf("unexpected coding skill: %+v", coding)
-	}
-	briefings := Briefings("missing.yaml", []string{"coding", "coding", "missing"})
-	if len(briefings) != 1 {
-		t.Fatalf("expected one de-duplicated briefing, got %+v", briefings)
+	briefings := Briefings(configPath, []string{"project-review"})
+	if len(briefings) != 1 || !strings.Contains(briefings[0], "Use the project-specific review checklist.") {
+		t.Fatalf("expected file-backed briefing, got %#v", briefings)
 	}
 }

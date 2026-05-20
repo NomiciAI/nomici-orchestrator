@@ -3,6 +3,8 @@ package skills
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -64,10 +66,61 @@ func Briefings(configPath string, ids []string) []string {
 		}
 		seen[id] = true
 		definition, err := Get(configPath, id)
-		if err != nil || definition.Briefing == "" {
+		if err != nil {
 			continue
 		}
-		briefings = append(briefings, definition.Name+": "+definition.Briefing)
+		parts := []string{}
+		if definition.Briefing != "" {
+			parts = append(parts, definition.Briefing)
+		}
+		parts = append(parts, skillFileBriefings(configPath, definition.Files)...)
+		if len(parts) == 0 {
+			continue
+		}
+		briefings = append(briefings, definition.Name+": "+strings.Join(parts, "\n"))
+	}
+	return briefings
+}
+
+func skillFileBriefings(configPath string, files []string) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	baseDir := "."
+	if strings.TrimSpace(configPath) != "" {
+		baseDir = filepath.Dir(configPath)
+	}
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return nil
+	}
+	briefings := []string{}
+	for _, file := range files {
+		file = strings.TrimSpace(file)
+		if file == "" || filepath.IsAbs(file) {
+			continue
+		}
+		clean := filepath.Clean(file)
+		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			continue
+		}
+		path := filepath.Join(absBase, clean)
+		absPath, err := filepath.Abs(path)
+		if err != nil || (absPath != absBase && !strings.HasPrefix(absPath, absBase+string(filepath.Separator))) {
+			continue
+		}
+		payload, err := os.ReadFile(absPath)
+		if err != nil {
+			continue
+		}
+		text := strings.TrimSpace(string(payload))
+		if text == "" {
+			continue
+		}
+		if len(text) > 4000 {
+			text = text[:4000] + "\n... truncated"
+		}
+		briefings = append(briefings, "File "+clean+":\n"+text)
 	}
 	return briefings
 }
