@@ -120,7 +120,7 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatalf("decode run create: %v", err)
 	}
-	events := waitForRunEvents(t, trace.NewStore(db), envelope.Data.RunID, trace.EventRunCompleted)
+	events := waitForRunEvents(t, trace.NewStore(db), envelope.Data.RunID, trace.EventRunSessionCompleted)
 	if len(events) != 13 {
 		t.Fatalf("expected thirteen trace events, got %d", len(events))
 	}
