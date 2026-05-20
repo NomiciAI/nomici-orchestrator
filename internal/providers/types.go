@@ -136,40 +136,91 @@ func ProviderRequiresAPIKey(kind string) bool {
 }
 
 type CodexCLIAvailability struct {
-	Available  bool
-	Executable string
-	AuthPath   string
-	AuthSource string
-	OS         string
-	Arch       string
-	Message    string
+	Available          bool
+	Executable         string
+	ExecutableSource   string
+	CheckedExecutables []string
+	AuthPath           string
+	AuthSource         string
+	OS                 string
+	Arch               string
+	Message            string
 }
 
 func DetectCodexCLI() CodexCLIAvailability {
 	authPath, authSource := CodexAuthPathWithSource()
+	executable, executableSource, checkedExecutables := ResolveCodexCLIExecutable()
 	availability := CodexCLIAvailability{
-		AuthPath:   authPath,
-		AuthSource: authSource,
-		OS:         runtime.GOOS,
-		Arch:       runtime.GOARCH,
+		Executable:         executable,
+		ExecutableSource:   executableSource,
+		CheckedExecutables: checkedExecutables,
+		AuthPath:           authPath,
+		AuthSource:         authSource,
+		OS:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
 	}
-	executable, err := exec.LookPath("codex")
-	if err != nil {
-		availability.Message = fmt.Sprintf("codex executable was not found on PATH for %s/%s; install the CLI and complete local auth", availability.OS, availability.Arch)
+	if executable == "" {
+		availability.Message = fmt.Sprintf("codex executable was not found for %s/%s; checked %s", availability.OS, availability.Arch, strings.Join(checkedExecutables, ", "))
 		return availability
 	}
-	availability.Executable = executable
 	if _, err := os.Stat(authPath); err != nil {
 		if os.IsNotExist(err) {
-			availability.Message = fmt.Sprintf("Codex CLI local auth was not found at %s (%s); run the CLI login flow on this machine", authPath, authSource)
+			availability.Message = fmt.Sprintf("Codex CLI local auth was not found at %s (%s); executable resolved at %s (%s)", authPath, authSource, executable, executableSource)
 			return availability
 		}
 		availability.Message = fmt.Sprintf("Codex CLI local auth at %s (%s) could not be checked: %v", authPath, authSource, err)
 		return availability
 	}
 	availability.Available = true
-	availability.Message = fmt.Sprintf("Codex CLI local auth available at %s (%s) for %s/%s", authPath, authSource, availability.OS, availability.Arch)
+	availability.Message = fmt.Sprintf("Codex CLI local auth available at %s (%s); executable=%s (%s) for %s/%s", authPath, authSource, executable, executableSource, availability.OS, availability.Arch)
 	return availability
+}
+
+func ResolveCodexCLIExecutable() (string, string, []string) {
+	checked := CodexCLIExecutableCandidates()
+	if executable, err := exec.LookPath("codex"); err == nil {
+		return executable, "PATH", checked
+	}
+	for _, candidate := range checked {
+		if candidate == "PATH:codex" {
+			continue
+		}
+		if fileIsRunnable(candidate) {
+			return candidate, "app bundle", checked
+		}
+	}
+	return "", "", checked
+}
+
+func CodexCLIExecutableCandidates() []string {
+	candidates := []string{"PATH:codex"}
+	if runtime.GOOS != "darwin" {
+		return candidates
+	}
+	if override, ok := os.LookupEnv("NOMICI_CODEX_APP_EXECUTABLES"); ok {
+		for _, candidate := range filepath.SplitList(override) {
+			if candidate = strings.TrimSpace(candidate); candidate != "" {
+				candidates = append(candidates, candidate)
+			}
+		}
+		return candidates
+	}
+	candidates = append(candidates, "/Applications/Codex.app/Contents/Resources/codex")
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		candidates = append(candidates, filepath.Join(home, "Applications", "Codex.app", "Contents", "Resources", "codex"))
+	}
+	return candidates
+}
+
+func fileIsRunnable(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return info.Mode()&0o111 != 0
 }
 
 func CodexAuthPath() string {

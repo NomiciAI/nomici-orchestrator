@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 )
 
 const defaultCodexCLITimeout = 10 * time.Minute
@@ -22,14 +24,15 @@ func NewCodexCLIAdapter() *CodexCLIAdapter {
 }
 
 func (adapter *CodexCLIAdapter) Invoke(ctx context.Context, model string, request InvokeRequest) (*InvokeResult, error) {
-	executable := strings.TrimSpace(adapter.Executable)
-	if executable == "" {
-		executable = "codex"
+	executable, errResult := adapter.resolveExecutable()
+	if errResult != nil {
+		return errResult, nil
 	}
-	if _, err := exec.LookPath(executable); err != nil {
+
+	if !executableIsRunnable(executable) {
 		return &InvokeResult{
 			Status: StatusFailed,
-			Error:  &AdapterError{Code: ErrorExecutableUnavailable, Message: "codex executable was not found on PATH", Retryable: false},
+			Error:  &AdapterError{Code: ErrorExecutableUnavailable, Message: "codex executable is not runnable: " + executable, Retryable: false},
 		}, nil
 	}
 
@@ -94,6 +97,34 @@ func (adapter *CodexCLIAdapter) Invoke(ctx context.Context, model string, reques
 		Status:   StatusCompleted,
 		Messages: []Message{{Role: "assistant", Content: content}},
 	}, nil
+}
+
+func (adapter *CodexCLIAdapter) resolveExecutable() (string, *InvokeResult) {
+	configured := strings.TrimSpace(adapter.Executable)
+	if configured == "" || configured == "codex" {
+		availability := providers.DetectCodexCLI()
+		if availability.Available {
+			return availability.Executable, nil
+		}
+		code := ErrorExecutableUnavailable
+		if availability.Executable != "" {
+			code = ErrorAuthFailed
+		}
+		return "", &InvokeResult{
+			Status: StatusFailed,
+			Error:  &AdapterError{Code: code, Message: availability.Message, Retryable: false},
+		}
+	}
+	return configured, nil
+}
+
+func executableIsRunnable(executable string) bool {
+	if strings.ContainsRune(executable, os.PathSeparator) {
+		info, err := os.Stat(executable)
+		return err == nil && !info.IsDir()
+	}
+	_, err := exec.LookPath(executable)
+	return err == nil
 }
 
 func renderCodexPrompt(messages []Message) string {
