@@ -90,6 +90,9 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 type startRunResult struct {
 	Response runCreateResponse
 	Session  *runpkg.Session
+	Request  runpkg.Request
+	Executor *runpkg.Executor
+	Tasks    []*runpkg.Task
 }
 
 type startRunError struct {
@@ -100,10 +103,10 @@ type startRunError struct {
 }
 
 func startWorkspaceRun(ctx context.Context, options Options, services Services, agentID string, prompt string, sourceChannel string, metadata map[string]any) (*startRunResult, *startRunError) {
-	return startWorkspaceRunWithRoute(ctx, options, services, agentID, prompt, sourceChannel, metadata, nil)
+	return startWorkspaceRunWithRoute(ctx, options, services, agentID, prompt, sourceChannel, metadata, nil, true)
 }
 
-func startWorkspaceRunWithRoute(ctx context.Context, options Options, services Services, agentID string, prompt string, sourceChannel string, metadata map[string]any, routeDecision *orchestration.RouteDecision) (*startRunResult, *startRunError) {
+func startWorkspaceRunWithRoute(ctx context.Context, options Options, services Services, agentID string, prompt string, sourceChannel string, metadata map[string]any, routeDecision *orchestration.RouteDecision, autoStart bool) (*startRunResult, *startRunError) {
 	if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil || services.Artifacts == nil {
 		return nil, &startRunError{Status: http.StatusServiceUnavailable, Code: "runs_unavailable", Message: "Run services are not initialized.", Remediation: "Restart Gateway."}
 	}
@@ -154,7 +157,9 @@ func startWorkspaceRunWithRoute(ctx context.Context, options Options, services S
 	if err != nil {
 		return nil, &startRunError{Status: http.StatusInternalServerError, Code: "run_session_failed", Message: "Run session could not be created.", Remediation: "Check Gateway logs."}
 	}
-	startRunWorker(options, services, executor, runRequest, session, tasks)
+	if autoStart {
+		startRunWorker(options, services, executor, runRequest, session, tasks)
+	}
 	return &startRunResult{
 		Response: runCreateResponse{
 			RunID:           runRequest.RunID,
@@ -166,7 +171,10 @@ func startWorkspaceRunWithRoute(ctx context.Context, options Options, services S
 			SandboxStatus:   sandboxRecord.Status,
 			RouteDecision:   routeDecision,
 		},
-		Session: session,
+		Session:  session,
+		Request:  runRequest,
+		Executor: executor,
+		Tasks:    tasks,
 	}, nil
 }
 

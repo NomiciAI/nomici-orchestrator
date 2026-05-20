@@ -178,7 +178,7 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 		}
 		return &chatMessageResponse{Message: message, AssistantMessage: assistantMessage, RouteDecision: snapshotRoute, Clarification: snapshotRoute.Clarification}, nil
 	}
-	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute)
+	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute, false)
 	if startErr != nil {
 		return nil, startErr
 	}
@@ -186,6 +186,7 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 		message.RunID = started.Response.RunID
 		message.SessionID = started.Response.SessionID
 	}
+	startRunWorker(options, services, started.Executor, started.Request, started.Session, started.Tasks)
 	return &chatMessageResponse{Message: message, Run: &started.Response, RouteDecision: snapshotRoute}, nil
 }
 
