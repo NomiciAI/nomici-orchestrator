@@ -4,6 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +26,46 @@ func TestProviderCatalogHasUniqueEntries(t *testing.T) {
 		if !seen[required] {
 			t.Fatalf("expected provider %q in catalog", required)
 		}
+	}
+}
+
+func TestDetectCodexCLIReportsPlatformAndAuthPath(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "codex"
+	content := "#!/bin/sh\nexit 0\n"
+	mode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		name = "codex.bat"
+		content = "@echo off\r\nexit /B 0\r\n"
+		mode = 0o644
+	}
+	if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+	codexHome := filepath.Join(dir, "codex-home")
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("CODEX_HOME", codexHome)
+
+	availability := DetectCodexCLI()
+	if availability.Available {
+		t.Fatal("expected missing local auth to report unavailable")
+	}
+	if availability.OS != runtime.GOOS || availability.Arch != runtime.GOARCH {
+		t.Fatalf("expected platform in availability, got %+v", availability)
+	}
+	expectedAuthPath := filepath.Join(codexHome, "auth.json")
+	if availability.AuthPath != expectedAuthPath || !strings.Contains(availability.Message, expectedAuthPath) {
+		t.Fatalf("expected auth path in availability message, got %+v", availability)
+	}
+	if availability.AuthSource != "CODEX_HOME" || !strings.Contains(availability.Message, "CODEX_HOME") {
+		t.Fatalf("expected auth source in availability message, got %+v", availability)
 	}
 }
 

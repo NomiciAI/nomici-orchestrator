@@ -160,6 +160,27 @@ func TestSetupCreatesCodexCLIProviderWhenLocalAuthIsReady(t *testing.T) {
 	}
 }
 
+func TestSetupProviderChoicesIncludeUnavailableLocalProviders(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "missing-codex-home"))
+
+	choices := setupProviderChoices()
+	var found *setupChoice
+	for index := range choices {
+		if choices[index].ID == providers.ProviderCodexCLI {
+			found = &choices[index]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected Codex CLI setup choice even when local environment is not ready")
+	}
+	if !strings.Contains(found.Description, "not ready") || !strings.Contains(found.Description, runtime.GOOS+"/"+runtime.GOARCH) {
+		t.Fatalf("expected readiness and platform details in setup choice, got %q", found.Description)
+	}
+}
+
 func TestSetupYesRequiresModel(t *testing.T) {
 	dir := t.TempDir()
 	output, err := executeRootForTest(

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -138,32 +139,52 @@ type CodexCLIAvailability struct {
 	Available  bool
 	Executable string
 	AuthPath   string
+	AuthSource string
+	OS         string
+	Arch       string
 	Message    string
 }
 
 func DetectCodexCLI() CodexCLIAvailability {
+	authPath, authSource := CodexAuthPathWithSource()
+	availability := CodexCLIAvailability{
+		AuthPath:   authPath,
+		AuthSource: authSource,
+		OS:         runtime.GOOS,
+		Arch:       runtime.GOARCH,
+	}
 	executable, err := exec.LookPath("codex")
 	if err != nil {
-		return CodexCLIAvailability{Available: false, AuthPath: CodexAuthPath(), Message: "codex executable was not found on PATH"}
+		availability.Message = fmt.Sprintf("codex executable was not found on PATH for %s/%s; install the CLI and complete local auth", availability.OS, availability.Arch)
+		return availability
 	}
-	authPath := CodexAuthPath()
+	availability.Executable = executable
 	if _, err := os.Stat(authPath); err != nil {
 		if os.IsNotExist(err) {
-			return CodexCLIAvailability{Available: false, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth was not found"}
+			availability.Message = fmt.Sprintf("Codex CLI local auth was not found at %s (%s); run the CLI login flow on this machine", authPath, authSource)
+			return availability
 		}
-		return CodexCLIAvailability{Available: false, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth could not be checked"}
+		availability.Message = fmt.Sprintf("Codex CLI local auth at %s (%s) could not be checked: %v", authPath, authSource, err)
+		return availability
 	}
-	return CodexCLIAvailability{Available: true, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth available"}
+	availability.Available = true
+	availability.Message = fmt.Sprintf("Codex CLI local auth available at %s (%s) for %s/%s", authPath, authSource, availability.OS, availability.Arch)
+	return availability
 }
 
 func CodexAuthPath() string {
+	path, _ := CodexAuthPathWithSource()
+	return path
+}
+
+func CodexAuthPathWithSource() (string, string) {
 	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
-		return filepath.Join(home, "auth.json")
+		return filepath.Join(home, "auth.json"), "CODEX_HOME"
 	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		return filepath.Join(home, ".codex", "auth.json")
+		return filepath.Join(home, ".codex", "auth.json"), "user home"
 	}
-	return filepath.Join(".codex", "auth.json")
+	return filepath.Join(".codex", "auth.json"), "relative fallback"
 }
 
 type ClaudeCodeAvailability struct {
