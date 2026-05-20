@@ -56,7 +56,9 @@ Planned:
 
 - Run sessions and durable task ledger
 - Pack-defined role metadata and graph-native subagent roles
+- Sequential role workspace execution with plan review
 - Sandbox provider interface
+- Workspace uploads and typed artifacts
 - Skill registry and progressive loading
 - Tool registry and default research/fetch tools
 - Knowledge and memory bridge

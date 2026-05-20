@@ -124,6 +124,30 @@ func (executor *Executor) Execute(ctx context.Context, request Request) (*Result
 	return modelResult, nil
 }
 
+func (executor *Executor) ExecuteTask(ctx context.Context, request Request, taskID string) (*Result, error) {
+	agent, outgoing, err := executor.Validate(request)
+	if err != nil {
+		return nil, err
+	}
+	if executor.Trace == nil {
+		return nil, fmt.Errorf("trace store is not initialized")
+	}
+	runID := request.RunID
+	if runID == "" {
+		runID = ids.New("run")
+	}
+	if taskID == "" {
+		taskID = ids.New("task")
+	}
+	if len(outgoing) > 0 {
+		return executor.executeHandoffChain(ctx, request, *agent, outgoing, runID, taskID)
+	}
+	if agent.Kind == agentspec.AgentKindExternal {
+		return executor.executeExternal(ctx, request, *agent, runID, taskID)
+	}
+	return executor.executeModel(ctx, request, *agent, runID, taskID)
+}
+
 func (executor *Executor) executeModel(ctx context.Context, request Request, agent graph.Agent, runID string, taskID string) (*Result, error) {
 	if executor.Secrets == nil || executor.Adapter == nil {
 		return nil, fmt.Errorf("model execution services are not initialized")

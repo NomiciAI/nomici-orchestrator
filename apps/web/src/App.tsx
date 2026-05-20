@@ -129,6 +129,9 @@ type RunTask = {
     purpose?: string;
     handoff_mode?: string;
     plan_source?: string;
+    summary?: string;
+    output_preview?: string;
+    failure_reason?: string;
   };
 };
 
@@ -148,6 +151,31 @@ type RunSessionDetail = {
   session: RunSession;
   tasks: RunTask[];
   sandbox?: SandboxRecord;
+  uploads?: UploadRecord[];
+  artifacts?: ArtifactRecord[];
+};
+
+type UploadRecord = {
+  upload_id: string;
+  session_id: string;
+  filename: string;
+  path: string;
+  size_bytes: number;
+  status: string;
+  created_at: string;
+};
+
+type ArtifactRecord = {
+  artifact_id: string;
+  session_id: string;
+  task_id?: string;
+  type: string;
+  title: string;
+  revision: number;
+  review_state: string;
+  preview?: string;
+  path?: string;
+  updated_at: string;
 };
 
 type TraceEvent = {
@@ -243,6 +271,10 @@ export function App() {
   >("idle");
   const [runError, setRunError] = useState("");
   const [approvalError, setApprovalError] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [planRevision, setPlanRevision] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [workspaceMutation, setWorkspaceMutation] = useState("");
   const [mutatingApproval, setMutatingApproval] = useState("");
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>(
     {},
@@ -323,6 +355,11 @@ export function App() {
   const runTitle = runPrompt.trim() || "No task started";
   const runStages = buildRunStages(runStatus, traceEvents);
   const workspaceTasks = sessionDetail?.tasks ?? [];
+  const workspaceUploads = sessionDetail?.uploads ?? [];
+  const workspaceArtifacts = sessionDetail?.artifacts ?? [];
+  const planArtifact = workspaceArtifacts.find((artifact) => artifact.type === "plan");
+  const sessionNeedsPlanReview =
+    sessionDetail?.session.status === "plan_review" && planArtifact;
 
   useEffect(() => {
     if (runAgentId === "" && agentOptions.length > 0) {
@@ -336,9 +373,12 @@ export function App() {
       return;
     }
     const state = { cancelled: false };
+    if (activeSessionId) {
+      void streamSessionEvents(activeSessionId, state);
+    }
     const timer = window.setInterval(() => {
       void pollRunEvents(activeRunId, state);
-    }, 1200);
+    }, activeSessionId ? 2500 : 1200);
     void pollRunEvents(activeRunId, state);
     return () => {
       state.cancelled = true;
@@ -441,6 +481,102 @@ export function App() {
     }
   }
 
+  async function approvePlan() {
+    if (!activeSessionId || !planArtifact) {
+      return;
+    }
+    setWorkspaceError("");
+    setWorkspaceMutation("approve-plan");
+    try {
+      const detail = await apiRequest<RunSessionDetail>(
+        `/api/sessions/${encodeURIComponent(activeSessionId)}/plan/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({ artifact_id: planArtifact.artifact_id }),
+        },
+      );
+      setSessionDetail(detail);
+      setRunStatus("running");
+    } catch (approveError) {
+      setWorkspaceError(
+        approveError instanceof Error
+          ? approveError.message
+          : "Plan could not be approved",
+      );
+    } finally {
+      setWorkspaceMutation("");
+    }
+  }
+
+  async function revisePlan() {
+    if (!activeSessionId || !planArtifact || planRevision.trim() === "") {
+      return;
+    }
+    setWorkspaceError("");
+    setWorkspaceMutation("revise-plan");
+    try {
+      await apiRequest<ArtifactRecord>(
+        `/api/sessions/${encodeURIComponent(activeSessionId)}/plan/revise`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            artifact_id: planArtifact.artifact_id,
+            plan: planRevision,
+          }),
+        },
+      );
+      setPlanRevision("");
+      await loadSessionDetail(activeSessionId);
+    } catch (reviseError) {
+      setWorkspaceError(
+        reviseError instanceof Error
+          ? reviseError.message
+          : "Plan could not be revised",
+      );
+    } finally {
+      setWorkspaceMutation("");
+    }
+  }
+
+  async function uploadInput() {
+    if (!activeSessionId || !uploadFile) {
+      return;
+    }
+    setWorkspaceError("");
+    setWorkspaceMutation("upload");
+    try {
+      const body = new FormData();
+      body.append("session_id", activeSessionId);
+      body.append("file", uploadFile);
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (gatewayToken.trim() !== "") {
+        headers.Authorization = `Bearer ${gatewayToken.trim()}`;
+      }
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        headers,
+        body,
+      });
+      const payload = (await response.json()) as ApiEnvelope<UploadRecord> &
+        ApiErrorEnvelope;
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message ?? `Gateway API returned ${response.status}`,
+        );
+      }
+      setUploadFile(null);
+      await loadSessionDetail(activeSessionId);
+    } catch (uploadError) {
+      setWorkspaceError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Upload could not be stored",
+      );
+    } finally {
+      setWorkspaceMutation("");
+    }
+  }
+
   async function pollRunEvents(runId: string, state: { cancelled: boolean }) {
     const lastSequence = runEvents.reduce(
       (max, event) => Math.max(max, event.sequence),
@@ -461,11 +597,12 @@ export function App() {
         .reverse()
         .find(
           (event) =>
-            event.type === "run.completed" || event.type === "run.failed",
+            event.type === "run.session.completed" ||
+            event.type === "run.failed",
         );
       if (terminal) {
         setRunStatus(
-          terminal.type === "run.completed" ? "completed" : "failed",
+          terminal.type === "run.session.completed" ? "completed" : "failed",
         );
         void loadOverview();
         if (activeSessionId) {
@@ -480,6 +617,60 @@ export function App() {
             : "Run events could not be loaded",
         );
       }
+    }
+  }
+
+  async function streamSessionEvents(
+    sessionId: string,
+    state: { cancelled: boolean },
+  ) {
+    const lastSequence = runEvents.reduce(
+      (max, event) => Math.max(max, event.sequence),
+      0,
+    );
+    const headers: Record<string, string> = { Accept: "text/event-stream" };
+    if (gatewayToken.trim() !== "") {
+      headers.Authorization = `Bearer ${gatewayToken.trim()}`;
+    }
+    try {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/events?after_sequence=${lastSequence}`,
+        { headers },
+      );
+      if (!response.ok || !response.body) {
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (!state.cancelled) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+          if (!dataLine) {
+            continue;
+          }
+          const event = JSON.parse(dataLine.slice(6)) as TraceEvent;
+          if (event.type) {
+            setRunEvents((current) => mergeEvents(current, [event]));
+            void loadSessionDetail(sessionId);
+            if (event.type === "run.session.completed") {
+              setRunStatus("completed");
+              void loadOverview();
+            }
+          }
+        }
+      }
+    } catch {
+      return;
     }
   }
 
@@ -726,7 +917,50 @@ export function App() {
                     <code>{sessionDetail.sandbox.workspace_root || "-"}</code>
                     <span>Artifacts</span>
                     <code>{sessionDetail.sandbox.artifact_root || "-"}</code>
+                    <span>Sandbox</span>
+                    <code>
+                      {sessionDetail.sandbox.provider} /{" "}
+                      {sessionDetail.sandbox.cleanup_status}
+                    </code>
                   </div>
+                ) : null}
+                {sessionNeedsPlanReview ? (
+                  <div className="plan-review">
+                    <div>
+                      <strong>{planArtifact.title}</strong>
+                      <span>
+                        {planArtifact.review_state}, revision{" "}
+                        {planArtifact.revision}
+                      </span>
+                    </div>
+                    <p>{planArtifact.preview || "No plan preview"}</p>
+                    <textarea
+                      value={planRevision}
+                      onChange={(event) => setPlanRevision(event.target.value)}
+                      placeholder="Revise the plan before approving"
+                    />
+                    <div>
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        disabled={workspaceMutation !== ""}
+                        onClick={() => void revisePlan()}
+                      >
+                        Revise plan
+                      </button>
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        disabled={workspaceMutation !== ""}
+                        onClick={() => void approvePlan()}
+                      >
+                        Approve plan
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {workspaceError ? (
+                  <div className="inline-error">{workspaceError}</div>
                 ) : null}
                 {activeSessionId && sessionDetail?.session.status === "running" ? (
                   <button
@@ -745,6 +979,56 @@ export function App() {
                 </p>
               </div>
               <div className="workspace-lists">
+                <div>
+                  <div className="mini-heading">
+                    <strong>Uploads</strong>
+                    <span>{workspaceUploads.length}</span>
+                  </div>
+                  <div className="upload-box">
+                    <input
+                      type="file"
+                      onChange={(event) =>
+                        setUploadFile(event.target.files?.[0] ?? null)
+                      }
+                    />
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      disabled={!uploadFile || !activeSessionId || workspaceMutation !== ""}
+                      onClick={() => void uploadInput()}
+                    >
+                      Add upload
+                    </button>
+                  </div>
+                  <div className="event-list">
+                    {workspaceUploads.slice(0, 4).map((upload) => (
+                      <div className="event-row passive-row" key={upload.upload_id}>
+                        <span>{upload.filename}</span>
+                        <strong>{upload.status}</strong>
+                      </div>
+                    ))}
+                    {workspaceUploads.length === 0 ? (
+                      <p className="empty compact-empty">No uploads</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <div className="mini-heading">
+                    <strong>Artifacts</strong>
+                    <span>{workspaceArtifacts.length}</span>
+                  </div>
+                  <div className="event-list">
+                    {workspaceArtifacts.slice(0, 4).map((artifact) => (
+                      <div className="event-row passive-row" key={artifact.artifact_id}>
+                        <span>{artifact.type}</span>
+                        <strong>{artifact.title}</strong>
+                      </div>
+                    ))}
+                    {workspaceArtifacts.length === 0 ? (
+                      <p className="empty compact-empty">No artifacts</p>
+                    ) : null}
+                  </div>
+                </div>
                 <div>
                   <div className="mini-heading">
                     <strong>Live trace</strong>

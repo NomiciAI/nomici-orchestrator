@@ -128,3 +128,55 @@ func TestStoreCancelsRunningSessionAndTasks(t *testing.T) {
 		t.Fatal("expected cancelling a terminal session to fail")
 	}
 }
+
+func TestStoreUpdatesTaskMetadataAndResumesPlanReview(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	runStore := NewStore(db)
+	ctx := context.Background()
+
+	session, err := runStore.CreateSession(ctx, CreateSessionRequest{
+		RunID:           "run_review",
+		ProjectID:       "project",
+		GraphSnapshotID: "graph",
+		Title:           "Review plan",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := runStore.CreateTask(ctx, CreateTaskRequest{RunID: "run_review", AgentID: "planner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runStore.UpdateTaskStatus(ctx, task.TaskID, TaskStatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStore.UpdateTaskMetadata(ctx, task.TaskID, []byte(`{"summary":"planned"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStore.AddTaskArtifactRef(ctx, task.TaskID, "artifact_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStore.UpdateSessionStatus(ctx, "run_review", SessionStatusPlanReview); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStore.ResumeSession(ctx, session.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := runStore.GetBySession(ctx, session.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Session.Status != SessionStatusRunning {
+		t.Fatalf("expected resumed session, got %+v", detail.Session)
+	}
+	if string(detail.Tasks[0].Metadata) != `{"summary":"planned"}` || len(detail.Tasks[0].ArtifactRefs) != 1 {
+		t.Fatalf("expected task metadata and artifact refs, got %+v", detail.Tasks[0])
+	}
+}

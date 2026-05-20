@@ -222,4 +222,45 @@ CREATE INDEX IF NOT EXISTS idx_sandbox_records_status ON sandbox_records(status,
 CREATE INDEX IF NOT EXISTS idx_sandbox_records_cleanup ON sandbox_records(cleanup_status, updated_at DESC);
 `,
 	},
+	{
+		Version: 9,
+		SQL: `
+CREATE TABLE IF NOT EXISTS artifact_records (
+	artifact_id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	type TEXT NOT NULL,
+	title TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL DEFAULT 1,
+	review_state TEXT NOT NULL DEFAULT 'draft',
+	preview TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_session ON artifact_records(session_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifact_records(run_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_task ON artifact_records(task_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS upload_records (
+	upload_id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL,
+	path TEXT NOT NULL,
+	size_bytes INTEGER NOT NULL,
+	content_type TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'ready',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploads_session ON upload_records(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_uploads_run ON upload_records(run_id, created_at DESC);
+`,
+	},
 }

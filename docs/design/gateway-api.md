@@ -78,10 +78,12 @@ Auth errors:
 /api/runtimes
 /api/tools
 /api/runs
+/api/sessions
 /api/tasks
 /api/context
 /api/traces
 /api/approvals
+/api/uploads
 /api/artifacts
 /api/policies
 /api/secrets
@@ -98,6 +100,10 @@ Protocol surfaces:
 ```
 
 Reserved paths should not imply full compatibility.
+
+Current workspace APIs include session list/detail/tasks/cancel/resume/events,
+plan revise/approve, upload list/create, and artifact list/detail. These APIs
+make the durable session workspace the primary user-facing state for long tasks.
 
 `/api/health` is for liveness/readiness only. It should not become the general system status API.
 

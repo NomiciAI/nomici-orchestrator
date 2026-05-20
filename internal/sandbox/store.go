@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -42,6 +43,13 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 		if err := os.MkdirAll(artifactRoot, 0o700); err != nil {
 			return nil, fmt.Errorf("create sandbox artifact root: %w", err)
 		}
+		runRoot := filepath.Dir(workspaceRoot)
+		if err := os.MkdirAll(filepath.Join(runRoot, "uploads"), 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox uploads root: %w", err)
+		}
+		if err := os.MkdirAll(filepath.Join(runRoot, "outputs"), 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox outputs root: %w", err)
+		}
 	}
 	metadata := request.Metadata
 	if len(metadata) == 0 {
@@ -51,6 +59,8 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 			"bash_enabled":        intent.BashEnabled,
 			"file_write_enabled":  intent.FileWriteEnabled,
 			"workspace_mount":     "/workspace",
+			"uploads_mount":       "/uploads",
+			"outputs_mount":       "/outputs",
 			"artifact_mount":      "/artifacts",
 			"base_dir":            request.BaseDir,
 			"design_note":         "SandboxProvider acquire/get/release lifecycle with per-run workspace mounts.",
