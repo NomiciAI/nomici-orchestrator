@@ -11,7 +11,7 @@ Current deep dives:
 - [Shared Context](shared-context.md)
 - [Shared Context and Autonomy](shared-context-autonomy.md)
 - [Long-Horizon Agent Surface](long-horizon-agent-surface.md)
-- [DeerFlow Reference Capability Roadmap](deerflow-reference-roadmap.md)
+- [Long-Horizon Capability Roadmap](long-horizon-capability-roadmap.md)
 - [CLI Agent Runtimes](cli-agent-runtimes.md)
 - [Provider Setup](provider-setup.md)
 - [Pack System](packs.md)
