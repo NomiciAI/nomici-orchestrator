@@ -43,9 +43,9 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 	for id, model := range spec.Models {
 		path := "models." + id
 		if strings.TrimSpace(model.Kind) == "" {
-			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set kind to openai_compatible or ollama."))
+			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set kind to openai_compatible, ollama, or codex_cli."))
 		} else if !providers.KnownKind(model.Kind) {
-			errors = append(errors, validationError(loaded, "unsupported_model_kind", path+".kind", "model kind "+quote(model.Kind)+" is not implemented in v0.1", "Use openai_compatible or ollama for the current proof slice."))
+			errors = append(errors, validationError(loaded, "unsupported_model_kind", path+".kind", "model kind "+quote(model.Kind)+" is not implemented in v0.1", "Use openai_compatible, ollama, or codex_cli for the current proof slice."))
 		}
 		if strings.TrimSpace(model.Model) == "" {
 			errors = append(errors, validationError(loaded, "missing_required", path+".model", "model name is required", "Set model to the provider model name."))

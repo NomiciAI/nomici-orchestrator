@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,6 +32,21 @@ func TestConsoleOverviewEndpoint(t *testing.T) {
 	defer db.Close()
 	if err := store.Migrate(db); err != nil {
 		t.Fatalf("migrate db: %v", err)
+	}
+	configPath := filepath.Join(dir, "nomici.yaml")
+	if err := os.WriteFile(configPath, []byte(`version: "0.1"
+project:
+  name: test-project
+tools:
+  web_search:
+    kind: web_search
+    provider: duckduckgo
+    mode: read_only
+    status: configured
+    auth: none
+    execution: configured_not_executed
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
 
 	providerStore := providers.NewStore(db)
@@ -103,11 +119,11 @@ func TestConsoleOverviewEndpoint(t *testing.T) {
 		t.Fatalf("create pending approval: %v", err)
 	}
 
-	router := NewRouter(Options{Version: "test"}, Services{
+	router := NewRouter(Options{Version: "test", ConfigPath: configPath}, Services{
 		Providers: providerStore,
 		Trace:     traceStore,
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 		Graph:     graphStore,
 		Packs:     packStore,
 		Policy:    policyService,
@@ -134,6 +150,9 @@ func TestConsoleOverviewEndpoint(t *testing.T) {
 	}
 	if envelope.Data.Counts.PacksInstalled != 1 {
 		t.Fatalf("expected one installed pack, got %d", envelope.Data.Counts.PacksInstalled)
+	}
+	if envelope.Data.Counts.Tools != 1 || envelope.Data.Tools[0].Provider != "duckduckgo" {
+		t.Fatalf("unexpected tools: %+v", envelope.Data.Tools)
 	}
 	if envelope.Data.Graph == nil || envelope.Data.Graph.AgentCount != 2 {
 		t.Fatalf("unexpected graph summary: %+v", envelope.Data.Graph)
@@ -177,7 +196,7 @@ func TestConsoleOverviewRedactsMisconfiguredAPIKeyEnv(t *testing.T) {
 		Providers: providerStore,
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 		Graph:     graph.NewStore(db),
 		Packs:     packs.NewStore(db),
 		Policy:    policy.NewService(db),

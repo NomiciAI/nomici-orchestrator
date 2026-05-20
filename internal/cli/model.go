@@ -56,7 +56,7 @@ func newModelDoctorCommand(dbPath *string) *cobra.Command {
 			}
 			if len(profiles) == 0 {
 				fmt.Fprintln(command.OutOrStdout(), "No model profiles configured.")
-				fmt.Fprintln(command.OutOrStdout(), "Remediation: run `nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY`.")
+				fmt.Fprintln(command.OutOrStdout(), "Remediation: run `nomici setup` or `nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY`.")
 				return nil
 			}
 
@@ -134,6 +134,11 @@ func newModelSetupCommand(dbPath *string) *cobra.Command {
 			if kind == providers.KindOllama {
 				profile.Capabilities["local"] = "true"
 			}
+			if kind == providers.KindCodexCLI {
+				profile.APIKeyEnv = ""
+				profile.Capabilities["local_auth"] = "true"
+				profile.Capabilities["execution"] = "codex_cli"
+			}
 
 			db, err := openMigratedDB(*dbPath)
 			if err != nil {
@@ -150,8 +155,8 @@ func newModelSetupCommand(dbPath *string) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&provider, "provider", "", "Provider kind alias (openai-compatible or ollama)")
-	command.Flags().StringVar(&kind, "kind", "", "Provider kind (openai_compatible or ollama)")
+	command.Flags().StringVar(&provider, "provider", "", "Provider kind alias (openai-compatible, ollama, or codex-cli)")
+	command.Flags().StringVar(&kind, "kind", "", "Provider kind (openai_compatible, ollama, or codex_cli)")
 	command.Flags().StringVar(&name, "name", "", "Provider profile name")
 	command.Flags().StringVar(&baseURL, "base-url", "", "Provider base URL")
 	command.Flags().StringVar(&model, "model", "", "Model name")

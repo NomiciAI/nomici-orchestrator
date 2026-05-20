@@ -90,6 +90,16 @@ type RuntimeStatus = {
   agents?: string[];
 };
 
+type ToolStatus = {
+  id: string;
+  kind: string;
+  provider: string;
+  mode: string;
+  status: string;
+  auth: string;
+  execution: string;
+};
+
 type RunSummary = {
   run_id: string;
   event_count: number;
@@ -209,6 +219,7 @@ type Overview = {
   };
   counts: {
     models: number;
+    tools: number;
     packs_installed: number;
     agents: number;
     runtimes: number;
@@ -216,6 +227,7 @@ type Overview = {
     pending_approvals: number;
   };
   models: ProviderProfile[];
+  tools: ToolStatus[];
   packs: PackStatus[];
   graph_snapshot?: GraphSnapshot;
   runtimes: RuntimeStatus[];
@@ -230,6 +242,7 @@ const emptyOverview: Overview = {
   gateway: { status: "unknown", service: "nomici-gateway", version: "dev" },
   counts: {
     models: 0,
+    tools: 0,
     packs_installed: 0,
     agents: 0,
     runtimes: 0,
@@ -237,6 +250,7 @@ const emptyOverview: Overview = {
     pending_approvals: 0,
   },
   models: [],
+  tools: [],
   packs: [],
   runtimes: [],
   recent_runs: [],
@@ -758,6 +772,7 @@ export function App() {
             label="Installed packs"
             value={overview.counts.packs_installed}
           />
+          <Metric label="Tool contracts" value={overview.counts.tools} />
         </section>
       ) : null}
 
@@ -769,8 +784,8 @@ export function App() {
           <div>
             <strong>Gateway token required</strong>
             <span>
-              Run this in the same directory where you started `nomici up`, then
-              paste the token here.
+              Run this in the same directory where you started `nomici dev`,
+              then paste the token here.
             </span>
             <code>nomici gateway token show</code>
             <span>
@@ -1232,7 +1247,33 @@ export function App() {
                     </div>
                   ))}
                   {overview.models.length === 0 ? (
-                    <EmptyRow text="No models configured. Run model setup in this workspace." />
+                    <EmptyRow text="No models configured. Run nomici setup in this workspace." />
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="panel" aria-label="Tool contracts">
+                <div className="panel-heading">
+                  <h2>Tools</h2>
+                  <span className="tag">{overview.tools.length}</span>
+                </div>
+                <div className="stack">
+                  {overview.tools.map((tool) => (
+                    <div className="list-item" key={tool.id}>
+                      <div>
+                        <strong>{tool.id}</strong>
+                        <span>
+                          {tool.provider} / {tool.mode} / {tool.execution}
+                        </span>
+                      </div>
+                      <div className="list-meta">
+                        <span className="pill pill-green">{tool.status}</span>
+                        <span>{tool.auth}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {overview.tools.length === 0 ? (
+                    <p className="empty">No tool contracts configured</p>
                   ) : null}
                 </div>
               </section>
@@ -1610,6 +1651,7 @@ function normalizeOverview(next: Overview): Overview {
     gateway: { ...emptyOverview.gateway, ...next.gateway },
     counts: { ...emptyOverview.counts, ...next.counts },
     models: next.models ?? [],
+    tools: next.tools ?? [],
     packs: next.packs ?? [],
     runtimes: next.runtimes ?? [],
     recent_runs: next.recent_runs ?? [],

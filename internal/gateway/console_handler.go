@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"sort"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
@@ -22,6 +24,7 @@ type consoleOverview struct {
 	Gateway          consoleGatewayStatus    `json:"gateway"`
 	Counts           consoleCounts           `json:"counts"`
 	Models           []consoleModelProfile   `json:"models"`
+	Tools            []consoleToolStatus     `json:"tools"`
 	Packs            []consolePackStatus     `json:"packs"`
 	Graph            *consoleGraphSummary    `json:"graph,omitempty"`
 	GraphSnapshot    *graph.Snapshot         `json:"graph_snapshot,omitempty"`
@@ -41,6 +44,7 @@ type consoleGatewayStatus struct {
 
 type consoleCounts struct {
 	Models           int `json:"models"`
+	Tools            int `json:"tools"`
 	PacksInstalled   int `json:"packs_installed"`
 	Agents           int `json:"agents"`
 	Runtimes         int `json:"runtimes"`
@@ -61,6 +65,16 @@ type consoleModelProfile struct {
 	CostPer1MOutput float64           `json:"cost_per_1m_output,omitempty"`
 	CreatedAt       string            `json:"created_at"`
 	UpdatedAt       string            `json:"updated_at"`
+}
+
+type consoleToolStatus struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Provider  string `json:"provider"`
+	Mode      string `json:"mode"`
+	Status    string `json:"status"`
+	Auth      string `json:"auth"`
+	Execution string `json:"execution"`
 }
 
 type consolePackStatus struct {
@@ -228,6 +242,10 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 	if err != nil {
 		return nil, nil, err
 	}
+	tools, toolWarnings, err := loadConsoleTools(options.ConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
 	runs, err := services.Trace.ListRuns(request.Context())
 	if err != nil {
 		return nil, nil, err
@@ -249,6 +267,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 	}
 
 	var warnings []string
+	warnings = append(warnings, toolWarnings...)
 	var graphSummary *consoleGraphSummary
 	var runtimes []consoleRuntimeStatus
 	var agentCount int
@@ -284,6 +303,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		},
 		Counts: consoleCounts{
 			Models:           len(models),
+			Tools:            len(tools),
 			PacksInstalled:   installedPacks,
 			Agents:           agentCount,
 			Runtimes:         len(runtimes),
@@ -291,6 +311,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 			PendingApprovals: len(pendingApprovals),
 		},
 		Models:           sanitizeModelProfiles(models),
+		Tools:            tools,
 		Packs:            packStatuses,
 		Graph:            graphSummary,
 		GraphSnapshot:    snapshot,
@@ -301,7 +322,8 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		PendingApprovals: pendingApprovals,
 		Unavailable: []consoleUnavailableAPI{
 			{Name: "Canvas editing", Status: "deferred", Reason: "Gate 8 is read-only."},
-			{Name: "Console provider setup", Status: "deferred", Reason: "Use `nomici model setup` for bootstrap."},
+			{Name: "Console provider setup", Status: "deferred", Reason: "Use `nomici setup` for bootstrap."},
+			{Name: "Mediated tool execution", Status: "deferred", Reason: "Web tools are configured as read-only contracts."},
 			{Name: "Runtime lifecycle controls", Status: "deferred", Reason: "Runtime reconciler is not implemented yet."},
 		},
 	}, warnings, nil
@@ -329,6 +351,49 @@ func loadPackStatuses(request *http.Request, services Services) ([]consolePackSt
 		})
 	}
 	return statuses, nil
+}
+
+func loadConsoleTools(configPath string) ([]consoleToolStatus, []string, error) {
+	if configPath == "" {
+		configPath = "nomici.yaml"
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return []consoleToolStatus{}, []string{"No AgentSpec config found; run `nomici setup`."}, nil
+		}
+		return nil, nil, err
+	}
+	loaded, err := agentspec.LoadFile(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]string, 0, len(loaded.Spec.Tools))
+	for id := range loaded.Spec.Tools {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	tools := make([]consoleToolStatus, 0, len(ids))
+	for _, id := range ids {
+		config := loaded.Spec.Tools[id]
+		tools = append(tools, consoleToolStatus{
+			ID:        id,
+			Kind:      toolString(config, "kind", id),
+			Provider:  toolString(config, "provider", "unknown"),
+			Mode:      toolString(config, "mode", "unknown"),
+			Status:    toolString(config, "status", "configured"),
+			Auth:      toolString(config, "auth", "none"),
+			Execution: toolString(config, "execution", "configured_not_executed"),
+		})
+	}
+	return tools, nil, nil
+}
+
+func toolString(config map[string]any, key string, fallback string) string {
+	value, _ := config[key].(string)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func sanitizeModelProfiles(models []*providers.Profile) []consoleModelProfile {

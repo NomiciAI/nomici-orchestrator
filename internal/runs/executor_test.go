@@ -31,7 +31,7 @@ printf "%s handled:\n%s\n" "$LABEL" "$1"
 		{ID: "edge_2", From: "implementer", To: "reviewer", Mode: "handoff"},
 	})
 
-	executor := DBExecutor(db, adapters.NewOpenAICompatibleAdapter(), secrets.NewResolver(), configPath)
+	executor := DBExecutor(db, adapters.NewModelAdapter(), secrets.NewResolver(), configPath)
 	result, err := executor.Execute(context.Background(), Request{
 		Snapshot: snapshot,
 		AgentID:  "planner",

@@ -24,58 +24,12 @@ func newUpCommand(version string) *cobra.Command {
 		Use:   "up",
 		Short: "Start Nomici Gateway and configured local runtimes",
 		RunE: func(command *cobra.Command, args []string) error {
-			gatewayState, err := lifecycle.StartGateway(command.Context(), lifecycle.StartGatewayOptions{
-				Host:    host,
-				Port:    port,
-				Version: version,
-				DBPath:  dbPath,
+			return startLocalWorkspace(command, version, localStartOptions{
+				ConfigPath: configPath,
+				DBPath:     dbPath,
+				Host:       host,
+				Port:       port,
 			})
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(command.OutOrStdout(), "gateway\t%s\tpid=%d\tlog=%s\n", gatewayState.Status, gatewayState.PID, gatewayState.LogPath)
-			fmt.Fprintf(command.OutOrStdout(), "console\thttp://%s:%d\ttoken-command=%q\n", host, port, gatewayTokenCommand(dbPath))
-
-			loaded, exists, err := loadSpecIfExists(configPath)
-			if err != nil {
-				return err
-			}
-			if !exists {
-				fmt.Fprintf(command.OutOrStdout(), "No %s found; Gateway started without project runtimes.\n", configPath)
-				return nil
-			}
-			if errors := agentspec.Validate(loaded); len(errors) > 0 {
-				printValidationErrors(command, errors)
-				return fmt.Errorf("AgentSpec validation failed with %d error(s)", len(errors))
-			}
-			snapshot, errors := graph.Compile(loaded)
-			if len(errors) > 0 {
-				printValidationErrors(command, errors)
-				return fmt.Errorf("AgentGraph validation failed with %d error(s)", len(errors))
-			}
-			if err := saveGraphSnapshot(command.Context(), dbPath, snapshot); err != nil {
-				return err
-			}
-			fmt.Fprintf(command.OutOrStdout(), "graph\tvalid\tsnapshot=%s\n", snapshot.SnapshotID)
-
-			for id, runtimeSpec := range loaded.Spec.Runtimes {
-				switch runtimeSpec.Kind {
-				case agentspec.RuntimeKindLocalProcess:
-					state, err := lifecycle.StartLocalProcess(command.Context(), lifecycle.StartRuntimeOptions{
-						RuntimeID:  id,
-						Runtime:    runtimeSpec,
-						ConfigPath: configPath,
-						DBPath:     dbPath,
-					})
-					if err != nil {
-						return err
-					}
-					fmt.Fprintf(command.OutOrStdout(), "%s\t%s\tpid=%d\tlog=%s\n", id, state.Status, state.PID, state.LogPath)
-				case agentspec.RuntimeKindCLIAgent:
-					fmt.Fprintf(command.OutOrStdout(), "%s\tconfigured\tinvoke-only cli_agent\n", id)
-				}
-			}
-			return nil
 		},
 	}
 	command.Flags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path")
@@ -83,6 +37,114 @@ func newUpCommand(version string) *cobra.Command {
 	command.Flags().StringVar(&host, "host", gateway.DefaultHost, "Gateway bind host")
 	command.Flags().IntVar(&port, "port", gateway.DefaultPort, "Gateway bind port")
 	return command
+}
+
+func newDevCommand(version string) *cobra.Command {
+	var configPath string
+	var dbPath string
+	var host string
+	var port int
+	var noOpen bool
+	command := &cobra.Command{
+		Use:   "dev",
+		Short: "Start the local Nomici workspace and open Console",
+		RunE: func(command *cobra.Command, args []string) error {
+			if _, err := os.Stat(configPath); err != nil {
+				if os.IsNotExist(err) {
+					return fmt.Errorf("%s was not found. Remediation: run `nomici setup` first", configPath)
+				}
+				return err
+			}
+			if err := startLocalWorkspace(command, version, localStartOptions{
+				ConfigPath: configPath,
+				DBPath:     dbPath,
+				Host:       host,
+				Port:       port,
+			}); err != nil {
+				return err
+			}
+			consoleURL := fmt.Sprintf("http://%s:%d", host, port)
+			if noOpen {
+				return nil
+			}
+			if err := openBrowser(consoleURL); err != nil {
+				fmt.Fprintf(command.OutOrStdout(), "open\twarning\t%s\n", err)
+				fmt.Fprintf(command.OutOrStdout(), "console\t%s\n", consoleURL)
+				return nil
+			}
+			fmt.Fprintf(command.OutOrStdout(), "open\t%s\n", consoleURL)
+			return nil
+		},
+	}
+	command.Flags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path")
+	command.Flags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
+	command.Flags().StringVar(&host, "host", gateway.DefaultHost, "Gateway bind host")
+	command.Flags().IntVar(&port, "port", gateway.DefaultPort, "Gateway bind port")
+	command.Flags().BoolVar(&noOpen, "no-open", false, "Start without opening Console in the default browser")
+	return command
+}
+
+type localStartOptions struct {
+	ConfigPath string
+	DBPath     string
+	Host       string
+	Port       int
+}
+
+func startLocalWorkspace(command *cobra.Command, version string, options localStartOptions) error {
+	gatewayState, err := lifecycle.StartGateway(command.Context(), lifecycle.StartGatewayOptions{
+		Host:       options.Host,
+		Port:       options.Port,
+		Version:    version,
+		DBPath:     options.DBPath,
+		ConfigPath: options.ConfigPath,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(command.OutOrStdout(), "gateway\t%s\tpid=%d\tlog=%s\n", gatewayState.Status, gatewayState.PID, gatewayState.LogPath)
+	fmt.Fprintf(command.OutOrStdout(), "console\thttp://%s:%d\ttoken-command=%q\n", options.Host, options.Port, gatewayTokenCommand(options.DBPath))
+
+	loaded, exists, err := loadSpecIfExists(options.ConfigPath)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		fmt.Fprintf(command.OutOrStdout(), "No %s found; Gateway started without project runtimes.\n", options.ConfigPath)
+		return nil
+	}
+	if errors := agentspec.Validate(loaded); len(errors) > 0 {
+		printValidationErrors(command, errors)
+		return fmt.Errorf("AgentSpec validation failed with %d error(s)", len(errors))
+	}
+	snapshot, errors := graph.Compile(loaded)
+	if len(errors) > 0 {
+		printValidationErrors(command, errors)
+		return fmt.Errorf("AgentGraph validation failed with %d error(s)", len(errors))
+	}
+	if err := saveGraphSnapshot(command.Context(), options.DBPath, snapshot); err != nil {
+		return err
+	}
+	fmt.Fprintf(command.OutOrStdout(), "graph\tvalid\tsnapshot=%s\n", snapshot.SnapshotID)
+
+	for id, runtimeSpec := range loaded.Spec.Runtimes {
+		switch runtimeSpec.Kind {
+		case agentspec.RuntimeKindLocalProcess:
+			state, err := lifecycle.StartLocalProcess(command.Context(), lifecycle.StartRuntimeOptions{
+				RuntimeID:  id,
+				Runtime:    runtimeSpec,
+				ConfigPath: options.ConfigPath,
+				DBPath:     options.DBPath,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "%s\t%s\tpid=%d\tlog=%s\n", id, state.Status, state.PID, state.LogPath)
+		case agentspec.RuntimeKindCLIAgent:
+			fmt.Fprintf(command.OutOrStdout(), "%s\tconfigured\tinvoke-only cli_agent\n", id)
+		}
+	}
+	return nil
 }
 
 func newDownCommand() *cobra.Command {

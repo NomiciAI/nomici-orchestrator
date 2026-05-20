@@ -18,10 +18,8 @@ Clone the repo and install from source:
 git clone https://github.com/NomiciAI/nomici-orchestrator.git
 cd nomici-orchestrator
 scripts/install.sh --from-source .
-nomici doctor
 nomici setup
-nomici up
-nomici gateway open
+nomici dev
 ```
 
 If `nomici` is not on your `PATH`, add `~/.local/bin` or run `./bin/nomici` from the repository root.
@@ -33,13 +31,14 @@ The recommended first-run path is:
 ```bash
 nomici setup
 nomici doctor
-nomici up
+nomici dev
 nomici run product_pm "Plan the first useful task."
 ```
 
 `nomici setup` guides you through:
 
 - choosing an LLM provider profile
+- choosing basic Web Search and Web Fetch providers
 - installing the `developer-team` starter pack
 - writing sandbox policy intent to `deployment.sandbox`
 - saving a graph snapshot for Gateway and Console
@@ -52,6 +51,8 @@ nomici setup \
   --name gpt \
   --model <model> \
   --api-key-env OPENAI_API_KEY \
+  --web-search duckduckgo \
+  --web-fetch jina-reader \
   --pack developer-team \
   --sandbox local \
   --enable-file-write \
@@ -65,23 +66,38 @@ nomici setup \
   --provider ollama \
   --name local-llama \
   --model llama3.2 \
+  --web-search duckduckgo \
+  --web-fetch jina-reader \
   --sandbox container \
   --enable-bash \
   --enable-file-write \
   --yes
 ```
 
-Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. `nomici doctor` checks that sandbox config exists and warns if `container` is selected but Docker, Podman, or Apple `container` is not available.
-
-## Run A Local Agent Without An API Key
-
-The smallest demo uses a local `cli_agent` runtime. It does not call an LLM provider; it proves that Nomici can load AgentSpec, execute a local agent command, capture artifacts, and write traces.
+For local Codex CLI auth, use the setup wizard when `codex` is on `PATH` and local auth is available, or script it explicitly:
 
 ```bash
-cd examples/basic-local-agent
-nomici spec validate --config nomici.yaml
-nomici graph validate --config nomici.yaml
-nomici run local_assistant "Summarize what this demo proves." --config nomici.yaml
+nomici setup \
+  --provider codex-cli \
+  --name codex-local \
+  --model gpt-5.4 \
+  --web-search duckduckgo \
+  --web-fetch jina-reader \
+  --sandbox local \
+  --enable-file-write \
+  --yes
+```
+
+Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. Web Search and Web Fetch setup writes read-only provider contracts; full mediated tool execution is a later workflow. `nomici doctor` checks that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
+
+## Optional: Run A Local Agent Without An API Key
+
+The smallest no-provider smoke test uses a local `cli_agent` runtime. It is optional and not part of the normal first-run path. It proves that Nomici can load AgentSpec, execute a local agent command, capture artifacts, and write traces.
+
+```bash
+nomici spec validate --config examples/basic-local-agent/nomici.yaml
+nomici graph validate --config examples/basic-local-agent/nomici.yaml
+nomici run local_assistant "Summarize what this demo proves." --config examples/basic-local-agent/nomici.yaml
 nomici trace list
 ```
 
@@ -92,14 +108,13 @@ The output should include a run id and a response from the local command-backed 
 From any project with a `nomici.yaml`:
 
 ```bash
-nomici up --config nomici.yaml
+nomici dev --config nomici.yaml
 nomici gateway token show
-nomici gateway open
 ```
 
-Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici up` started Gateway. Each `.nomici` state directory has its own Gateway token.
+Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici dev` started Gateway. Each `.nomici` state directory has its own Gateway token.
 
-The current Console is read-only. It shows the latest graph snapshot saved by `nomici up`, `nomici graph validate`, `nomici run`, or `nomici pack install`.
+`nomici dev` starts Gateway, validates the graph, starts configured local processes, and opens Console. `nomici up` remains available for scripts that only need the lower-level background start behavior.
 
 When finished:
 
@@ -145,4 +160,5 @@ nomici trace show <run_id>
 - The hosted `curl` installer and release artifacts are not live yet.
 - Console editing and provider setup are not implemented yet.
 - Linear `handoff` chains across `cli_agent`-backed `external_agent` nodes are executable. Branching, parallel, A2A, and tool-edge graph execution is not implemented yet.
-- MCP, A2A, broader tool policy, and deep Hermes/OpenClaw adapters are deferred.
+- Web Search and Web Fetch are configured as read-only provider contracts; mediated runtime tool execution is deferred.
+- MCP, A2A, broader tool policy, and deep external runtime adapters are deferred.

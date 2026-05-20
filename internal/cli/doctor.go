@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
@@ -30,6 +31,7 @@ func newDoctorCommand() *cobra.Command {
 				checkGateway(gatewayURL),
 				checkAgentSpec(configPath),
 				checkSandbox(configPath),
+				checkWebTools(configPath),
 				checkProviders(command, dbPath),
 				checkManagedRuntimes(dbPath),
 			}
@@ -144,7 +146,68 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 	if len(profiles) == 0 {
 		return doctorResult{Name: "models", Status: "warning", Message: "no model profiles configured"}
 	}
+	var warnings []string
+	for _, profile := range profiles {
+		if err := profile.Validate(); err != nil {
+			return doctorResult{Name: "models", Status: "failed", Message: profile.ID + ": " + err.Error()}
+		}
+		switch providers.NormalizeKind(profile.Kind) {
+		case providers.KindOpenAICompatible:
+			if profile.APIKeyEnv != "" {
+				if _, ok := os.LookupEnv(profile.APIKeyEnv); !ok {
+					warnings = append(warnings, profile.ID+" missing "+profile.APIKeyEnv)
+				}
+			}
+		case providers.KindCodexCLI:
+			if availability := providers.DetectCodexCLI(); !availability.Available {
+				warnings = append(warnings, profile.ID+" "+availability.Message)
+			}
+		}
+	}
+	if len(warnings) > 0 {
+		return doctorResult{Name: "models", Status: "warning", Message: strings.Join(warnings, "; ")}
+	}
 	return doctorResult{Name: "models", Status: "ok", Message: fmt.Sprintf("%d profile(s)", len(profiles))}
+}
+
+func checkWebTools(configPath string) doctorResult {
+	loaded, exists, err := loadSpecIfExists(configPath)
+	if err != nil {
+		return doctorResult{Name: "web_tools", Status: "failed", Message: err.Error()}
+	}
+	if !exists {
+		return doctorResult{Name: "web_tools", Status: "warning", Message: "no tool config; run `nomici setup`"}
+	}
+	if len(loaded.Spec.Tools) == 0 {
+		return doctorResult{Name: "web_tools", Status: "warning", Message: "web search/fetch not configured"}
+	}
+	search := toolProviderSummary(loaded.Spec.Tools["web_search"])
+	fetch := toolProviderSummary(loaded.Spec.Tools["web_fetch"])
+	var warnings []string
+	for id, config := range loaded.Spec.Tools {
+		keyEnv, _ := config["api_key_env"].(string)
+		if keyEnv == "" {
+			continue
+		}
+		if _, ok := os.LookupEnv(keyEnv); !ok {
+			warnings = append(warnings, id+" missing "+keyEnv)
+		}
+	}
+	if len(warnings) > 0 {
+		return doctorResult{Name: "web_tools", Status: "warning", Message: strings.Join(warnings, "; ")}
+	}
+	return doctorResult{Name: "web_tools", Status: "ok", Message: "search=" + search + " fetch=" + fetch}
+}
+
+func toolProviderSummary(config map[string]any) string {
+	if config == nil {
+		return "none"
+	}
+	provider, _ := config["provider"].(string)
+	if provider == "" {
+		return "unknown"
+	}
+	return provider
 }
 
 func checkManagedRuntimes(dbPath string) doctorResult {

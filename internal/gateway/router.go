@@ -21,7 +21,7 @@ type Services struct {
 	Providers *providers.Store
 	Trace     *trace.Store
 	Secrets   *secrets.Resolver
-	Adapter   *adapters.OpenAICompatibleAdapter
+	Adapter   *adapters.ModelAdapter
 	Graph     *graph.Store
 	Packs     *packs.Store
 	Policy    *policy.Service

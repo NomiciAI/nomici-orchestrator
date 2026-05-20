@@ -539,7 +539,7 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 		Providers: providerStore,
 		Trace:     traceStore,
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 		Graph:     graph.NewStore(db),
 		Packs:     packs.NewStore(db),
 		Policy:    policy.NewService(db),

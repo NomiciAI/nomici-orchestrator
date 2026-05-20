@@ -37,6 +37,10 @@ type setupOptions struct {
 	baseURL         string
 	apiKeyEnv       string
 	packID          string
+	webSearch       string
+	webSearchKeyEnv string
+	webFetch        string
+	webFetchKeyEnv  string
 	sandboxMode     string
 	enableBash      bool
 	enableFileWrite bool
@@ -55,6 +59,8 @@ func newSetupCommand() *cobra.Command {
 		configPath:      "nomici.yaml",
 		dbPath:          store.DefaultDBPath,
 		packID:          setupPackDeveloperTeam,
+		webSearch:       "duckduckgo",
+		webFetch:        "jina_reader",
 		sandboxMode:     sandboxModeLocal,
 		enableBash:      false,
 		enableFileWrite: true,
@@ -62,19 +68,23 @@ func newSetupCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "setup",
 		Short: "Configure a usable Nomici workspace",
-		Long:  "Configure a usable Nomici workspace by creating a model profile, installing a starter pack, and writing sandbox intent into nomici.yaml.",
+		Long:  "Configure a usable Nomici workspace by creating a model profile, configuring web tools, installing a starter pack, and writing sandbox intent into nomici.yaml.",
 		RunE: func(command *cobra.Command, args []string) error {
 			return runSetup(command, options)
 		},
 	}
 	command.Flags().StringVar(&options.configPath, "config", options.configPath, "AgentSpec config path")
 	command.Flags().StringVar(&options.dbPath, "db-path", options.dbPath, "SQLite database path")
-	command.Flags().StringVar(&options.provider, "provider", "", "Provider to configure: openai-compatible or ollama")
+	command.Flags().StringVar(&options.provider, "provider", "", "Provider to configure: openai-compatible, ollama, or codex-cli")
 	command.Flags().StringVar(&options.profileName, "name", "", "Model profile name")
 	command.Flags().StringVar(&options.model, "model", "", "Provider model name")
 	command.Flags().StringVar(&options.baseURL, "base-url", "", "Provider base URL")
 	command.Flags().StringVar(&options.apiKeyEnv, "api-key-env", "", "Environment variable containing the API key")
 	command.Flags().StringVar(&options.packID, "pack", options.packID, "Starter pack to install: developer-team or none")
+	command.Flags().StringVar(&options.webSearch, "web-search", options.webSearch, "Web search provider: duckduckgo, brave, tavily, or none")
+	command.Flags().StringVar(&options.webSearchKeyEnv, "web-search-api-key-env", "", "Environment variable containing the web search API key")
+	command.Flags().StringVar(&options.webFetch, "web-fetch", options.webFetch, "Web fetch provider: jina-reader, direct-http, or none")
+	command.Flags().StringVar(&options.webFetchKeyEnv, "web-fetch-api-key-env", "", "Environment variable containing the web fetch API key")
 	command.Flags().StringVar(&options.sandboxMode, "sandbox", options.sandboxMode, "Sandbox mode: local, container, or none")
 	command.Flags().BoolVar(&options.enableBash, "enable-bash", options.enableBash, "Allow bash command execution in sandbox policy intent")
 	command.Flags().BoolVar(&options.enableFileWrite, "enable-file-write", options.enableFileWrite, "Allow file write tools in sandbox policy intent")
@@ -89,9 +99,12 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 	interactive := !options.yes
 
 	fmt.Fprintln(out, "Welcome to Nomici Setup.")
-	fmt.Fprintln(out, "This wizard configures the first usable model, starter pack, and sandbox policy for this workspace.")
+	fmt.Fprintln(out, "This wizard configures the first usable model, web tools, starter pack, and sandbox policy for this workspace.")
 
 	if err := collectProviderOptions(in, out, &options, interactive); err != nil {
+		return err
+	}
+	if err := collectWebToolOptions(in, out, &options, interactive); err != nil {
 		return err
 	}
 	if err := collectPackOptions(in, out, &options, interactive); err != nil {
@@ -127,6 +140,10 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 		return err
 	}
 	fmt.Fprintf(out, "  ✓ Sandbox configured: %s\n", options.sandboxMode)
+	if err := writeWebToolConfig(options.configPath, webToolConfigFromOptions(options)); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "  ✓ Web tools configured: search=%s fetch=%s\n", options.webSearch, options.webFetch)
 
 	snapshot, err := compileGraphSnapshot(command.Context(), options.configPath, options.dbPath)
 	if err != nil {
@@ -146,6 +163,9 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 		{ID: providers.KindOpenAICompatible, Label: "OpenAI-compatible endpoint", Description: "OpenAI, OpenRouter, vLLM, LM Studio, SGLang, llama.cpp server"},
 		{ID: providers.KindOllama, Label: "Ollama", Description: "Local Ollama server using its OpenAI-compatible endpoint"},
 	}
+	if providers.DetectCodexCLI().Available {
+		providerChoices = append(providerChoices, setupChoice{ID: providers.KindCodexCLI, Label: "Codex CLI local auth", Description: "Uses local Codex CLI authentication"})
+	}
 	if strings.TrimSpace(options.provider) == "" {
 		if !interactive {
 			return fmt.Errorf("--provider is required when --yes is used")
@@ -158,13 +178,19 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 	}
 	options.provider = providers.NormalizeKind(options.provider)
 	if !providers.KnownKind(options.provider) {
-		return fmt.Errorf("unsupported provider %q; use openai-compatible or ollama", options.provider)
+		return fmt.Errorf("unsupported provider %q; use openai-compatible, ollama, or codex-cli", options.provider)
+	}
+	if options.provider == providers.KindCodexCLI {
+		availability := providers.DetectCodexCLI()
+		if !availability.Available {
+			return fmt.Errorf("codex-cli provider is not ready: %s", availability.Message)
+		}
 	}
 
 	if options.baseURL == "" {
 		options.baseURL = providers.DefaultBaseURL(options.provider)
 	}
-	if interactive {
+	if interactive && options.provider != providers.KindCodexCLI {
 		value, err := promptString(in, out, "Base URL", options.baseURL, false)
 		if err != nil {
 			return err
@@ -196,11 +222,17 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 	if options.profileName == "" {
 		options.profileName = options.model
 	}
+	if options.provider == providers.KindCodexCLI && options.profileName == "" {
+		options.profileName = "codex_cli"
+	}
 	return nil
 }
 
 func collectPackOptions(in *bufio.Reader, out io.Writer, options *setupOptions, interactive bool) error {
-	fmt.Fprintln(out, "\nStep 2/4 - Choose a starter pack")
+	if !interactive {
+		return validatePack(options.packID)
+	}
+	fmt.Fprintln(out, "\nStarter pack")
 	if interactive {
 		choice, err := promptChoice(in, out, "Starter pack", []setupChoice{
 			{ID: setupPackDeveloperTeam, Label: "Developer team", Description: "product_pm entrypoint with architecture subagent"},
@@ -211,11 +243,111 @@ func collectPackOptions(in *bufio.Reader, out io.Writer, options *setupOptions, 
 		}
 		options.packID = choice.ID
 	}
-	switch options.packID {
+	return validatePack(options.packID)
+}
+
+func validatePack(packID string) error {
+	switch packID {
 	case setupPackDeveloperTeam, setupPackNone:
 		return nil
 	default:
-		return fmt.Errorf("unsupported setup pack %q; use developer-team or none", options.packID)
+		return fmt.Errorf("unsupported setup pack %q; use developer-team or none", packID)
+	}
+}
+
+func collectWebToolOptions(in *bufio.Reader, out io.Writer, options *setupOptions, interactive bool) error {
+	fmt.Fprintln(out, "\nStep 2/4 - Web Search and Fetch")
+	options.webSearch = normalizeToolProvider(options.webSearch)
+	options.webFetch = normalizeToolProvider(options.webFetch)
+	if interactive {
+		search, err := promptChoice(in, out, "Web search provider", []setupChoice{
+			{ID: "duckduckgo", Label: "DuckDuckGo", Description: "No API key required"},
+			{ID: "brave", Label: "Brave Search", Description: "Requires an API key env var"},
+			{ID: "tavily", Label: "Tavily", Description: "Requires an API key env var"},
+			{ID: "none", Label: "None", Description: "Do not configure web search"},
+		}, 0)
+		if err != nil {
+			return err
+		}
+		options.webSearch = search.ID
+		if toolProviderNeedsKey(options.webSearch) {
+			value, err := promptString(in, out, "Web search API key env var", defaultToolKeyEnv(options.webSearch), true)
+			if err != nil {
+				return err
+			}
+			options.webSearchKeyEnv = value
+		}
+
+		fetch, err := promptChoice(in, out, "Web fetch provider", []setupChoice{
+			{ID: "jina_reader", Label: "Jina Reader", Description: "No API key required"},
+			{ID: "direct_http", Label: "Direct HTTP", Description: "No API key required"},
+			{ID: "none", Label: "None", Description: "Do not configure web fetch"},
+		}, 0)
+		if err != nil {
+			return err
+		}
+		options.webFetch = fetch.ID
+		if toolProviderNeedsKey(options.webFetch) {
+			value, err := promptString(in, out, "Web fetch API key env var", defaultToolKeyEnv(options.webFetch), true)
+			if err != nil {
+				return err
+			}
+			options.webFetchKeyEnv = value
+		}
+	}
+	if err := validateWebToolProvider("web search", options.webSearch, []string{"duckduckgo", "brave", "tavily", "none"}); err != nil {
+		return err
+	}
+	if err := validateWebToolProvider("web fetch", options.webFetch, []string{"jina_reader", "direct_http", "none"}); err != nil {
+		return err
+	}
+	if toolProviderNeedsKey(options.webSearch) && strings.TrimSpace(options.webSearchKeyEnv) == "" {
+		return fmt.Errorf("--web-search-api-key-env is required for %s", options.webSearch)
+	}
+	if toolProviderNeedsKey(options.webFetch) && strings.TrimSpace(options.webFetchKeyEnv) == "" {
+		return fmt.Errorf("--web-fetch-api-key-env is required for %s", options.webFetch)
+	}
+	return nil
+}
+
+func normalizeToolProvider(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	switch provider {
+	case "jina-reader", "jina", "jina_reader":
+		return "jina_reader"
+	case "direct-http", "http", "direct_http":
+		return "direct_http"
+	default:
+		return provider
+	}
+}
+
+func validateWebToolProvider(label string, provider string, allowed []string) error {
+	for _, candidate := range allowed {
+		if provider == candidate {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported %s provider %q", label, provider)
+}
+
+func toolProviderNeedsKey(provider string) bool {
+	switch normalizeToolProvider(provider) {
+	case "brave", "tavily":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultToolKeyEnv(provider string) string {
+	switch normalizeToolProvider(provider) {
+	case "brave":
+		return "BRAVE_SEARCH_API_KEY"
+	case "tavily":
+		return "TAVILY_API_KEY"
+	default:
+		return ""
 	}
 }
 
@@ -271,6 +403,11 @@ func saveSetupProfile(ctx context.Context, options setupOptions) (*providers.Pro
 		profile.APIKeyEnv = ""
 		profile.Capabilities["local"] = "true"
 	}
+	if profile.Kind == providers.KindCodexCLI {
+		profile.APIKeyEnv = ""
+		profile.Capabilities["local_auth"] = "true"
+		profile.Capabilities["execution"] = "codex_cli"
+	}
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
@@ -324,6 +461,34 @@ func writeSandboxConfig(configPath string, sandbox map[string]any) error {
 	return writeSetupSpec(configPath, spec)
 }
 
+func writeWebToolConfig(configPath string, tools map[string]map[string]any) error {
+	loaded, exists, err := loadSpecIfExists(configPath)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := ensureSetupSpec(configPath); err != nil {
+			return err
+		}
+		loaded, _, err = loadSpecIfExists(configPath)
+		if err != nil {
+			return err
+		}
+	}
+	spec := loaded.Spec
+	if spec.Tools == nil {
+		spec.Tools = map[string]map[string]any{}
+	}
+	for id, config := range tools {
+		if provider, _ := config["provider"].(string); provider == "none" {
+			delete(spec.Tools, id)
+			continue
+		}
+		spec.Tools[id] = config
+	}
+	return writeSetupSpec(configPath, spec)
+}
+
 func sandboxConfigFromOptions(options setupOptions) map[string]any {
 	return map[string]any{
 		"mode":               options.sandboxMode,
@@ -332,6 +497,31 @@ func sandboxConfigFromOptions(options setupOptions) map[string]any {
 		"file_write_enabled": options.enableFileWrite && options.sandboxMode != sandboxModeNone,
 		"note":               "v0.1 policy intent; runtime adapters enforce capabilities where supported",
 	}
+}
+
+func webToolConfigFromOptions(options setupOptions) map[string]map[string]any {
+	return map[string]map[string]any{
+		"web_search": webToolConfig("web_search", options.webSearch, options.webSearchKeyEnv),
+		"web_fetch":  webToolConfig("web_fetch", options.webFetch, options.webFetchKeyEnv),
+	}
+}
+
+func webToolConfig(kind string, provider string, apiKeyEnv string) map[string]any {
+	config := map[string]any{
+		"kind":      kind,
+		"provider":  normalizeToolProvider(provider),
+		"mode":      "read_only",
+		"status":    "configured",
+		"auth":      "none",
+		"policy":    "tool-broker-read-only-contract",
+		"execution": "configured_not_executed",
+		"redaction": "default",
+	}
+	if strings.TrimSpace(apiKeyEnv) != "" {
+		config["auth"] = "api_key_env"
+		config["api_key_env"] = strings.TrimSpace(apiKeyEnv)
+	}
+	return config
 }
 
 func compileGraphSnapshot(ctx context.Context, configPath string, dbPath string) (*graph.Snapshot, error) {
@@ -365,16 +555,17 @@ func printSetupSummary(out io.Writer, options setupOptions, profile *providers.P
 		fmt.Fprintln(out, "  Auth:      no API key env required")
 	}
 	fmt.Fprintf(out, "  Pack:      %s\n", options.packID)
+	fmt.Fprintf(out, "  Web search: %s\n", options.webSearch)
+	fmt.Fprintf(out, "  Web fetch: %s\n", options.webFetch)
 	fmt.Fprintf(out, "  Sandbox:   %s (bash=%t, file_write=%t)\n", options.sandboxMode, options.enableBash && options.sandboxMode != sandboxModeNone, options.enableFileWrite && options.sandboxMode != sandboxModeNone)
 	fmt.Fprintf(out, "  Config:    %s\n", options.configPath)
 
 	fmt.Fprintln(out, "\nNext steps:")
 	fmt.Fprintln(out, "  nomici doctor")
-	fmt.Fprintf(out, "  nomici up --config %s\n", options.configPath)
+	fmt.Fprintf(out, "  nomici dev --config %s\n", options.configPath)
 	if options.packID == setupPackDeveloperTeam {
 		fmt.Fprintln(out, "  nomici run product_pm \"Plan the next local automation task\"")
 	}
-	fmt.Fprintln(out, "  nomici gateway open")
 }
 
 func promptChoice(in *bufio.Reader, out io.Writer, label string, choices []setupChoice, defaultIndex int) (setupChoice, error) {

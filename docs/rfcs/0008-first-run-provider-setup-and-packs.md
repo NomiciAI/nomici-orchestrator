@@ -172,6 +172,7 @@ Initial first-class providers:
 - Gemini
 - OpenRouter
 - Ollama
+- Codex CLI local auth
 - vLLM
 - LM Studio
 - SGLang

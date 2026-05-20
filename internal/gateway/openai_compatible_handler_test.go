@@ -55,7 +55,7 @@ func TestV1ModelsAndChatCompletions(t *testing.T) {
 		Providers: providerStore,
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 	})
 
 	models := httptest.NewRecorder()

@@ -56,7 +56,7 @@ func TestModelTestEndpointIntegration(t *testing.T) {
 		Providers: providerStore,
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 	})
 
 	body := bytes.NewBufferString(`{"provider_id":"gpt","prompt":"Say hello"}`)
@@ -133,7 +133,7 @@ func TestModelTestEndpointMissingSecret(t *testing.T) {
 		Providers: providerStore,
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 	})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/models/test", bytes.NewBufferString(`{"provider_id":"gpt","prompt":"Say hello"}`))

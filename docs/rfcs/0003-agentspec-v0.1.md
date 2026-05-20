@@ -215,6 +215,7 @@ Kinds for v0.1:
 - `anthropic`
 - `gemini`
 - `ollama`
+- `codex_cli`
 - `vllm`
 - `local_openai_compatible`
 
