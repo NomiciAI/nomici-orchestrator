@@ -15,6 +15,8 @@ func TestRouteDecisionModes(t *testing.T) {
 		mode string
 	}{
 		{name: "simple setup", text: "setup status", mode: ModeDirectReply},
+		{name: "greeting", text: "hey", mode: ModeDirectReply},
+		{name: "general chat", text: "I think you should know what to do if I say anything", mode: ModeDirectReply},
 		{name: "ambiguous", text: "fix", mode: ModeClarify},
 		{name: "implementation", text: "implement the workspace review flow", mode: ModeWorkspaceRun},
 		{name: "research", text: "research and compare provider options", mode: ModeWorkspaceRun},

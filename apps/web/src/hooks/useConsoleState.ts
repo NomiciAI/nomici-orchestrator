@@ -118,6 +118,11 @@ export function useConsoleState() {
   );
   const sessionNeedsPlanReview =
     sessionDetail?.session.status === "plan_review" && planArtifact;
+  const hasWorkspaceActivity =
+    activeRunId !== "" ||
+    activeSessionId !== "" ||
+    sessionDetail !== null ||
+    activeRouteDecision?.mode === "workspace_run";
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -261,8 +266,27 @@ export function useConsoleState() {
         await loadSessionDetail(lastRun.session_id);
       }
     } else {
+      setActiveRunId("");
+      setActiveSessionId("");
+      setSessionDetail(null);
+      setRunEvents([]);
+      setRunStatus("idle");
       setActiveRouteDecision(latestRouteDecision(detail.messages));
     }
+  }
+
+  function startNewChat() {
+    setView("chat");
+    setChatDetail(null);
+    setMessageText("");
+    setRunStatus("idle");
+    setRunError("");
+    setWorkspaceError("");
+    setActiveRouteDecision(null);
+    setActiveRunId("");
+    setActiveSessionId("");
+    setSessionDetail(null);
+    setRunEvents([]);
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -301,6 +325,10 @@ export function useConsoleState() {
           await loadSessionDetail(response.run.session_id);
         }
       } else {
+        setActiveRunId("");
+        setActiveSessionId("");
+        setSessionDetail(null);
+        setRunEvents([]);
         setRunStatus("idle");
       }
       await loadChatsAndActive(response.message.chat_id);
@@ -774,9 +802,11 @@ export function useConsoleState() {
     workspaceToolCalls,
     planArtifact,
     sessionNeedsPlanReview,
+    hasWorkspaceActivity,
     loadOverview,
     submitToken,
     selectChat,
+    startNewChat,
     sendMessage,
     loadSessionDetail,
     approvePlan,

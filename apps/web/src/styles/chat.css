@@ -5,6 +5,11 @@
   padding: 18px 20px 28px;
 }
 
+.chat-layout-simple {
+  grid-template-columns: minmax(0, 960px);
+  justify-content: center;
+}
+
 .chat-main {
   min-width: 0;
   min-height: calc(100vh - 116px);

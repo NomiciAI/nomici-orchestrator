@@ -78,6 +78,7 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		decision.Rationale = "Manual agent override was provided."
 	}
 	lower := strings.ToLower(goal)
+	manual := decision.ManualAgentID != ""
 	switch {
 	case strings.TrimSpace(goal) == "":
 		decision.Mode = ModeClarify
@@ -88,21 +89,36 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		decision.Risk = "low"
 		decision.Rationale = "The chat message was empty."
 		return decision
-	case isDirectQuery(lower):
+	case !manual && isDirectQuery(lower):
 		decision.Mode = ModeDirectReply
 		decision.Complexity = ComplexitySimple
 		decision.Confidence = 0.8
 		decision.Risk = "low"
 		decision.Rationale = "This looks like a status, setup, or navigation question rather than a workspace task."
 		return decision
-	case isAmbiguous(lower):
+	case !manual && isCasualChat(lower):
+		decision.Mode = ModeDirectReply
+		decision.Complexity = ComplexitySimple
+		decision.Confidence = 0.9
+		decision.Risk = "low"
+		decision.Rationale = "This is conversational chat, not a workspace task."
+		return decision
+	case !manual && isAmbiguous(lower):
 		decision.Mode = ModeClarify
 		decision.Complexity = ComplexitySimple
-		decision.Clarification = "Please include the target outcome and any constraints, files, or tools Nomici should use."
+		decision.Clarification = "What would you like me to help with?"
 		decision.MissingInputs = []string{"target_outcome", "constraints"}
 		decision.Confidence = 0.8
 		decision.Risk = "low"
 		decision.Rationale = "The request is too short to choose a safe execution plan."
+		return decision
+	}
+	if !manual && !hasWorkspaceIntent(lower) {
+		decision.Mode = ModeDirectReply
+		decision.Complexity = ComplexitySimple
+		decision.Confidence = 0.75
+		decision.Risk = "low"
+		decision.Rationale = "This is general chat and does not need planning, files, tools, or agents."
 		return decision
 	}
 	if wantsImplementation(lower) || wantsResearch(lower) || wantsPlan(lower) {
@@ -136,7 +152,10 @@ func DirectReply(decision RouteDecision) string {
 	case ModeClarify:
 		return decision.Clarification
 	case ModeDirectReply:
-		return "Nomici is ready to work from Chat. Describe the outcome you want delivered, or open Orchestrate to inspect current sessions and artifacts."
+		if isCasualChat(strings.ToLower(decision.Goal)) {
+			return "Hey. Tell me what you want to do, and I can either answer directly or turn it into a workspace run when it needs planning, files, tools, or agents."
+		}
+		return "I can help here in chat. Ask a normal question, or describe a larger goal and I’ll open a workspace when it needs planning, files, tools, or agents."
 	default:
 		return ""
 	}
@@ -310,7 +329,7 @@ func roleScore(role packs.PackRole, decision RouteDecision) float64 {
 }
 
 func isDirectQuery(lower string) bool {
-	direct := []string{"status", "doctor", "setup", "settings", "配置", "设置", "状态", "怎么启动", "how do i", "help"}
+	direct := []string{"status", "doctor", "setup", "settings", "配置", "设置", "状态", "怎么启动", "how do i", "help", "what can you do", "你能做什么", "怎么用"}
 	if wantsImplementation(lower) || wantsResearch(lower) || strings.Contains(lower, "plan") || strings.Contains(lower, "计划") {
 		return false
 	}
@@ -318,6 +337,26 @@ func isDirectQuery(lower string) bool {
 		if strings.Contains(lower, keyword) {
 			return true
 		}
+	}
+	return false
+}
+
+func isCasualChat(lower string) bool {
+	value := strings.TrimSpace(strings.Trim(lower, " \t\r\n.!?。！？"))
+	if value == "" {
+		return false
+	}
+	casual := []string{
+		"hi", "hey", "hello", "yo", "sup",
+		"你好", "您好", "嗨", "哈喽", "hello there",
+	}
+	for _, phrase := range casual {
+		if value == phrase {
+			return true
+		}
+	}
+	if strings.HasPrefix(value, "hey ") || strings.HasPrefix(value, "hi ") || strings.HasPrefix(value, "hello ") {
+		return !wantsImplementation(value) && !wantsResearch(value) && !wantsPlan(value)
 	}
 	return false
 }
@@ -341,6 +380,10 @@ func wantsImplementation(lower string) bool {
 
 func wantsMutation(lower string) bool {
 	return containsAny(lower, []string{"write", "edit", "delete", "merge", "commit", "deploy", "改", "写", "删", "提交", "合并", "部署"})
+}
+
+func hasWorkspaceIntent(lower string) bool {
+	return wantsImplementation(lower) || wantsResearch(lower) || wantsPlan(lower) || wantsMutation(lower)
 }
 
 func containsAny(value string, needles []string) bool {

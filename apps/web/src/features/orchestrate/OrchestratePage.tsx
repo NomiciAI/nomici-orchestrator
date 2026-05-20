@@ -6,7 +6,15 @@ import { OrchestrateBuilder } from "./OrchestrateBuilder";
 export function OrchestratePage({ state }: { state: ConsoleState }) {
   return (
     <section className="workspace diagnostics-workspace">
-      <WorkspacePanel state={state} />
+      <OrchestrateBuilder
+        agents={state.agents}
+        orchestration={state.orchestration}
+        toolCatalog={state.toolCatalog}
+        skillCatalog={state.skillCatalog}
+        saving={state.settingsMutation === "orchestration"}
+        onSave={(next) => void state.saveOrchestration(next)}
+      />
+      {state.hasWorkspaceActivity ? <WorkspacePanel state={state} /> : null}
       <section className="panel" aria-label="Recent sessions">
         <div className="panel-heading">
           <h2>Sessions</h2>
@@ -69,14 +77,6 @@ export function OrchestratePage({ state }: { state: ConsoleState }) {
           ) : null}
         </div>
       </section>
-      <OrchestrateBuilder
-        agents={state.agents}
-        orchestration={state.orchestration}
-        toolCatalog={state.toolCatalog}
-        skillCatalog={state.skillCatalog}
-        saving={state.settingsMutation === "orchestration"}
-        onSave={(next) => void state.saveOrchestration(next)}
-      />
     </section>
   );
 }

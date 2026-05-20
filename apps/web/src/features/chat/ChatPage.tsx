@@ -4,7 +4,10 @@ import { WorkspacePanel } from "../workspace/WorkspacePanel";
 
 export function ChatPage({ state }: { state: ConsoleState }) {
   return (
-    <section className="chat-layout" aria-label="Chat workspace">
+    <section
+      className={`chat-layout ${state.hasWorkspaceActivity ? "" : "chat-layout-simple"}`}
+      aria-label="Chat workspace"
+    >
       <section className="chat-main">
         <div className="chat-transcript">
           {(state.chatDetail?.messages ?? []).map((message) => (
@@ -19,7 +22,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
           {state.chatDetail ? null : (
             <div className="empty-chat">
               <p className="eyebrow">New Chat</p>
-              <h2>What should Nomici work on?</h2>
+              <h2>Ask anything, or hand off a larger task.</h2>
             </div>
           )}
         </div>
@@ -28,7 +31,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             rows={5}
             value={state.messageText}
             onChange={(event) => state.setMessageText(event.target.value)}
-            placeholder="Describe the outcome you want delivered"
+            placeholder="Message Nomici"
           />
           <div className="composer-controls">
             <details className="advanced-agent-picker">
@@ -92,7 +95,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
           ) : null}
         </form>
       </section>
-      <WorkspacePanel state={state} />
+      {state.hasWorkspaceActivity ? <WorkspacePanel state={state} /> : null}
     </section>
   );
 }

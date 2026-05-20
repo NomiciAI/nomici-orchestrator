@@ -1,15 +1,20 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
+	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -173,7 +178,7 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 		snapshotRoute.Rationale = strings.TrimSpace(snapshotRoute.Rationale + " User-selected skills were added to the run context.")
 	}
 	if snapshotRoute.Mode != orchestration.ModeWorkspaceRun {
-		reply := orchestration.DirectReply(*snapshotRoute)
+		reply := chatDirectReply(request, services, content, snapshotRoute)
 		assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
 			ChatID:   chatID,
 			Role:     chats.RoleAssistant,
@@ -187,6 +192,19 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	}
 	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute, false)
 	if startErr != nil {
+		if startErr.Code == "run_not_supported" && strings.Contains(strings.ToLower(startErr.Message), "agent_id is required") {
+			reply := "I can chat here, but workspace runs need at least one configured agent. Open Settings > Agent Builder to create an agent, or run `nomici setup --pack developer-team` from the project root."
+			assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
+				ChatID:   chatID,
+				Role:     chats.RoleAssistant,
+				Content:  reply,
+				Metadata: routeMetadata(snapshotRoute),
+			})
+			if err != nil {
+				return nil, &startRunError{Status: http.StatusInternalServerError, Code: "chat_message_failed", Message: "Chat response could not be saved.", Remediation: "Check Gateway logs."}
+			}
+			return &chatMessageResponse{Message: message, AssistantMessage: assistantMessage, RouteDecision: snapshotRoute}, nil
+		}
 		return nil, startErr
 	}
 	if err := services.Chats.UpdateMessageRun(request.Context(), message.MessageID, started.Response.RunID, started.Response.SessionID); err == nil {
@@ -195,6 +213,82 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	}
 	startRunWorker(options, services, started.Executor, started.Request, started.Session, started.Tasks)
 	return &chatMessageResponse{Message: message, Run: &started.Response, RouteDecision: snapshotRoute}, nil
+}
+
+func chatDirectReply(request *http.Request, services Services, content string, route *orchestration.RouteDecision) string {
+	fallback := ""
+	if route != nil {
+		fallback = orchestration.DirectReply(*route)
+	}
+	if fallback == "" {
+		fallback = "I can help here in chat. Ask a normal question, or describe a larger goal and I’ll open a workspace when it needs planning, files, tools, or agents."
+	}
+	if route == nil || route.Mode != orchestration.ModeDirectReply || services.Adapter == nil || services.Secrets == nil {
+		return fallback
+	}
+	profile, err := directReplyProfile(request, services, route)
+	if err != nil || profile == nil {
+		return fallback
+	}
+	apiKey := ""
+	if profile.APIKeyEnv != "" {
+		resolved, ok := services.Secrets.ResolveEnv(profile.APIKeyEnv)
+		if !ok {
+			return fallback
+		}
+		apiKey = resolved
+	}
+	ctx, cancel := contextWithTimeout(request, 30*time.Second)
+	defer cancel()
+	result, err := services.Adapter.Invoke(ctx, adapters.ModelConfig{
+		Kind:    profile.Kind,
+		BaseURL: profile.BaseURL,
+		Model:   profile.Model,
+	}, apiKey, adapters.InvokeRequest{
+		NodeID: "chat_direct_reply",
+		Messages: []adapters.Message{
+			{Role: "system", Content: "You are Nomici, a concise local-first multi-agent workspace assistant. Answer directly in chat. Do not ask the user to provide target outcomes unless they are explicitly asking Nomici to run a larger task."},
+			{Role: "user", Content: content},
+		},
+		Options: adapters.InvokeOptions{TimeoutMs: 30000},
+	})
+	if err != nil || result == nil || result.Status != adapters.StatusCompleted || len(result.Messages) == 0 {
+		return fallback
+	}
+	reply := strings.TrimSpace(result.Messages[len(result.Messages)-1].Content)
+	if reply == "" {
+		return fallback
+	}
+	return reply
+}
+
+func directReplyProfile(request *http.Request, services Services, route *orchestration.RouteDecision) (*providers.Profile, error) {
+	if services.Graph != nil {
+		if snapshot, err := services.Graph.Latest(request.Context()); err == nil && snapshot != nil {
+			if route != nil && strings.TrimSpace(route.RecommendedAgentID) != "" {
+				if agent, ok := snapshot.IR.Agents[strings.TrimSpace(route.RecommendedAgentID)]; ok && agent.Model != "" {
+					if model, ok := snapshot.IR.Models[agent.Model]; ok {
+						return graphModelToGatewayProvider(model), nil
+					}
+				}
+			}
+			for _, model := range snapshot.IR.Models {
+				return graphModelToGatewayProvider(model), nil
+			}
+		}
+	}
+	if services.Providers == nil {
+		return nil, fmt.Errorf("provider store unavailable")
+	}
+	profiles, err := services.Providers.List(request.Context())
+	if err != nil || len(profiles) == 0 {
+		return nil, err
+	}
+	return profiles[0], nil
+}
+
+func contextWithTimeout(request *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(request.Context(), timeout)
 }
 
 func recentChatContext(request *http.Request, services Services, chatID string, limit int) string {
