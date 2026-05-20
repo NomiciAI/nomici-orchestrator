@@ -41,6 +41,17 @@ type Message struct {
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
 }
 
+type Feedback struct {
+	FeedbackID string          `json:"feedback_id"`
+	ChatID     string          `json:"chat_id"`
+	MessageID  string          `json:"message_id"`
+	Score      string          `json:"score"`
+	Note       string          `json:"note,omitempty"`
+	Metadata   json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+}
+
 type Detail struct {
 	Thread   *Thread    `json:"thread"`
 	Messages []*Message `json:"messages"`
@@ -130,6 +141,64 @@ WHERE message_id = ?`, runID, sessionID, messageID)
 		return fmt.Errorf("update chat message run: %w", err)
 	}
 	return nil
+}
+
+func (store *Store) UpsertFeedback(ctx context.Context, feedback *Feedback) (*Feedback, error) {
+	if feedback == nil {
+		return nil, fmt.Errorf("upsert chat feedback: feedback is required")
+	}
+	if feedback.ChatID == "" {
+		return nil, fmt.Errorf("upsert chat feedback: chat_id is required")
+	}
+	if feedback.MessageID == "" {
+		return nil, fmt.Errorf("upsert chat feedback: message_id is required")
+	}
+	if feedback.Score == "" {
+		return nil, fmt.Errorf("upsert chat feedback: score is required")
+	}
+	if len(feedback.Metadata) == 0 {
+		feedback.Metadata = json.RawMessage("{}")
+	}
+	now := time.Now().UTC()
+	existing := store.db.QueryRowContext(ctx, `SELECT feedback_id, created_at FROM chat_feedback WHERE message_id = ?`, feedback.MessageID)
+	var feedbackID string
+	var createdAt string
+	switch err := existing.Scan(&feedbackID, &createdAt); {
+	case err == nil:
+		feedback.FeedbackID = feedbackID
+		parsed, parseErr := time.Parse(time.RFC3339Nano, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse feedback created_at: %w", parseErr)
+		}
+		feedback.CreatedAt = parsed
+	case err == sql.ErrNoRows:
+		feedback.FeedbackID = ids.New("feedback")
+		feedback.CreatedAt = now
+	default:
+		return nil, fmt.Errorf("lookup chat feedback: %w", err)
+	}
+	feedback.UpdatedAt = now
+	_, err := store.db.ExecContext(ctx, `
+INSERT INTO chat_feedback (feedback_id, chat_id, message_id, score, note, metadata_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(message_id) DO UPDATE SET
+	score = excluded.score,
+	note = excluded.note,
+	metadata_json = excluded.metadata_json,
+	updated_at = excluded.updated_at`,
+		feedback.FeedbackID,
+		feedback.ChatID,
+		feedback.MessageID,
+		feedback.Score,
+		feedback.Note,
+		string(feedback.Metadata),
+		feedback.CreatedAt.Format(time.RFC3339Nano),
+		feedback.UpdatedAt.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("upsert chat feedback: %w", err)
+	}
+	return feedback, nil
 }
 
 func (store *Store) ListThreads(ctx context.Context, limit int) ([]*Thread, error) {

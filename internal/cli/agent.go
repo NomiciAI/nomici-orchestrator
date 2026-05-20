@@ -29,6 +29,7 @@ func newAgentCommand() *cobra.Command {
 	command.AddCommand(newAgentUpdateCommand(&configPath, &dbPath))
 	command.AddCommand(newAgentDeleteCommand(&configPath, &dbPath))
 	command.AddCommand(newAgentValidateCommand(&configPath))
+	command.AddCommand(newAgentTestCommand(&configPath, &dbPath, &gatewayURL))
 	command.AddCommand(newAgentRunCommand(&configPath, &dbPath, &gatewayURL))
 	return command
 }
@@ -154,6 +155,41 @@ func newAgentValidateCommand(configPath *string) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newAgentTestCommand(configPath *string, dbPath *string, gatewayURL *string) *cobra.Command {
+	var validateOnly bool
+	command := &cobra.Command{
+		Use:   "test <agent_id> [prompt]",
+		Short: "Validate an agent and optionally execute a short readiness prompt",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			agent, err := projectconfig.GetAgent(*configPath, args[0])
+			if err != nil {
+				return err
+			}
+			if err := projectconfig.ValidateAgent(*agent); err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Agent valid: %s\n", args[0])
+			if validateOnly || agent.Kind == agentspec.AgentKindExternal {
+				if agent.Kind == agentspec.AgentKindExternal {
+					fmt.Fprintln(command.OutOrStdout(), "External agent command runtimes are validated but not executed by this test command.")
+				}
+				return nil
+			}
+			prompt := "Reply with one concise sentence confirming this agent is ready."
+			if len(args) > 1 {
+				prompt = strings.Join(args[1:], " ")
+			}
+			if envURL := os.Getenv("NOMICI_GATEWAY_URL"); envURL != "" && *gatewayURL == defaultGatewayURL {
+				*gatewayURL = envURL
+			}
+			return runGraphEntrypoint(command, *configPath, *dbPath, *gatewayURL, args[0], prompt)
+		},
+	}
+	command.Flags().BoolVar(&validateOnly, "validate-only", false, "Validate configuration without invoking the model")
+	return command
 }
 
 func newAgentRunCommand(configPath *string, dbPath *string, gatewayURL *string) *cobra.Command {

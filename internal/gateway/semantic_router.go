@@ -18,6 +18,7 @@ const semanticRouteMinConfidence = 0.6
 
 func routeChatIntent(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot, conversation string) orchestration.RouteDecision {
 	fallback := orchestration.Route(prompt, manualAgentID, snapshot)
+	polishRouteDecision(&fallback)
 	if fallback.Mode == orchestration.ModeDirectReply && fallback.Confidence >= 0.75 {
 		return fallback
 	}
@@ -30,6 +31,7 @@ func routeChatIntent(ctx context.Context, services Services, prompt string, manu
 		return fallback
 	}
 	mergeRouteDefaults(&semantic, fallback)
+	polishRouteDecision(&semantic)
 	return semantic
 }
 
@@ -154,7 +156,7 @@ Schema:
 Rules:
 - Prefer workspace_run when the request clearly requires planning, files, commands, research, or artifacts.
 - Use direct_reply for greetings, general conversation, setup/status/navigation/help, and questions that do not need a run.
-- Use clarify when required inputs are missing and executing would be unsafe.
+- Use clarify when required inputs are missing and executing would be unsafe. Ask one natural question; avoid engineering intake phrasing unless the user already used that language.
 - Set needs_plan_review for mutation, shell, file writes, commits, deploys, or irreversible work.
 - If a manual agent was provided, keep it as recommended_agent_id.
 
@@ -207,6 +209,24 @@ func mergeRouteDefaults(decision *orchestration.RouteDecision, fallback orchestr
 	decision.RequiredSkills = uniqueStrings(append(decision.RequiredSkills, fallback.RequiredSkills...))
 	if fallback.NeedsPlanReview {
 		decision.NeedsPlanReview = true
+	}
+}
+
+func polishRouteDecision(decision *orchestration.RouteDecision) {
+	if decision == nil || decision.Mode != orchestration.ModeClarify {
+		return
+	}
+	clarification := strings.TrimSpace(decision.Clarification)
+	if clarification == "" {
+		decision.Clarification = "What would you like Nomici to help with?"
+		return
+	}
+	lower := strings.ToLower(clarification)
+	if strings.Contains(lower, "target"+" outcome") ||
+		strings.Contains(lower, "constraint"+"s") ||
+		strings.Contains(lower, "files") ||
+		strings.Contains(lower, "tools") {
+		decision.Clarification = "What would you like Nomici to help with?"
 	}
 }
 

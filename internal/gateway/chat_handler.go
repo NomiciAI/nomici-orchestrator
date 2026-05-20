@@ -31,6 +31,13 @@ type chatMessageRequest struct {
 	SelectedSkills []string `json:"selected_skills"`
 }
 
+type chatFeedbackRequest struct {
+	MessageID string         `json:"message_id"`
+	Score     string         `json:"score"`
+	Note      string         `json:"note"`
+	Metadata  map[string]any `json:"metadata"`
+}
+
 type chatMessageResponse struct {
 	Message          *chats.Message               `json:"message"`
 	AssistantMessage *chats.Message               `json:"assistant_message,omitempty"`
@@ -135,6 +142,81 @@ func chatMessageHandler(options Options, services Services) http.HandlerFunc {
 	}
 }
 
+func chatSuggestionsHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Chats == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "chats_unavailable", "Chat store is not initialized.", "Restart Gateway.")
+			return
+		}
+		detail, err := services.Chats.Detail(request.Context(), chi.URLParam(request, "chat_id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+				writeError(response, http.StatusNotFound, requestID, "chat_not_found", "Chat was not found.", "Refresh chats.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "chat_load_failed", "Chat could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, chatSuggestions(detail), nil)
+	}
+}
+
+func chatFeedbackHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Chats == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "chats_unavailable", "Chat store is not initialized.", "Restart Gateway.")
+			return
+		}
+		chatID := chi.URLParam(request, "chat_id")
+		var body chatFeedbackRequest
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send message_id, score, and optional note.")
+			return
+		}
+		score := strings.ToLower(strings.TrimSpace(body.Score))
+		if score != "up" && score != "down" && score != "neutral" {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_feedback", "Feedback score must be up, down, or neutral.", "Choose a supported score.")
+			return
+		}
+		messageID := strings.TrimSpace(body.MessageID)
+		if messageID == "" {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_feedback", "message_id is required.", "Send feedback for a specific chat message.")
+			return
+		}
+		if _, err := services.Chats.GetThread(request.Context(), chatID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+				writeError(response, http.StatusNotFound, requestID, "chat_not_found", "Chat was not found.", "Refresh chats.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "chat_load_failed", "Chat could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		metadata := json.RawMessage("{}")
+		if body.Metadata != nil {
+			payload, err := json.Marshal(body.Metadata)
+			if err != nil {
+				writeError(response, http.StatusBadRequest, requestID, "invalid_feedback", "metadata must be JSON serializable.", "Remove unsupported metadata values.")
+				return
+			}
+			metadata = payload
+		}
+		feedback, err := services.Chats.UpsertFeedback(request.Context(), &chats.Feedback{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Score:     score,
+			Note:      strings.TrimSpace(body.Note),
+			Metadata:  metadata,
+		})
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "feedback_save_failed", "Feedback could not be saved.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, feedback, nil)
+	}
+}
+
 func addChatMessageAndMaybeRun(request *http.Request, options Options, services Services, chatID string, agentID string, content string, selectedSkills []string) (*chatMessageResponse, *startRunError) {
 	if services.Chats == nil {
 		return nil, &startRunError{Status: http.StatusServiceUnavailable, Code: "chats_unavailable", Message: "Chat store is not initialized.", Remediation: "Restart Gateway."}
@@ -215,6 +297,44 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	return &chatMessageResponse{Message: message, Run: &started.Response, RouteDecision: snapshotRoute}, nil
 }
 
+func chatSuggestions(detail *chats.Detail) []string {
+	if detail == nil || len(detail.Messages) == 0 {
+		return []string{
+			"Explore a larger task in a workspace",
+			"Create a reusable agent for this kind of work",
+			"Show me how this project is configured",
+		}
+	}
+	last := detail.Messages[len(detail.Messages)-1]
+	text := strings.ToLower(last.Content)
+	switch {
+	case strings.Contains(text, "agent"):
+		return []string{
+			"Create an agent from this workflow",
+			"Test the current agent setup",
+			"Show the orchestration flow",
+		}
+	case strings.Contains(text, "plan") || strings.Contains(text, "implement") || strings.Contains(text, "fix"):
+		return []string{
+			"Turn this into a workspace run",
+			"Review the proposed agent flow",
+			"Show the current run timeline",
+		}
+	case strings.Contains(text, "setup") || strings.Contains(text, "config"):
+		return []string{
+			"Run a provider readiness check",
+			"Show configured models and tools",
+			"Create a starter agent",
+		}
+	default:
+		return []string{
+			"Make this a long-horizon workspace task",
+			"Save this pattern as an agent",
+			"Show suggested next steps",
+		}
+	}
+}
+
 func chatDirectReply(request *http.Request, services Services, content string, route *orchestration.RouteDecision) string {
 	fallback := ""
 	if route != nil {
@@ -247,7 +367,7 @@ func chatDirectReply(request *http.Request, services Services, content string, r
 	}, apiKey, adapters.InvokeRequest{
 		NodeID: "chat_direct_reply",
 		Messages: []adapters.Message{
-			{Role: "system", Content: "You are Nomici, a concise local-first multi-agent workspace assistant. Answer directly in chat. Do not ask the user to provide target outcomes unless they are explicitly asking Nomici to run a larger task."},
+			{Role: "system", Content: "You are Nomici, a concise local-first multi-agent workspace assistant. Answer directly in chat. Do not use formal task-intake wording unless the user is explicitly asking Nomici to run a larger task."},
 			{Role: "user", Content: content},
 		},
 		Options: adapters.InvokeOptions{TimeoutMs: 30000},

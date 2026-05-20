@@ -496,6 +496,77 @@
   font: inherit;
 }
 
+.timeline-list,
+.todo-list {
+  display: grid;
+}
+
+.timeline-item,
+.todo-item {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  gap: 4px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-item:last-child,
+.todo-item:last-child {
+  border-bottom: 0;
+}
+
+.timeline-item strong,
+.timeline-item span,
+.timeline-item small,
+.todo-item strong,
+.todo-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-item strong,
+.todo-item strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.timeline-item span,
+.timeline-item small,
+.todo-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.todo-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.todo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.todo-completed {
+  background: var(--success);
+}
+
+.todo-running,
+.todo-pending {
+  background: var(--warning);
+}
+
+.todo-failed,
+.todo-blocked,
+.todo-cancelled {
+  background: var(--danger);
+}
+
 .mini-heading {
   min-height: 42px;
   display: flex;

@@ -1,5 +1,4 @@
 import type { ConsoleState } from "../../hooks/useChatWorkspace";
-import { AgentBuilder } from "./AgentBuilder";
 
 export function SettingsPage({ state }: { state: ConsoleState }) {
   return (
@@ -70,20 +69,6 @@ export function SettingsPage({ state }: { state: ConsoleState }) {
           ))}
         </div>
       </section>
-      <AgentBuilder
-        agents={state.agents}
-        models={state.overview.models}
-        graphSnapshot={state.overview.graph_snapshot}
-        toolCatalog={state.toolCatalog}
-        skillCatalog={state.skillCatalog}
-        draft={state.agentDraft}
-        setDraft={state.setAgentDraft}
-        saving={state.settingsMutation === "agent"}
-        validating={state.settingsMutation === "agent-validate"}
-        validation={state.agentValidation}
-        onValidate={() => void state.validateAgentDraft()}
-        onSave={(event) => void state.saveAgent(event)}
-      />
     </section>
   );
 }

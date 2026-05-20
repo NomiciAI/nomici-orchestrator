@@ -73,6 +73,37 @@
   white-space: pre-wrap;
 }
 
+.message-actions,
+.suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.message-actions button,
+.suggestion-row button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.message-actions button:hover,
+.suggestion-row button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.suggestion-row {
+  padding: 10px 12px 0;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-solid) 74%, transparent);
+}
+
 .composer {
   display: grid;
   gap: 10px;

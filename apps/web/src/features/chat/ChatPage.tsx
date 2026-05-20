@@ -17,6 +17,29 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             >
               <span>{message.role}</span>
               <p>{message.content}</p>
+              {message.role === "assistant" ? (
+                <div className="message-actions">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void state.submitMessageFeedback(message.message_id, "up")
+                    }
+                  >
+                    Helpful
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void state.submitMessageFeedback(
+                        message.message_id,
+                        "down",
+                      )
+                    }
+                  >
+                    Not helpful
+                  </button>
+                </div>
+              ) : null}
             </article>
           ))}
           {state.chatDetail ? null : (
@@ -26,6 +49,19 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             </div>
           )}
         </div>
+        {state.chatSuggestions.length > 0 ? (
+          <div className="suggestion-row" aria-label="Suggested next steps">
+            {state.chatSuggestions.slice(0, 3).map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => state.setMessageText(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <form className="composer" onSubmit={state.sendMessage}>
           <textarea
             rows={5}

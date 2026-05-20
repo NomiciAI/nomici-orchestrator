@@ -640,6 +640,94 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	if len(sessions) != 0 {
 		t.Fatalf("expected no run sessions, got %+v", sessions)
 	}
+
+	suggestionsResponse := httptest.NewRecorder()
+	router.ServeHTTP(suggestionsResponse, httptest.NewRequest(http.MethodGet, "/api/chats/"+envelope.Data.Message.ChatID+"/suggestions", nil))
+	if suggestionsResponse.Code != http.StatusOK || !strings.Contains(suggestionsResponse.Body.String(), "agent") {
+		t.Fatalf("expected chat suggestions, got %d: %s", suggestionsResponse.Code, suggestionsResponse.Body.String())
+	}
+
+	feedbackResponse := httptest.NewRecorder()
+	router.ServeHTTP(feedbackResponse, httptest.NewRequest(http.MethodPost, "/api/chats/"+envelope.Data.Message.ChatID+"/feedback", bytes.NewBufferString(`{"message_id":"`+envelope.Data.AssistantMessage.MessageID+`","score":"up"}`)))
+	if feedbackResponse.Code != http.StatusOK || !strings.Contains(feedbackResponse.Body.String(), `"score":"up"`) {
+		t.Fatalf("expected feedback upsert, got %d: %s", feedbackResponse.Code, feedbackResponse.Body.String())
+	}
+}
+
+func TestHarnessProductEndpoints(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer providerServer.Close()
+	db, router := newRunTestRouterWithConfig(t, `version: "0.1"
+project:
+  name: test
+models:
+  gpt:
+    kind: openai_compatible
+    base_url: http://127.0.0.1:1
+    model: test-model
+    api_key_env: NOMICI_TEST_API_KEY
+agents:
+  product_pm:
+    kind: model_agent
+    model: gpt
+    role: Plan workspace work.
+deployment:
+  sandbox:
+    mode: local
+`)
+	saveRunTestGraph(t, graph.NewStore(db), providerServer.URL, []graph.Edge{})
+
+	templates := httptest.NewRecorder()
+	router.ServeHTTP(templates, httptest.NewRequest(http.MethodGet, "/api/agents/templates", nil))
+	if templates.Code != http.StatusOK || !strings.Contains(templates.Body.String(), "Researcher") {
+		t.Fatalf("expected agent templates, got %d: %s", templates.Code, templates.Body.String())
+	}
+
+	agentTest := httptest.NewRecorder()
+	router.ServeHTTP(agentTest, httptest.NewRequest(http.MethodPost, "/api/agents/product_pm/test", bytes.NewBufferString(`{"execute":false}`)))
+	if agentTest.Code != http.StatusOK || !strings.Contains(agentTest.Body.String(), `"validation_only"`) {
+		t.Fatalf("expected validation-only agent test, got %d: %s", agentTest.Code, agentTest.Body.String())
+	}
+
+	preview := httptest.NewRecorder()
+	router.ServeHTTP(preview, httptest.NewRequest(http.MethodPost, "/api/orchestration/preview", bytes.NewBufferString(`{"prompt":"implement a small workspace change"}`)))
+	if preview.Code != http.StatusOK || !strings.Contains(preview.Body.String(), `"workspace_run"`) {
+		t.Fatalf("expected orchestration preview, got %d: %s", preview.Code, preview.Body.String())
+	}
+
+	runResponse := httptest.NewRecorder()
+	router.ServeHTTP(runResponse, httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"verify timeline"}`)))
+	if runResponse.Code != http.StatusOK {
+		t.Fatalf("expected run create 200, got %d: %s", runResponse.Code, runResponse.Body.String())
+	}
+	var runEnvelope struct {
+		Data runCreateResponse `json:"data"`
+	}
+	if err := json.NewDecoder(runResponse.Body).Decode(&runEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	waitForRunEvents(t, trace.NewStore(db), runEnvelope.Data.RunID, trace.EventRunCompleted)
+
+	timeline := httptest.NewRecorder()
+	router.ServeHTTP(timeline, httptest.NewRequest(http.MethodGet, "/api/sessions/"+runEnvelope.Data.SessionID+"/timeline", nil))
+	if timeline.Code != http.StatusOK || !strings.Contains(timeline.Body.String(), `"task"`) {
+		t.Fatalf("expected timeline, got %d: %s", timeline.Code, timeline.Body.String())
+	}
+
+	todos := httptest.NewRecorder()
+	router.ServeHTTP(todos, httptest.NewRequest(http.MethodGet, "/api/sessions/"+runEnvelope.Data.SessionID+"/todos", nil))
+	if todos.Code != http.StatusOK || !strings.Contains(todos.Body.String(), "product_pm") {
+		t.Fatalf("expected todos, got %d: %s", todos.Code, todos.Body.String())
+	}
+
+	evalResponse := httptest.NewRecorder()
+	router.ServeHTTP(evalResponse, httptest.NewRequest(http.MethodPost, "/api/evals/harness", nil))
+	if evalResponse.Code != http.StatusOK || !strings.Contains(evalResponse.Body.String(), `"status":"passed"`) {
+		t.Fatalf("expected harness eval pass, got %d: %s", evalResponse.Code, evalResponse.Body.String())
+	}
 }
 
 func TestChatAutoWithoutAgentsReturnsAssistantSetupHelp(t *testing.T) {

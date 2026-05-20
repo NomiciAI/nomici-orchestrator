@@ -1,6 +1,5 @@
 import type { ConsoleState } from "../../hooks/useChatWorkspace";
 import { formatTime } from "../../lib/format";
-import { WorkspacePanel } from "../workspace/WorkspacePanel";
 import { OrchestrateBuilder } from "./OrchestrateBuilder";
 
 export function OrchestratePage({ state }: { state: ConsoleState }) {
@@ -11,13 +10,17 @@ export function OrchestratePage({ state }: { state: ConsoleState }) {
         orchestration={state.orchestration}
         toolCatalog={state.toolCatalog}
         skillCatalog={state.skillCatalog}
+        preview={state.orchestrationPreview}
         saving={state.settingsMutation === "orchestration"}
+        previewing={state.settingsMutation === "orchestration-preview"}
+        testing={state.settingsMutation === "orchestration-test"}
+        onPreview={() => void state.previewOrchestration()}
+        onTest={() => void state.testOrchestration()}
         onSave={(next) => void state.saveOrchestration(next)}
       />
-      {state.hasWorkspaceActivity ? <WorkspacePanel state={state} /> : null}
-      <section className="panel" aria-label="Recent sessions">
+      <section className="panel" aria-label="Recent runs">
         <div className="panel-heading">
-          <h2>Sessions</h2>
+          <h2>Recent runs</h2>
           <span className="tag">{state.overview.recent_sessions.length}</span>
         </div>
         <div className="stack">
@@ -30,6 +33,7 @@ export function OrchestratePage({ state }: { state: ConsoleState }) {
                 state.setActiveRunId(session.run_id);
                 state.setActiveSessionId(session.session_id);
                 state.setRunStatus("running");
+                state.setView("runs");
                 void state.loadSessionDetail(session.session_id);
               }}
             >

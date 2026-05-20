@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
@@ -11,6 +12,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
+	tracepkg "github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +42,7 @@ func newRunCommand() *cobra.Command {
 	command.PersistentFlags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path")
 	command.PersistentFlags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
 	command.AddCommand(newRunModelCommand(&gatewayURL, &dbPath))
+	command.AddCommand(newRunTimelineCommand(&dbPath))
 	return command
 }
 
@@ -67,6 +70,39 @@ func newRunModelCommand(gatewayURL *string, dbPath *string) *cobra.Command {
 				fmt.Fprintf(command.OutOrStdout(), "Response:  %s\n", result.Messages[0].Content)
 			}
 			return nil
+		},
+	}
+}
+
+func newRunTimelineCommand(dbPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "timeline <session_id>",
+		Short: "Show a session timeline from tasks and trace events",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			db, err := openMigratedDB(*dbPath)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			detail, err := runs.NewStore(db).GetBySession(command.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			events, err := tracepkg.NewStore(db).ListByRun(command.Context(), detail.Session.RunID)
+			if err != nil {
+				return err
+			}
+			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(writer, "KIND\tID\tSTATUS/TYPE\tAGENT\tTIME")
+			fmt.Fprintf(writer, "session\t%s\t%s\t-\t%s\n", detail.Session.SessionID, detail.Session.Status, shortTime(detail.Session.StartedAt))
+			for _, task := range detail.Tasks {
+				fmt.Fprintf(writer, "task\t%s\t%s\t%s\t%s\n", task.TaskID, task.Status, task.AgentID, shortTime(task.UpdatedAt))
+			}
+			for _, event := range events {
+				fmt.Fprintf(writer, "trace\t%s\t%s\t%s\t%s\n", event.EventID, event.Type, event.NodeID, shortTime(event.Time))
+			}
+			return writer.Flush()
 		},
 	}
 }
