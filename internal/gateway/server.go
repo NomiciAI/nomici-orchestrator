@@ -126,7 +126,7 @@ func (server *Server) initialize() error {
 		Providers: providers.NewStore(db),
 		Trace:     trace.NewStore(db),
 		Secrets:   secrets.NewResolver(),
-		Adapter:   adapters.NewOpenAICompatibleAdapter(),
+		Adapter:   adapters.NewModelAdapter(),
 		Graph:     graph.NewStore(db),
 		Packs:     packs.NewStore(db),
 		Policy:    policy.NewService(db),

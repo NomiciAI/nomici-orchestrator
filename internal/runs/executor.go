@@ -26,7 +26,7 @@ type Executor struct {
 	Providers  *providers.Store
 	Trace      *tracepkg.Store
 	Secrets    *secrets.Resolver
-	Adapter    *adapters.OpenAICompatibleAdapter
+	Adapter    *adapters.ModelAdapter
 	Policy     *policy.Service
 	Context    *sharedcontext.Store
 	ConfigPath string
@@ -196,7 +196,11 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 	}); err != nil {
 		return nil, err
 	}
-	invokeResult, err := executor.Adapter.Invoke(ctx, profile.BaseURL, profile.Model, apiKey, adapters.InvokeRequest{
+	invokeResult, err := executor.Adapter.Invoke(ctx, adapters.ModelConfig{
+		Kind:    profile.Kind,
+		BaseURL: profile.BaseURL,
+		Model:   profile.Model,
+	}, apiKey, adapters.InvokeRequest{
 		RunID:    runID,
 		NodeID:   agent.ID,
 		Messages: []adapters.Message{{Role: "user", Content: prompt}},
@@ -991,7 +995,7 @@ func ApprovalTraceEvent(ctx context.Context, traceStore *tracepkg.Store, eventTy
 	})
 }
 
-func DBExecutor(db *sql.DB, adapter *adapters.OpenAICompatibleAdapter, resolver *secrets.Resolver, configPath string) *Executor {
+func DBExecutor(db *sql.DB, adapter *adapters.ModelAdapter, resolver *secrets.Resolver, configPath string) *Executor {
 	return &Executor{
 		Providers:  providers.NewStore(db),
 		Trace:      tracepkg.NewStore(db),

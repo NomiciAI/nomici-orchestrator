@@ -36,6 +36,9 @@ openai_compatible
 local_provider
   Ollama, vLLM, LM Studio, SGLang, llama.cpp server
 
+local_auth_provider
+  Codex CLI
+
 provider_gateway
   LiteLLM or other internal gateway
 ```
@@ -44,6 +47,7 @@ v0.1 should implement:
 
 - generic OpenAI-compatible
 - Ollama
+- Codex CLI local auth
 
 v0.1 should define catalog entries for:
 

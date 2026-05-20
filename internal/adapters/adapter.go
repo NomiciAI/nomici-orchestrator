@@ -8,6 +8,12 @@ type InvokeRequest struct {
 	TraceContext *TraceContext
 }
 
+type ModelConfig struct {
+	Kind    string
+	BaseURL string
+	Model   string
+}
+
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -46,8 +52,10 @@ const (
 	StatusCompleted = "completed"
 	StatusFailed    = "failed"
 
-	ErrorAuthFailed          = "auth_failed"
-	ErrorEndpointUnavailable = "endpoint_unavailable"
-	ErrorTimeout             = "timeout"
-	ErrorInvalidResponse     = "invalid_response"
+	ErrorAuthFailed            = "auth_failed"
+	ErrorEndpointUnavailable   = "endpoint_unavailable"
+	ErrorExecutableUnavailable = "executable_unavailable"
+	ErrorExecutionFailed       = "execution_failed"
+	ErrorTimeout               = "timeout"
+	ErrorInvalidResponse       = "invalid_response"
 )

@@ -94,7 +94,11 @@ func modelTestHandler(services Services) http.HandlerFunc {
 			return
 		}
 
-		result, err := services.Adapter.Invoke(ctx, profile.BaseURL, profile.Model, apiKey, adapters.InvokeRequest{
+		result, err := services.Adapter.Invoke(ctx, adapters.ModelConfig{
+			Kind:    profile.Kind,
+			BaseURL: profile.BaseURL,
+			Model:   profile.Model,
+		}, apiKey, adapters.InvokeRequest{
 			RunID: runID,
 			Messages: []adapters.Message{
 				{Role: "user", Content: body.Prompt},
@@ -117,7 +121,11 @@ func modelTestHandler(services Services) http.HandlerFunc {
 				message = result.Error.Message
 				if result.Error.Code == adapters.ErrorAuthFailed {
 					status = http.StatusUnauthorized
-					remediation = "Verify the " + profile.APIKeyEnv + " environment variable is set and valid."
+					if profile.APIKeyEnv != "" {
+						remediation = "Verify the " + profile.APIKeyEnv + " environment variable is set and valid."
+					} else {
+						remediation = "Run the provider login flow and retry the request."
+					}
 				}
 			}
 			_ = appendTraceFailure(ctx, services.Trace, runID, requestID, code, message)

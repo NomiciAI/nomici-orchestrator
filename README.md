@@ -18,26 +18,29 @@ Nomici aims to provide one local-first control plane for composing those pieces 
 git clone https://github.com/NomiciAI/nomici-orchestrator.git
 cd nomici-orchestrator
 scripts/install.sh --from-source .
-nomici doctor
 nomici setup
-nomici up
+nomici dev
 nomici run product_pm "Plan the first useful task."
 ```
 
 The source installer checks the required build tools and activates `pnpm` through Corepack when needed. The hosted `curl` install endpoint and release artifacts are still planned.
 
-See [Quickstart](docs/quickstart.md) for the guided setup path, a no-API-key local example, and scriptable setup flags.
+See [Quickstart](docs/quickstart.md) for the guided setup path, scriptable setup flags, and the optional no-API-key smoke test.
 
 ## Implemented Bootstrap Commands
 
-The current alpha can run this narrower proof slice:
+The current alpha can be set up and started from the repository root:
 
 ```bash
 scripts/install.sh --from-source .
-cd examples/basic-local-agent
-nomici run local_assistant "Verify local agent execution." --config nomici.yaml
-cd ../..
 nomici setup
+nomici dev
+nomici run product_pm "Verify local workspace execution."
+```
+
+Lower-level and inspection commands remain available for scripts and advanced workflows:
+
+```bash
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
@@ -48,12 +51,12 @@ nomici spec validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
 nomici up
+nomici dev --no-open
 nomici gateway status
 nomici ps
 nomici logs gateway --tail 50
 nomici gateway token show
 nomici gateway open
-# paste the token for the read-only Console overview
 curl -H "Authorization: Bearer $(nomici gateway token show)" http://127.0.0.1:8787/v1/models
 nomici model test gpt "Say hello from Nomici"
 nomici run model gpt "Say hello from Nomici"
@@ -81,16 +84,16 @@ nomici down
 `nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici pack install`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
 
 ```text
-LLM provider -> starter pack -> sandbox policy -> nomici.yaml -> next run command
+LLM provider -> web search/fetch -> starter pack -> sandbox policy -> nomici.yaml -> nomici dev
 ```
 
-The setup command writes sandbox intent under `deployment.sandbox` in `nomici.yaml`. v0.1 treats this as control-plane policy metadata that adapters enforce where supported. `nomici doctor` reports whether sandbox config exists and whether a requested container sandbox has a local container runtime such as Docker or Podman.
+The setup command writes model, web search/fetch, starter pack, and sandbox intent into the local workspace. v0.1 treats the web tool entries as read-only provider contracts until mediated tool execution is enabled. `nomici doctor` reports whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
 The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. Its manifest also exposes role purpose, tool and skill expectations, handoff mode, model/runtime preference, and output contract metadata so run task ledgers can show role ownership without hardcoding those roles in Gateway. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
-The current Console is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent run sessions, task ledger records, workspace roots, uploads, artifacts, plan review actions, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
+`nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. The current Console is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent run sessions, task ledger records, workspace roots, uploads, artifacts, plan review actions, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or a linear `handoff` chain across `cli_agent`-backed `external_agent` nodes. Branching handoffs, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 
@@ -105,7 +108,7 @@ The intended v0.1 flow:
 - Run a real task.
 - Inspect traces, logs, approvals, artifacts, and policy decisions.
 
-In the current alpha bootstrap, `nomici doctor` performs local checks and `nomici gateway open` opens the read-only Console. The source installer works from a local checkout; hosted release downloads remain planned.
+The optional `examples/basic-local-agent` directory remains useful as a no-provider smoke test for local `cli_agent` execution, but it is not required for normal setup. In the current alpha bootstrap, `nomici doctor` performs local checks and `nomici dev` opens Console. The source installer works from a local checkout; hosted release downloads remain planned.
 
 `NOMICI_GATEWAY_URL` is a local CLI convenience for pointing commands at a running Gateway. CLI commands authenticate with `NOMICI_GATEWAY_TOKEN` when set, otherwise they read `.nomici/gateway.token` next to the local state database. Treat the token as an operator credential and do not point the CLI at a shared or public Gateway unless that Gateway is explicitly trusted.
 

@@ -131,7 +131,11 @@ func v1ChatCompletionsHandler(services Services) http.HandlerFunc {
 			return
 		}
 
-		result, err := services.Adapter.Invoke(ctx, profile.BaseURL, profile.Model, apiKey, adapters.InvokeRequest{
+		result, err := services.Adapter.Invoke(ctx, adapters.ModelConfig{
+			Kind:    profile.Kind,
+			BaseURL: profile.BaseURL,
+			Model:   profile.Model,
+		}, apiKey, adapters.InvokeRequest{
 			RunID:    runID,
 			Messages: body.Messages,
 			Options:  adapters.InvokeOptions{Stream: false},

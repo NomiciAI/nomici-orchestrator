@@ -2,12 +2,16 @@ package providers
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
 const (
 	KindOpenAICompatible = "openai_compatible"
 	KindOllama           = "ollama"
+	KindCodexCLI         = "codex_cli"
 )
 
 type Profile struct {
@@ -52,7 +56,7 @@ func (profile *Profile) Validate() error {
 
 func KnownKind(kind string) bool {
 	switch NormalizeKind(kind) {
-	case KindOpenAICompatible, KindOllama:
+	case KindOpenAICompatible, KindOllama, KindCodexCLI:
 		return true
 	default:
 		return false
@@ -64,6 +68,8 @@ func NormalizeKind(kind string) string {
 	switch kind {
 	case "openai-compatible", "openai", "openai_compatible":
 		return KindOpenAICompatible
+	case "codex-cli", "codex", "codex_cli":
+		return KindCodexCLI
 	default:
 		return kind
 	}
@@ -73,9 +79,43 @@ func DefaultBaseURL(kind string) string {
 	switch NormalizeKind(kind) {
 	case KindOllama:
 		return "http://127.0.0.1:11434/v1"
+	case KindCodexCLI:
+		return "local://codex-cli"
 	case KindOpenAICompatible:
 		return "https://api.openai.com/v1"
 	default:
 		return ""
 	}
+}
+
+type CodexCLIAvailability struct {
+	Available  bool
+	Executable string
+	AuthPath   string
+	Message    string
+}
+
+func DetectCodexCLI() CodexCLIAvailability {
+	executable, err := exec.LookPath("codex")
+	if err != nil {
+		return CodexCLIAvailability{Available: false, AuthPath: CodexAuthPath(), Message: "codex executable was not found on PATH"}
+	}
+	authPath := CodexAuthPath()
+	if _, err := os.Stat(authPath); err != nil {
+		if os.IsNotExist(err) {
+			return CodexCLIAvailability{Available: false, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth was not found"}
+		}
+		return CodexCLIAvailability{Available: false, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth could not be checked"}
+	}
+	return CodexCLIAvailability{Available: true, Executable: executable, AuthPath: authPath, Message: "Codex CLI local auth available"}
+}
+
+func CodexAuthPath() string {
+	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
+		return filepath.Join(home, "auth.json")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".codex", "auth.json")
+	}
+	return filepath.Join(".codex", "auth.json")
 }
