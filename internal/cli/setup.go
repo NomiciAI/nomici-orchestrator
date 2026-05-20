@@ -245,13 +245,12 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 func setupProviderChoices() []setupChoice {
 	var choices []setupChoice
 	for _, provider := range providers.ProviderCatalog() {
+		if provider.Local && !provider.Available {
+			continue
+		}
 		description := provider.Description
 		if provider.Local {
-			if provider.Available {
-				description += "; ready: " + provider.AvailabilityMessage
-			} else {
-				description += "; not ready: " + provider.AvailabilityMessage
-			}
+			description += "; ready: " + provider.AvailabilityMessage
 		}
 		choices = append(choices, setupChoice{
 			ID:          provider.ID,

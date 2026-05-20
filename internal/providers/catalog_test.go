@@ -32,20 +32,7 @@ func TestProviderCatalogHasUniqueEntries(t *testing.T) {
 func TestDetectCodexCLIReportsPlatformAndAuthPath(t *testing.T) {
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	name := "codex"
-	content := "#!/bin/sh\nexit 0\n"
-	mode := os.FileMode(0o755)
-	if runtime.GOOS == "windows" {
-		name = "codex.bat"
-		content = "@echo off\r\nexit /B 0\r\n"
-		mode = 0o644
-	}
-	if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), mode); err != nil {
-		t.Fatal(err)
-	}
+	installFakeCodexExecutable(t, binDir)
 	codexHome := filepath.Join(dir, "codex-home")
 	if err := os.MkdirAll(codexHome, 0o755); err != nil {
 		t.Fatal(err)
@@ -67,6 +54,99 @@ func TestDetectCodexCLIReportsPlatformAndAuthPath(t *testing.T) {
 	if availability.AuthSource != "CODEX_HOME" || !strings.Contains(availability.Message, "CODEX_HOME") {
 		t.Fatalf("expected auth source in availability message, got %+v", availability)
 	}
+}
+
+func TestDetectCodexCLIReadyFromPathAndAuth(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	executable := installFakeCodexExecutable(t, binDir)
+	codexHome := filepath.Join(dir, "codex-home")
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("CODEX_HOME", codexHome)
+
+	availability := DetectCodexCLI()
+	if !availability.Available {
+		t.Fatalf("expected ready Codex CLI, got %+v", availability)
+	}
+	if availability.Executable != executable || availability.ExecutableSource != "PATH" {
+		t.Fatalf("expected PATH executable %q, got %+v", executable, availability)
+	}
+	if !strings.Contains(availability.Message, executable) {
+		t.Fatalf("expected executable in message, got %q", availability.Message)
+	}
+}
+
+func TestDetectCodexCLIMissingExecutableListsCandidates(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex-home"))
+	t.Setenv("NOMICI_CODEX_APP_EXECUTABLES", "")
+
+	availability := DetectCodexCLI()
+	if availability.Available || availability.Executable != "" {
+		t.Fatalf("expected unavailable Codex CLI, got %+v", availability)
+	}
+	if !strings.Contains(availability.Message, "PATH:codex") {
+		t.Fatalf("expected checked candidates in message, got %q", availability.Message)
+	}
+}
+
+func TestDetectCodexCLIFallsBackToMacAppBundle(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Codex.app fallback is macOS-only")
+	}
+	dir := t.TempDir()
+	appExecutable := filepath.Join(dir, "Codex.app", "Contents", "Resources", "codex")
+	if err := os.MkdirAll(filepath.Dir(appExecutable), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	codexHome := filepath.Join(dir, "codex-home")
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Join(dir, "empty-bin"))
+	t.Setenv("CODEX_HOME", codexHome)
+	t.Setenv("NOMICI_CODEX_APP_EXECUTABLES", appExecutable)
+
+	availability := DetectCodexCLI()
+	if !availability.Available {
+		t.Fatalf("expected app bundle Codex CLI fallback to be ready, got %+v", availability)
+	}
+	if availability.Executable != appExecutable || availability.ExecutableSource != "app bundle" {
+		t.Fatalf("expected app bundle executable, got %+v", availability)
+	}
+}
+
+func installFakeCodexExecutable(t *testing.T, binDir string) string {
+	t.Helper()
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "codex"
+	content := "#!/bin/sh\nexit 0\n"
+	mode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		name = "codex.bat"
+		content = "@echo off\r\nexit /B 0\r\n"
+		mode = 0o644
+	}
+	executable := filepath.Join(binDir, name)
+	if err := os.WriteFile(executable, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+	return executable
 }
 
 func TestModelCatalogClientNormalizesOpenAICompatibleModels(t *testing.T) {

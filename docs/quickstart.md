@@ -77,7 +77,7 @@ nomici setup \
   --yes
 ```
 
-For local Codex CLI auth, the setup wizard always shows the provider with its current readiness. Nomici checks `codex` on `PATH`, then uses `CODEX_HOME/auth.json` when `CODEX_HOME` is set, otherwise the current OS user home path such as `/Users/<you>/.codex/auth.json`, `/home/<you>/.codex/auth.json`, or `C:\Users\<you>\.codex\auth.json`.
+For local Codex CLI auth, the setup wizard shows the provider only when it is ready to run. Nomici checks `codex` on `PATH`, then checks the macOS app-bundle executable, and uses `CODEX_HOME/auth.json` when `CODEX_HOME` is set, otherwise the current OS user home path such as `/Users/<you>/.codex/auth.json`, `/home/<you>/.codex/auth.json`, or `C:\Users\<you>\.codex\auth.json`. Use `nomici provider list --all` or `nomici provider doctor codex-cli` to diagnose missing local auth or executable paths.
 
 You can also script it explicitly after local auth is ready:
 

@@ -160,24 +160,40 @@ func TestSetupCreatesCodexCLIProviderWhenLocalAuthIsReady(t *testing.T) {
 	}
 }
 
-func TestSetupProviderChoicesIncludeUnavailableLocalProviders(t *testing.T) {
+func TestSetupProviderChoicesHideUnavailableLocalProviders(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
 	t.Setenv("CODEX_HOME", filepath.Join(dir, "missing-codex-home"))
+	t.Setenv("NOMICI_CODEX_APP_EXECUTABLES", "")
 
 	choices := setupProviderChoices()
-	var found *setupChoice
-	for index := range choices {
-		if choices[index].ID == providers.ProviderCodexCLI {
-			found = &choices[index]
-			break
+	for _, choice := range choices {
+		if choice.ID == providers.ProviderCodexCLI {
+			t.Fatalf("expected unavailable Codex CLI setup choice to be hidden, got %+v", choice)
 		}
 	}
-	if found == nil {
-		t.Fatal("expected Codex CLI setup choice even when local environment is not ready")
+}
+
+func TestProviderListHidesUnavailableLocalProvidersUnlessAll(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "missing-codex-home"))
+	t.Setenv("NOMICI_CODEX_APP_EXECUTABLES", "")
+
+	output, err := executeRootForTest("provider", "list")
+	if err != nil {
+		t.Fatalf("provider list failed: %v\n%s", err, output)
 	}
-	if !strings.Contains(found.Description, "not ready") || !strings.Contains(found.Description, runtime.GOOS+"/"+runtime.GOARCH) {
-		t.Fatalf("expected readiness and platform details in setup choice, got %q", found.Description)
+	if strings.Contains(output, providers.ProviderCodexCLI) {
+		t.Fatalf("expected default provider list to hide unavailable local provider, got:\n%s", output)
+	}
+
+	output, err = executeRootForTest("provider", "list", "--all")
+	if err != nil {
+		t.Fatalf("provider list --all failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, providers.ProviderCodexCLI) || !strings.Contains(output, "PATH:codex") {
+		t.Fatalf("expected provider list --all to show unavailable local provider detail, got:\n%s", output)
 	}
 }
 

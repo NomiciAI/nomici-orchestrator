@@ -24,13 +24,17 @@ func newProviderCommand() *cobra.Command {
 }
 
 func newProviderListCommand() *cobra.Command {
-	return &cobra.Command{
+	var showAll bool
+	command := &cobra.Command{
 		Use:   "list",
 		Short: "List provider catalog entries",
 		RunE: func(command *cobra.Command, args []string) error {
 			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
 			fmt.Fprintln(writer, "ID\tNAME\tADAPTER\tAUTH\tMODELS\tREADY\tDETAIL")
 			for _, provider := range providers.ProviderCatalog() {
+				if provider.Local && !provider.Available && !showAll {
+					continue
+				}
 				ready := "yes"
 				if provider.Local && !provider.Available {
 					ready = "no"
@@ -40,6 +44,8 @@ func newProviderListCommand() *cobra.Command {
 			return writer.Flush()
 		},
 	}
+	command.Flags().BoolVar(&showAll, "all", false, "Include local providers that are not ready")
+	return command
 }
 
 func newProviderModelsCommand() *cobra.Command {
