@@ -32,6 +32,8 @@ const (
 	EventRunFailed              = "run.failed"
 	EventRunSessionCreated      = "run.session.created"
 	EventRunSessionCompleted    = "run.session.completed"
+	EventSandboxCreated         = "sandbox.created"
+	EventSandboxReleased        = "sandbox.released"
 	EventTaskCreated            = "task.created"
 	EventTaskCompleted          = "task.completed"
 	EventTaskFailed             = "task.failed"

@@ -8,6 +8,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
@@ -24,6 +25,7 @@ type Services struct {
 	Policy    *policy.Service
 	Context   *sharedcontext.Store
 	Runs      *runpkg.Store
+	Sandboxes *sandbox.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {

@@ -3,13 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"text/tabwriter"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
 	"github.com/NomiciAI/nomici-orchestrator/internal/lifecycle"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -104,23 +104,28 @@ func checkSandbox(configPath string) doctorResult {
 	if !ok {
 		return doctorResult{Name: "sandbox", Status: "warning", Message: "deployment.sandbox not configured; run `nomici setup --sandbox local`"}
 	}
-	sandbox, ok := raw.(map[string]any)
+	sandboxConfig, ok := raw.(map[string]any)
 	if !ok {
 		return doctorResult{Name: "sandbox", Status: "failed", Message: "deployment.sandbox must be a map"}
 	}
-	mode, _ := sandbox["mode"].(string)
-	switch mode {
-	case sandboxModeLocal:
-		return doctorResult{Name: "sandbox", Status: "ok", Message: "local workspace policy configured"}
-	case sandboxModeContainer:
-		if binary, ok := firstAvailableBinary("docker", "podman", "container"); ok {
-			return doctorResult{Name: "sandbox", Status: "ok", Message: "container sandbox intent configured via " + binary}
-		}
-		return doctorResult{Name: "sandbox", Status: "warning", Message: "container sandbox configured but docker, podman, or container was not found"}
-	case sandboxModeNone:
-		return doctorResult{Name: "sandbox", Status: "warning", Message: "sandbox disabled"}
-	case "":
+	mode, _ := sandboxConfig["mode"].(string)
+	if mode == "" {
 		return doctorResult{Name: "sandbox", Status: "failed", Message: "deployment.sandbox.mode is required"}
+	}
+	if mode != sandbox.ModeLocal && mode != sandbox.ModeContainer && mode != sandbox.ModeNone {
+		return doctorResult{Name: "sandbox", Status: "failed", Message: "unsupported sandbox mode " + mode}
+	}
+	availability := sandbox.Detect(mode)
+	switch availability.Mode {
+	case sandbox.ModeLocal:
+		return doctorResult{Name: "sandbox", Status: "ok", Message: "local workspace policy configured"}
+	case sandbox.ModeContainer:
+		if availability.Status == sandbox.StatusAvailable {
+			return doctorResult{Name: "sandbox", Status: "ok", Message: "container sandbox intent configured via " + availability.RuntimeBinary}
+		}
+		return doctorResult{Name: "sandbox", Status: "warning", Message: availability.Message}
+	case sandbox.ModeNone:
+		return doctorResult{Name: "sandbox", Status: "warning", Message: "sandbox disabled"}
 	default:
 		return doctorResult{Name: "sandbox", Status: "failed", Message: "unsupported sandbox mode " + mode}
 	}
@@ -140,15 +145,6 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 		return doctorResult{Name: "models", Status: "warning", Message: "no model profiles configured"}
 	}
 	return doctorResult{Name: "models", Status: "ok", Message: fmt.Sprintf("%d profile(s)", len(profiles))}
-}
-
-func firstAvailableBinary(names ...string) (string, bool) {
-	for _, name := range names {
-		if _, err := exec.LookPath(name); err == nil {
-			return name, true
-		}
-	}
-	return "", false
 }
 
 func checkManagedRuntimes(dbPath string) doctorResult {

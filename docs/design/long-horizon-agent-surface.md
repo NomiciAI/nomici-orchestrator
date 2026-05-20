@@ -11,6 +11,8 @@ Projects such as DeerFlow show a useful product shape: sandboxes, memory, tools,
 - Gateway owns graph coordination, policy, approvals, traces, artifacts, and cross-agent context.
 - External runtimes are integrated through adapters instead of being absorbed into core.
 
+The implementation details that matter are architectural, not cosmetic. DeerFlow's sandbox layer uses a provider lifecycle (`acquire`, `get`, `release`), deterministic thread-scoped sandbox identity, workspace/uploads/outputs mounts, read-only skills mounts, readiness checks, warm-pool reuse, idle cleanup, and startup reconciliation for orphaned containers. Its subagent layer resolves built-in and custom agents through a registry, applies per-agent overrides, loads skills per subagent, filters tools through skill policy, and passes parent thread/sandbox state into child execution. Nomici should translate those mechanics into control-plane records and adapter contracts before trying to mimic all runtime behavior.
+
 ## Product Surface
 
 The user-facing surface should converge around a run workspace:
@@ -46,7 +48,8 @@ Sandbox responsibilities:
 v0.1 stance:
 
 - `cli_agent` execution already has a workspace, artifact directory, pre/post diff capture, and workspace lock.
-- The next increment should formalize a `sandbox` record in trace/storage so Console can show workspace, artifact roots, and cleanup status.
+- Gateway now records a per-run sandbox allocation with provider, mode, readiness status, workspace root, artifact root, runtime binary, cleanup status, and trace events.
+- The next increment should move from records to provider-backed acquire/get/release adapters for local, container, and remote execution.
 - Container isolation is valuable, but should be an adapter/provider capability, not a hard dependency.
 
 ## Memory And Session
