@@ -22,12 +22,7 @@ export function App() {
         <button
           className="nav-button nav-primary"
           type="button"
-          onClick={() => {
-            state.setView("chat");
-            state.setChatDetail(null);
-            state.setMessageText("");
-            state.setRunStatus("idle");
-          }}
+          onClick={state.startNewChat}
         >
           New Chat
         </button>
@@ -43,7 +38,7 @@ export function App() {
           type="button"
           onClick={() => state.setView("orchestrate")}
         >
-          Orchestrate
+          Orchestration
         </button>
         <div className="chat-list">
           {state.chats.map((chat) => (
@@ -72,7 +67,7 @@ export function App() {
           type="button"
           onClick={() => state.setView("settings")}
         >
-          Settings
+          Agents & Settings
         </button>
       </aside>
 

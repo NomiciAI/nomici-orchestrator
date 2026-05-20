@@ -614,7 +614,7 @@ func TestChatMessageCreatesRunSession(t *testing.T) {
 func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	db, router := newRunTestRouter(t)
 	createResponse := httptest.NewRecorder()
-	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"setup status"}`)))
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"hey"}`)))
 	if createResponse.Code != http.StatusOK {
 		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
 	}
@@ -639,6 +639,42 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	}
 	if len(sessions) != 0 {
 		t.Fatalf("expected no run sessions, got %+v", sessions)
+	}
+}
+
+func TestChatAutoWithoutAgentsReturnsAssistantSetupHelp(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	if err := graph.NewStore(db).Save(context.Background(), &graph.Snapshot{
+		SnapshotID:    "graph_empty",
+		SchemaVersion: "0.1",
+		ProjectID:     "test-project",
+		CreatedAt:     time.Now().UTC(),
+		SourceHash:    "sha256:empty",
+		IR: graph.IR{
+			Models:   map[string]graph.Model{},
+			Runtimes: map[string]graph.Runtime{},
+			Agents:   map[string]graph.Agent{},
+			Edges:    []graph.Edge{},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"implement a workspace feature"}`)))
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var envelope struct {
+		Data chatMessageResponse `json:"data"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Run != nil {
+		t.Fatalf("expected no run when no agents are configured, got %+v", envelope.Data.Run)
+	}
+	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "Agent Builder") {
+		t.Fatalf("expected setup help assistant message, got %+v", envelope.Data.AssistantMessage)
 	}
 }
 

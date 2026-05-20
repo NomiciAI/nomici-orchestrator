@@ -18,6 +18,9 @@ const semanticRouteMinConfidence = 0.6
 
 func routeChatIntent(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot, conversation string) orchestration.RouteDecision {
 	fallback := orchestration.Route(prompt, manualAgentID, snapshot)
+	if fallback.Mode == orchestration.ModeDirectReply && fallback.Confidence >= 0.75 {
+		return fallback
+	}
 	semantic, err := semanticRoute(ctx, services, prompt, manualAgentID, snapshot, fallback, conversation)
 	if err != nil {
 		return fallback
@@ -149,8 +152,8 @@ Schema:
 }
 
 Rules:
-- Prefer workspace_run when the request may require planning, files, commands, research, or artifacts.
-- Use direct_reply only for setup/status/navigation/help that does not need a run.
+- Prefer workspace_run when the request clearly requires planning, files, commands, research, or artifacts.
+- Use direct_reply for greetings, general conversation, setup/status/navigation/help, and questions that do not need a run.
 - Use clarify when required inputs are missing and executing would be unsafe.
 - Set needs_plan_review for mutation, shell, file writes, commits, deploys, or irreversible work.
 - If a manual agent was provided, keep it as recommended_agent_id.
