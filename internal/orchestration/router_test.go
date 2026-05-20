@@ -35,7 +35,7 @@ func TestMatchRolesSelectsDynamicSubset(t *testing.T) {
 		"product_pm": {ID: "product_pm"},
 		"planner":    {ID: "planner"},
 		"researcher": {ID: "researcher"},
-		"coder":      {ID: "coder"},
+		"coder":      {ID: "coder", Tools: []string{"bash"}, Skills: []string{"testing"}, Role: "Implement and verify changes"},
 		"reporter":   {ID: "reporter"},
 	}}}
 	decision := Route("implement and verify the chat workspace", "", snapshot)
@@ -55,5 +55,14 @@ func TestMatchRolesSelectsDynamicSubset(t *testing.T) {
 	}
 	if len(match.SkippedRoles) == 0 {
 		t.Fatalf("expected skipped roles to be visible")
+	}
+	var coder RoleSelection
+	for _, role := range match.Roles {
+		if role.RoleID == "coder" {
+			coder = role
+		}
+	}
+	if coder.Purpose != "Implement and verify changes" || !contains(coder.RequiredTools, "bash") || !contains(coder.RequiredSkills, "testing") {
+		t.Fatalf("expected graph role overrides in match result, got %+v", coder)
 	}
 }

@@ -141,6 +141,23 @@ Before quiet public, verify:
 - Release download mode verifies `checksums.txt` unless `--skip-checksum` is explicitly passed.
 - Hosted `curl` install instructions are not advertised as live until release artifacts and the install endpoint exist.
 
+## Release Artifact Workflow
+
+Tag pushes matching `v*` run `.github/workflows/release.yml`.
+
+The workflow currently:
+
+- builds Console assets once per target job
+- cross-compiles `nomici` for Linux and macOS on amd64 and arm64
+- uploads `.tar.gz` archives and SHA-256 files as workflow artifacts
+- publishes a GitHub release with archives and a combined `checksums.txt` for tag builds
+
+Before announcing stable releases, verify:
+
+- release artifacts install cleanly with `scripts/install.sh --version <tag>`
+- `nomici setup`, `nomici doctor`, and `nomici dev --no-open` work from the downloaded binary
+- signing/notarization requirements are documented for macOS if needed
+
 ## Bootstrap Mode
 
 During alpha bootstrap, `main` may allow direct maintainer pushes so the project can move quickly before there are external contributors.

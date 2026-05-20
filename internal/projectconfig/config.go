@@ -19,19 +19,22 @@ import (
 var validID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
 
 type AgentRecord struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name,omitempty"`
-	Description  string         `json:"description,omitempty"`
-	Kind         string         `json:"kind"`
-	Model        string         `json:"model,omitempty"`
-	Runtime      string         `json:"runtime,omitempty"`
-	Role         string         `json:"role,omitempty"`
-	Instructions string         `json:"instructions,omitempty"`
-	Tools        []string       `json:"tools,omitempty"`
-	Skills       []string       `json:"skills,omitempty"`
-	Tags         []string       `json:"tags,omitempty"`
-	Triggers     []string       `json:"triggers,omitempty"`
-	Capabilities map[string]any `json:"capabilities,omitempty"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Kind           string         `json:"kind"`
+	Model          string         `json:"model,omitempty"`
+	Runtime        string         `json:"runtime,omitempty"`
+	Role           string         `json:"role,omitempty"`
+	Instructions   string         `json:"instructions,omitempty"`
+	Tools          []string       `json:"tools,omitempty"`
+	Skills         []string       `json:"skills,omitempty"`
+	Tags           []string       `json:"tags,omitempty"`
+	Triggers       []string       `json:"triggers,omitempty"`
+	Capabilities   map[string]any `json:"capabilities,omitempty"`
+	Permissions    map[string]any `json:"permissions,omitempty"`
+	RuntimeProfile map[string]any `json:"runtime_profile,omitempty"`
+	ApprovalPolicy string         `json:"approval_policy,omitempty"`
 }
 
 type OrchestrationConfig struct {
@@ -44,9 +47,12 @@ type OrchestrationConfig struct {
 }
 
 type RoleConfig struct {
-	Purpose        string                   `json:"purpose,omitempty" yaml:"purpose,omitempty"`
-	Instructions   string                   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	OutputContract agentspec.OutputContract `json:"output_contract,omitempty" yaml:"output_contract,omitempty"`
+	Purpose          string                   `json:"purpose,omitempty" yaml:"purpose,omitempty"`
+	Instructions     string                   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	OutputContract   agentspec.OutputContract `json:"output_contract,omitempty" yaml:"output_contract,omitempty"`
+	RequiredTools    []string                 `json:"required_tools,omitempty" yaml:"required_tools,omitempty"`
+	RequiredSkills   []string                 `json:"required_skills,omitempty" yaml:"required_skills,omitempty"`
+	PlanReviewPolicy string                   `json:"plan_review_policy,omitempty" yaml:"plan_review_policy,omitempty"`
 }
 
 func ListAgents(configPath string) ([]AgentRecord, error) {
@@ -91,18 +97,21 @@ func UpsertAgent(ctx context.Context, configPath string, dbPath string, record A
 		spec.Agents = map[string]agentspec.Agent{}
 	}
 	spec.Agents[record.ID] = agentspec.Agent{
-		Name:         strings.TrimSpace(record.Name),
-		Description:  strings.TrimSpace(record.Description),
-		Kind:         strings.TrimSpace(record.Kind),
-		Model:        strings.TrimSpace(record.Model),
-		Runtime:      strings.TrimSpace(record.Runtime),
-		Role:         strings.TrimSpace(record.Role),
-		Instructions: strings.TrimSpace(record.Instructions),
-		Tools:        cleanList(record.Tools),
-		Skills:       cleanList(record.Skills),
-		Tags:         cleanList(record.Tags),
-		Triggers:     cleanList(record.Triggers),
-		Capabilities: record.Capabilities,
+		Name:           strings.TrimSpace(record.Name),
+		Description:    strings.TrimSpace(record.Description),
+		Kind:           strings.TrimSpace(record.Kind),
+		Model:          strings.TrimSpace(record.Model),
+		Runtime:        strings.TrimSpace(record.Runtime),
+		Role:           strings.TrimSpace(record.Role),
+		Instructions:   strings.TrimSpace(record.Instructions),
+		Tools:          cleanList(record.Tools),
+		Skills:         cleanList(record.Skills),
+		Tags:           cleanList(record.Tags),
+		Triggers:       cleanList(record.Triggers),
+		Capabilities:   record.Capabilities,
+		Permissions:    record.Permissions,
+		RuntimeProfile: record.RuntimeProfile,
+		ApprovalPolicy: strings.TrimSpace(record.ApprovalPolicy),
 	}
 	if err := save(configPath, spec); err != nil {
 		return nil, err
@@ -244,19 +253,22 @@ func validateAgentRecord(record AgentRecord) error {
 
 func agentRecord(id string, agent agentspec.Agent) AgentRecord {
 	return AgentRecord{
-		ID:           id,
-		Name:         agent.Name,
-		Description:  agent.Description,
-		Kind:         agent.Kind,
-		Model:        agent.Model,
-		Runtime:      agent.Runtime,
-		Role:         agent.Role,
-		Instructions: agent.Instructions,
-		Tools:        agent.Tools,
-		Skills:       agent.Skills,
-		Tags:         agent.Tags,
-		Triggers:     agent.Triggers,
-		Capabilities: agent.Capabilities,
+		ID:             id,
+		Name:           agent.Name,
+		Description:    agent.Description,
+		Kind:           agent.Kind,
+		Model:          agent.Model,
+		Runtime:        agent.Runtime,
+		Role:           agent.Role,
+		Instructions:   agent.Instructions,
+		Tools:          agent.Tools,
+		Skills:         agent.Skills,
+		Tags:           agent.Tags,
+		Triggers:       agent.Triggers,
+		Capabilities:   agent.Capabilities,
+		Permissions:    agent.Permissions,
+		RuntimeProfile: agent.RuntimeProfile,
+		ApprovalPolicy: agent.ApprovalPolicy,
 	}
 }
 
@@ -301,6 +313,18 @@ func applyRoleOverrides(spec *agentspec.Spec, config OrchestrationConfig) error 
 		}
 		if role.Instructions != "" {
 			agent.Instructions = role.Instructions
+		}
+		if role.RequiredTools != nil {
+			agent.Tools = cleanList(role.RequiredTools)
+		}
+		if role.RequiredSkills != nil {
+			agent.Skills = cleanList(role.RequiredSkills)
+		}
+		if role.PlanReviewPolicy != "" {
+			if agent.Capabilities == nil {
+				agent.Capabilities = map[string]any{}
+			}
+			agent.Capabilities["plan_review_policy"] = role.PlanReviewPolicy
 		}
 		spec.Agents[roleID] = agent
 	}

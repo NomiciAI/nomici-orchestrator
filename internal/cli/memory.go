@@ -21,6 +21,8 @@ func newMemoryCommand() *cobra.Command {
 	command.AddCommand(newMemoryApproveCommand(&dbPath))
 	command.AddCommand(newMemoryRejectCommand(&dbPath))
 	command.AddCommand(newMemoryDeleteCommand(&dbPath))
+	command.AddCommand(newMemoryItemsCommand(&dbPath))
+	command.AddCommand(newMemoryItemDeleteCommand(&dbPath))
 	return command
 }
 
@@ -56,6 +58,66 @@ func newMemoryProposalsCommand(dbPath *string) *cobra.Command {
 	}
 	command.Flags().StringVar(&status, "status", "", "Filter by proposal status")
 	return command
+}
+
+func newMemoryItemsCommand(dbPath *string) *cobra.Command {
+	var projectID string
+	command := &cobra.Command{
+		Use:   "items",
+		Short: "List approved reusable memory items",
+		RunE: func(command *cobra.Command, args []string) error {
+			db, err := store.Open(*dbPath)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			if err := store.Migrate(db); err != nil {
+				return err
+			}
+			if projectID == "" {
+				projectID = "default"
+			}
+			items, err := sharedcontext.NewStore(db).ListItems(command.Context(), projectID, sharedcontext.ScopeProject, 50)
+			if err != nil {
+				return err
+			}
+			if len(items) == 0 {
+				fmt.Fprintln(command.OutOrStdout(), "No approved memory items.")
+				return nil
+			}
+			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(writer, "ID\tTITLE")
+			for _, item := range items {
+				fmt.Fprintf(writer, "%s\t%s\n", item.ContextID, trimForTable(item.Title, 80))
+			}
+			return writer.Flush()
+		},
+	}
+	command.Flags().StringVar(&projectID, "project", "", "Project id")
+	return command
+}
+
+func newMemoryItemDeleteCommand(dbPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete-item <context_id>",
+		Short: "Delete an approved reusable memory item",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			db, err := store.Open(*dbPath)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			if err := store.Migrate(db); err != nil {
+				return err
+			}
+			if err := sharedcontext.NewStore(db).SetItemStatus(command.Context(), args[0], sharedcontext.StatusDeleted); err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Memory item deleted: %s\n", args[0])
+			return nil
+		},
+	}
 }
 
 func newMemoryApproveCommand(dbPath *string) *cobra.Command {

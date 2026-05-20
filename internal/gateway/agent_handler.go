@@ -200,6 +200,15 @@ func mergeAgentRecord(existing projectconfig.AgentRecord, update projectconfig.A
 	if update.Capabilities != nil {
 		existing.Capabilities = update.Capabilities
 	}
+	if update.Permissions != nil {
+		existing.Permissions = update.Permissions
+	}
+	if update.RuntimeProfile != nil {
+		existing.RuntimeProfile = update.RuntimeProfile
+	}
+	if update.ApprovalPolicy != "" {
+		existing.ApprovalPolicy = update.ApprovalPolicy
+	}
 	return existing
 }
 

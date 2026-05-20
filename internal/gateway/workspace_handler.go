@@ -215,6 +215,35 @@ func sessionBlockedActionsHandler(services Services) http.HandlerFunc {
 	}
 }
 
+func reviewQueueHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Blocked == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "review_queue_unavailable", "Review queue store is not initialized.", "Restart Gateway.")
+			return
+		}
+		status := request.URL.Query().Get("status")
+		if status == "" {
+			status = blockedpkg.StatusOpen
+		}
+		limit := 50
+		if raw := request.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 100 {
+				writeError(response, http.StatusBadRequest, requestID, "invalid_request", "limit must be between 1 and 100.", "Use a positive integer limit.")
+				return
+			}
+			limit = parsed
+		}
+		actions, err := services.Blocked.List(request.Context(), status, limit)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "review_queue_failed", "Review queue could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, actions, nil)
+	}
+}
+
 func sessionBlockedActionResolveHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
@@ -519,6 +548,22 @@ func artifactDetailHandler(services Services) http.HandlerFunc {
 			return
 		}
 		writeSuccess(response, requestID, artifact, nil)
+	}
+}
+
+func artifactRevisionsHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Artifacts == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "artifacts_unavailable", "Artifact store is not initialized.", "Restart Gateway.")
+			return
+		}
+		revisions, err := services.Artifacts.ListRevisions(request.Context(), chi.URLParam(request, "artifact_id"), 50)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "artifact_revisions_failed", "Artifact revisions could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, revisions, nil)
 	}
 }
 

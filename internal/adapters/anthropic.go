@@ -27,11 +27,15 @@ func (adapter *AnthropicAdapter) Invoke(ctx context.Context, baseURL string, mod
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	body, err := json.Marshal(anthropicRequest{
+	payload := anthropicRequest{
 		Model:     model,
 		MaxTokens: 1024,
 		Messages:  anthropicMessages(request.Messages),
-	})
+	}
+	if len(request.Tools) > 0 {
+		payload.Tools = anthropicTools(request.Tools)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal Anthropic request: %w", err)
 	}
@@ -61,6 +65,11 @@ func (adapter *AnthropicAdapter) Invoke(ctx context.Context, baseURL string, mod
 		return nil, fmt.Errorf("read Anthropic response: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if len(request.Tools) > 0 && retryableToolSchemaStatus(response.StatusCode) {
+			retry := request
+			retry.Tools = nil
+			return adapter.Invoke(ctx, baseURL, model, apiKey, retry)
+		}
 		code := ErrorEndpointUnavailable
 		retryable := response.StatusCode >= 500
 		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
@@ -79,8 +88,9 @@ func (adapter *AnthropicAdapter) Invoke(ctx context.Context, baseURL string, mod
 	}
 	content := strings.TrimSpace(decodedText(decoded.Content))
 	return &InvokeResult{
-		Status:   StatusCompleted,
-		Messages: []Message{{Role: "assistant", Content: content}},
+		Status:    StatusCompleted,
+		Messages:  []Message{{Role: "assistant", Content: content}},
+		ToolCalls: anthropicToolCalls(decoded.Content),
 		Usage: &UsageInfo{
 			InputTokens:  decoded.Usage.InputTokens,
 			OutputTokens: decoded.Usage.OutputTokens,
@@ -120,9 +130,10 @@ func decodedText(content []anthropicContent) string {
 }
 
 type anthropicRequest struct {
-	Model     string    `json:"model"`
-	MaxTokens int       `json:"max_tokens"`
-	Messages  []Message `json:"messages"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	Messages  []Message       `json:"messages"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
 }
 
 type anthropicResponse struct {
@@ -134,6 +145,46 @@ type anthropicResponse struct {
 }
 
 type anthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string         `json:"type"`
+	Text  string         `json:"text,omitempty"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+}
+
+type anthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+func anthropicTools(tools []ToolSchema) []anthropicTool {
+	result := make([]anthropicTool, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.ID)
+		if name == "" {
+			continue
+		}
+		schema := tool.Parameters
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		result = append(result, anthropicTool{Name: name, Description: tool.Description, InputSchema: schema})
+	}
+	return result
+}
+
+func anthropicToolCalls(content []anthropicContent) []ToolCall {
+	result := []ToolCall{}
+	for _, block := range content {
+		if block.Type != "tool_use" || strings.TrimSpace(block.Name) == "" {
+			continue
+		}
+		input := block.Input
+		if input == nil {
+			input = map[string]any{}
+		}
+		result = append(result, ToolCall{ID: block.ID, ToolID: block.Name, Input: input})
+	}
+	return result
 }

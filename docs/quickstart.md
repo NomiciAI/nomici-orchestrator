@@ -102,7 +102,7 @@ nomici provider doctor openai
 
 Provider catalogs are fetched from provider model APIs when available. Local CLI providers and custom endpoints still allow an explicit model id when a model list cannot be discovered.
 
-Sandbox modes are `local`, `container`, and `none`. Runtime adapters enforce sandbox capabilities where supported. Tool Broker can execute file, bash, search, and fetch requests through policy, approval, redaction, trace, and artifact records. `nomici doctor` checks that the project manifest stays commit-safe, that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
+Sandbox modes are `local`, `container`, and `none`. Runtime adapters enforce sandbox capabilities where supported. Tool Broker can execute file, bash, search, and fetch requests through policy, approval, redaction, trace, and artifact records. Model adapters use native tool schemas where supported and fall back to JSON tool requests otherwise. `nomici doctor` checks that the project manifest stays commit-safe, that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
 
 ## Optional: Run A Local Agent Without An API Key
 
@@ -128,7 +128,16 @@ nomici gateway token show
 
 Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici dev` started Gateway. Each `.nomici` state directory has its own Gateway token.
 
-`nomici dev` starts Gateway, validates the graph, starts configured local processes, and opens Console. Console defaults to Chat; a message can start a workspace run, and the workspace panel shows route decisions, role flow, blocked actions, tool calls, plan review, uploads, artifacts, trace events, approvals, and memory proposals for the active session. Settings shows provider/model catalog status, configured model profiles, agent builder controls, and tool/skill selection. `nomici up` remains available for scripts that only need the lower-level background start behavior.
+`nomici dev` starts Gateway, validates the graph, starts configured local processes, and opens Console. Console defaults to Chat; a message can start a workspace run, and the workspace panel shows route decisions, role flow, blocked actions, tool calls, plan review, uploads, artifacts and revisions, trace events, approvals, and memory proposals for the active session. Orchestrate shows the review queue and role flow builder. Settings shows provider/model catalog status, configured model profiles, agent builder controls, and tool/skill selection. `nomici up` remains available for scripts that only need the lower-level background start behavior.
+
+Useful inspection commands after a run:
+
+```bash
+nomici review list
+nomici artifact revisions <artifact_id>
+nomici memory items
+nomici eval router
+```
 
 When finished:
 

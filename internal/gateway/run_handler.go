@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	blockedpkg "github.com/NomiciAI/nomici-orchestrator/internal/blocked"
@@ -87,6 +88,7 @@ type modelToolEnvelope struct {
 }
 
 type modelToolCall struct {
+	ID     string         `json:"id,omitempty"`
 	ToolID string         `json:"tool_id"`
 	Input  map[string]any `json:"input,omitempty"`
 }
@@ -632,7 +634,8 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 	if len(tasks) > 0 {
 		taskID = tasks[0].TaskID
 	}
-	sandboxRecord, err := services.Sandboxes.CreateForRun(ctx, sandbox.CreateRecordRequest{
+	sandboxProvider := sandboxProviderForIntent(services.Sandboxes, intent)
+	sandboxRecord, err := sandboxProvider.Acquire(ctx, sandbox.CreateRecordRequest{
 		RunID:     request.RunID,
 		TaskID:    taskID,
 		ProjectID: snapshot.ProjectID,
@@ -654,6 +657,13 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		return nil, nil, nil, err
 	}
 	return session, sandboxRecord, tasks, nil
+}
+
+func sandboxProviderForIntent(store *sandbox.Store, intent sandbox.Intent) sandbox.Provider {
+	if intent.Mode == sandbox.ModeContainer {
+		return sandbox.NewContainerProvider(store)
+	}
+	return sandbox.NewLocalProvider(store)
 }
 
 func executeWorkspaceSession(ctx context.Context, options Options, services Services, executor *runpkg.Executor, request runpkg.Request, session *runpkg.Session, tasks []*runpkg.Task) error {
@@ -1221,12 +1231,13 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 		}
 		roundRequest := request
 		roundRequest.Prompt = currentPrompt
+		roundRequest.Tools = modelToolSchemas()
 		result, err := executor.ExecuteTask(ctx, roundRequest, task.TaskID)
 		if err != nil {
 			return result, observations, err
 		}
 		preview := resultPreview(result)
-		calls, ok := extractModelToolCalls(preview)
+		calls, ok := modelToolCallsFromResult(result)
 		if !ok || len(calls) == 0 {
 			_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "tool.loop.completed", task.AgentID, map[string]any{
 				"task_id":       task.TaskID,
@@ -1294,6 +1305,9 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 				"output_preview": sharedcontext.RedactText(observation),
 			})
 			if execErr != nil {
+				if record != nil && record.Risk == toolbroker.RiskCritical {
+					return result, append(observations, roundObservations...), blockForToolRiskReview(ctx, services, session, task, record, execErr)
+				}
 				signature := modelToolFailureSignature(toolID, call.Input)
 				failureCounts[signature]++
 				if failureCounts[signature] >= 2 {
@@ -1311,6 +1325,53 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 		currentPrompt = appendToolObservations(currentPrompt, roundObservations)
 	}
 	return nil, observations, fmt.Errorf("tool loop did not produce a final response")
+}
+
+func blockForToolRiskReview(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, record *toolbroker.CallRecord, cause error) error {
+	if session == nil || task == nil || record == nil {
+		if cause != nil {
+			return cause
+		}
+		return fmt.Errorf("tool risk review required")
+	}
+	causeText := ""
+	if cause != nil {
+		causeText = cause.Error()
+	}
+	body := "A critical-risk tool call was blocked before execution. Review the request and choose whether to retry with safer inputs, skip it, or stop the run."
+	if err := services.Runs.UpdateSessionStatus(ctx, session.RunID, runpkg.SessionStatusBlocked); err != nil {
+		return err
+	}
+	if err := services.Runs.SetTaskBlocked(ctx, task.TaskID, runpkg.TaskStatusBlocked, "tool_risk_review:"+record.ToolCallID); err != nil {
+		return err
+	}
+	if services.Blocked != nil {
+		_, _ = services.Blocked.Create(ctx, blockedpkg.CreateRequest{
+			SessionID:          session.SessionID,
+			RunID:              session.RunID,
+			TaskID:             task.TaskID,
+			Kind:               blockedpkg.KindToolRiskReview,
+			Title:              "Review critical tool request",
+			Body:               body,
+			RequiredAction:     "retry_skip_or_stop",
+			ResumeTargetTaskID: task.TaskID,
+			ToolCallID:         record.ToolCallID,
+			Metadata: rawJSON(map[string]any{
+				"tool_id": record.ToolID,
+				"risk":    record.Risk,
+				"error":   sharedcontext.RedactText(causeText),
+			}),
+		})
+	}
+	_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, trace.EventTaskBlocked, task.AgentID, map[string]any{
+		"session_id":   session.SessionID,
+		"task_id":      task.TaskID,
+		"reason":       "tool_risk_review",
+		"tool_call_id": record.ToolCallID,
+		"tool_id":      record.ToolID,
+		"risk":         record.Risk,
+	})
+	return fmt.Errorf("tool_risk_review: %s", body)
 }
 
 func executePendingModelToolCalls(ctx context.Context, options Options, services Services, session *runpkg.Session, task *runpkg.Task, raw string) ([]string, error) {
@@ -1384,6 +1445,43 @@ func extractModelToolCalls(output string) ([]modelToolCall, bool) {
 		}
 	}
 	return nil, false
+}
+
+func modelToolCallsFromResult(result *runpkg.Result) ([]modelToolCall, bool) {
+	if result == nil {
+		return nil, false
+	}
+	if len(result.ToolCalls) > 0 {
+		calls := make([]modelToolCall, 0, len(result.ToolCalls))
+		for _, call := range result.ToolCalls {
+			toolID := strings.TrimSpace(call.ToolID)
+			if toolID == "" {
+				continue
+			}
+			input := call.Input
+			if input == nil {
+				input = map[string]any{}
+			}
+			calls = append(calls, modelToolCall{ID: call.ID, ToolID: toolID, Input: input})
+		}
+		if len(calls) > 0 {
+			return calls, true
+		}
+	}
+	return extractModelToolCalls(resultPreview(result))
+}
+
+func modelToolSchemas() []adapters.ToolSchema {
+	definitions := toolbroker.Definitions()
+	schemas := make([]adapters.ToolSchema, 0, len(definitions))
+	for _, definition := range definitions {
+		schemas = append(schemas, adapters.ToolSchema{
+			ID:          definition.ID,
+			Description: definition.Description,
+			Parameters:  definition.Parameters,
+		})
+	}
+	return schemas
 }
 
 func fencedJSON(output string) string {
@@ -1586,7 +1684,7 @@ func rolePrompt(ctx context.Context, configPath string, services Services, sessi
 	}
 	if shouldOfferToolProtocol(task) {
 		builder.WriteString("\n\nTool protocol:\n")
-		builder.WriteString("When this role needs workspace, shell, artifact, search, or fetch access, return only compact JSON in this shape:\n")
+		builder.WriteString("Use the provided native tool calls when the provider supports them. If the provider does not expose native tools, return only compact JSON in this fallback shape:\n")
 		builder.WriteString(`{"tool_calls":[{"tool_id":"read_file","input":{"path":"README.md","max_bytes":12000}}]}`)
 		builder.WriteString("\nAvailable tool_id values: list_files, read_file, write_file, replace_file, present_artifact, bash, search, fetch.\n")
 		builder.WriteString("Use normal prose only when you are done with tool use. Mutating tools can pause for user approval and then resume from saved state.\n")

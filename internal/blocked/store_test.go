@@ -40,6 +40,13 @@ func TestBlockedActionLifecycle(t *testing.T) {
 	if len(actions) != 1 || actions[0].ApprovalID != "approval_test" {
 		t.Fatalf("expected listed action, got %+v", actions)
 	}
+	queue, err := blockedStore.List(context.Background(), StatusOpen, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queue) != 1 || queue[0].BlockedActionID != action.BlockedActionID {
+		t.Fatalf("expected review queue action, got %+v", queue)
+	}
 	if err := blockedStore.ResolveByApproval(context.Background(), "approval_test", StatusResolved); err != nil {
 		t.Fatal(err)
 	}

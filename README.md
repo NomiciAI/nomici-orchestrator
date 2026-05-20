@@ -79,6 +79,12 @@ nomici upload add <path> --session <session_id>
 nomici upload list --session <session_id>
 nomici artifact list --session <session_id>
 nomici artifact show <artifact_id>
+nomici artifact revisions <artifact_id>
+nomici review list
+nomici review resolve <blocked_action_id> --decision retry
+nomici eval router
+nomici memory items
+nomici memory delete-item <context_id>
 nomici trace list
 nomici trace show <run_id>
 nomici down
@@ -90,13 +96,13 @@ nomici down
 LLM provider -> live model catalog -> web search/fetch -> starter pack -> sandbox policy -> commit-safe nomici.yaml -> nomici dev
 ```
 
-The setup command writes the project manifest, web search/fetch contracts, starter pack, and sandbox intent into the local workspace. Provider selection is two-level: choose a provider, then pick from that provider's live model catalog where the provider exposes one. Local CLI providers and custom OpenAI-compatible endpoints allow an explicit model id when the model list cannot be discovered. Provider URLs, selected provider instances, and auth env-var bindings live in the local profile store under `.nomici/`; `nomici.yaml` only references those local profiles. Tool Broker executes file, bash, search, and fetch requests through sandbox boundaries, policy, approvals, redaction, trace, and artifact linkage. `nomici doctor` reports whether the project manifest stays commit-safe, whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
+The setup command writes the project manifest, web search/fetch contracts, starter pack, and sandbox intent into the local workspace. Provider selection is two-level: choose a provider, then pick from that provider's live model catalog where the provider exposes one. Local CLI providers and custom OpenAI-compatible endpoints allow an explicit model id when the model list cannot be discovered. Provider URLs, selected provider instances, and auth env-var bindings live in the local profile store under `.nomici/`; `nomici.yaml` only references those local profiles. Tool Broker executes file, bash, search, and fetch requests through sandbox boundaries, policy, approvals, redaction, trace, and artifact linkage. Model adapters expose native tool schemas where supported and keep a JSON fallback for providers without structured tool calls. `nomici doctor` reports whether the project manifest stays commit-safe, whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store. `.nomici/` and `nomici.local.yaml` are local-only; `nomici.local.yaml` can override local tools, deployment, runtimes, and model references without changing the shared project manifest.
 
 The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. Its manifest also exposes role purpose, tool and skill expectations, handoff mode, model/runtime preference, and output contract metadata so run task ledgers can show role ownership without hardcoding those roles in Gateway. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
-`nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. Console is served by Gateway and defaults to Chat. Each chat can start a workspace run, while Orchestrate and Settings expose route decisions, role flow, task ledger records, workspace roots, uploads, artifacts, tool calls, blocked actions, plan review actions, trace events, approvals, memory proposals, provider/model catalog status, agent builder controls, and tool/skill selection. It does not read local files or receive raw secret values outside Gateway-mediated APIs. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
+`nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. Console is served by Gateway and defaults to Chat. Each chat can start a workspace run, while Orchestrate and Settings expose route decisions, role flow, task ledger records, workspace roots, uploads, artifacts and revisions, tool calls, the review queue, plan review actions, trace events, approvals, memory proposals, provider/model catalog status, agent builder controls, orchestration builder controls, and tool/skill selection. It does not read local files or receive raw secret values outside Gateway-mediated APIs. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or a linear `handoff` chain across `cli_agent`-backed `external_agent` nodes. Model-backed roles can request structured tool calls and continue from tool observations. Branching handoffs, parallel, A2A, and static tool edges validate structurally but fail clearly if executed.
 
