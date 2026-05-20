@@ -255,6 +255,57 @@ func TestSessionEndpointsValidationAndCancel(t *testing.T) {
 	}
 }
 
+func TestLedgerTaskPlansUseInstalledPackRoles(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	manifest := packs.DeveloperTeamManifest()
+	if err := packs.NewStore(db).SaveInstallation(context.Background(), &packs.Installation{
+		PackID:      manifest.ID,
+		Version:     manifest.Version,
+		Kind:        manifest.Kind,
+		Trust:       manifest.Trust.Level,
+		ConfigPath:  "nomici.yaml",
+		Entrypoints: manifest.Agents.Entrypoints,
+		InstalledAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &graph.Snapshot{
+		SnapshotID: "graph_roles",
+		ProjectID:  "test-project",
+		IR: graph.IR{Agents: map[string]graph.Agent{
+			"product_pm": {ID: "product_pm", Kind: "gateway_agent", Model: "gpt"},
+			"planner":    {ID: "planner", Kind: "model_agent", Model: "gpt"},
+			"researcher": {ID: "researcher", Kind: "model_agent", Model: "gpt"},
+			"coder":      {ID: "coder", Kind: "model_agent", Model: "gpt"},
+			"reporter":   {ID: "reporter", Kind: "model_agent", Model: "gpt"},
+		}},
+	}
+	plans, err := ledgerTaskPlans(context.Background(), Services{Packs: packs.NewStore(db)}, snapshot, "product_pm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 5 {
+		t.Fatalf("expected five role plans, got %+v", plans)
+	}
+	if plans[0].AgentID != "product_pm" || plans[4].AgentID != "reporter" {
+		t.Fatalf("expected pack role order, got %+v", plans)
+	}
+	if plans[3].Metadata["plan_source"] != "pack_role" || plans[3].Metadata["role_id"] != "coder" {
+		t.Fatalf("expected coder role metadata, got %+v", plans[3].Metadata)
+	}
+	outputContract, ok := plans[3].Metadata["output_contract"].(packs.OutputContract)
+	if !ok || outputContract.Kind != "implementation_result" {
+		t.Fatalf("expected coder output contract, got %+v", plans[3].Metadata["output_contract"])
+	}
+}
+
 func TestRunCreateFailsOnInvalidSandboxConfig(t *testing.T) {
 	db, router := newRunTestRouterWithConfig(t, `version: "0.1"
 project:

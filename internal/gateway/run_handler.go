@@ -16,6 +16,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
+	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
@@ -384,28 +385,41 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		return nil, nil, nil, err
 	}
 
-	plans := ledgerTaskPlans(snapshot, agentID)
+	plans, err := ledgerTaskPlans(ctx, services, snapshot, agentID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	taskIDs := make([]string, 0, len(plans))
+	parentTaskID := ""
 	for index, plan := range plans {
 		status := runpkg.TaskStatusQueued
 		if index == 0 {
 			status = runpkg.TaskStatusRunning
 		}
+		metadata, err := json.Marshal(plan.Metadata)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 		task, err := services.Runs.CreateTask(ctx, runpkg.CreateTaskRequest{
-			RunID:     request.RunID,
-			AgentID:   plan.AgentID,
-			RuntimeID: plan.RuntimeID,
-			Status:    status,
+			RunID:        request.RunID,
+			ParentTaskID: parentTaskID,
+			AgentID:      plan.AgentID,
+			RuntimeID:    plan.RuntimeID,
+			Status:       status,
+			Metadata:     metadata,
 		})
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		taskIDs = append(taskIDs, task.TaskID)
+		parentTaskID = task.TaskID
 		if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCreated, task.AgentID, map[string]any{
-			"task_id":    task.TaskID,
-			"agent_id":   task.AgentID,
-			"runtime_id": task.RuntimeID,
-			"status":     task.Status,
+			"task_id":        task.TaskID,
+			"parent_task_id": task.ParentTaskID,
+			"agent_id":       task.AgentID,
+			"runtime_id":     task.RuntimeID,
+			"status":         task.Status,
+			"metadata":       plan.Metadata,
 		}); err != nil {
 			return nil, nil, nil, err
 		}
@@ -503,19 +517,89 @@ func sandboxBaseDir(configPath string) (string, error) {
 type ledgerTaskPlan struct {
 	AgentID   string
 	RuntimeID string
+	Metadata  map[string]any
 }
 
-func ledgerTaskPlans(snapshot *graph.Snapshot, startAgentID string) []ledgerTaskPlan {
+func ledgerTaskPlans(ctx context.Context, services Services, snapshot *graph.Snapshot, startAgentID string) ([]ledgerTaskPlan, error) {
+	if plans, err := packRoleTaskPlans(ctx, services, snapshot, startAgentID); err != nil {
+		return nil, err
+	} else if len(plans) > 0 {
+		return plans, nil
+	}
+	return graphHandoffTaskPlans(snapshot, startAgentID), nil
+}
+
+func packRoleTaskPlans(ctx context.Context, services Services, snapshot *graph.Snapshot, startAgentID string) ([]ledgerTaskPlan, error) {
+	if services.Packs == nil {
+		return nil, nil
+	}
+	installations, err := services.Packs.ListInstallations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, installation := range installations {
+		manifest, ok := packs.GetBuiltin(installation.PackID)
+		if !ok || !containsString(installation.Entrypoints, startAgentID) || len(manifest.Roles) == 0 {
+			continue
+		}
+		plans := make([]ledgerTaskPlan, 0, len(manifest.Roles))
+		for index, role := range manifest.Roles {
+			agent, ok := snapshot.IR.Agents[role.ID]
+			if !ok {
+				plans = nil
+				break
+			}
+			plans = append(plans, ledgerTaskPlan{
+				AgentID:   agent.ID,
+				RuntimeID: agent.Runtime,
+				Metadata:  roleTaskMetadata(manifest, role, index),
+			})
+		}
+		if len(plans) > 0 {
+			return plans, nil
+		}
+	}
+	return nil, nil
+}
+
+func roleTaskMetadata(manifest packs.Manifest, role packs.PackRole, index int) map[string]any {
+	return map[string]any{
+		"plan_source":        "pack_role",
+		"pack_id":            manifest.ID,
+		"pack_version":       manifest.Version,
+		"sequence":           index + 1,
+		"role_id":            role.ID,
+		"purpose":            role.Purpose,
+		"required_tools":     role.RequiredTools,
+		"required_skills":    role.RequiredSkills,
+		"model_preference":   role.ModelPreference,
+		"runtime_preference": role.RuntimePreference,
+		"handoff_mode":       role.HandoffMode,
+		"output_contract":    role.OutputContract,
+	}
+}
+
+func graphHandoffTaskPlans(snapshot *graph.Snapshot, startAgentID string) []ledgerTaskPlan {
 	plans := []ledgerTaskPlan{}
 	visited := map[string]bool{}
 	current := startAgentID
+	sequence := 1
 	for current != "" && !visited[current] {
 		visited[current] = true
 		agent, ok := snapshot.IR.Agents[current]
 		if !ok {
 			break
 		}
-		plans = append(plans, ledgerTaskPlan{AgentID: agent.ID, RuntimeID: agent.Runtime})
+		plans = append(plans, ledgerTaskPlan{
+			AgentID:   agent.ID,
+			RuntimeID: agent.Runtime,
+			Metadata: map[string]any{
+				"plan_source": "graph_handoff",
+				"sequence":    sequence,
+				"role_id":     agent.ID,
+			},
+		})
+		sequence++
 		next := ""
 		for _, edge := range snapshot.IR.Edges {
 			if edge.From == current && edge.Mode == "handoff" {
@@ -526,9 +610,25 @@ func ledgerTaskPlans(snapshot *graph.Snapshot, startAgentID string) []ledgerTask
 		current = next
 	}
 	if len(plans) == 0 {
-		plans = append(plans, ledgerTaskPlan{AgentID: startAgentID})
+		plans = append(plans, ledgerTaskPlan{
+			AgentID: startAgentID,
+			Metadata: map[string]any{
+				"plan_source": "graph_handoff",
+				"sequence":    1,
+				"role_id":     startAgentID,
+			},
+		})
 	}
 	return plans
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func appendRunLedgerTrace(ctx context.Context, traceStore *trace.Store, runID string, eventType string, nodeID string, payload map[string]any) error {

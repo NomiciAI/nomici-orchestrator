@@ -48,6 +48,27 @@ func TestInstallDeveloperTeamCreatesRunnableSpec(t *testing.T) {
 	if got := loaded.Spec.Agents["product_pm"].Subagents; len(got) != 4 {
 		t.Fatalf("expected product_pm subagent roles, got %+v", got)
 	}
+	manifest := DeveloperTeamManifest()
+	if len(manifest.Roles) != 5 {
+		t.Fatalf("expected five pack roles, got %+v", manifest.Roles)
+	}
+	if manifest.Roles[0].ID != "product_pm" || manifest.Roles[0].HandoffMode != "sequential" {
+		t.Fatalf("expected coordinator role first, got %+v", manifest.Roles[0])
+	}
+	if manifest.Roles[3].ID != "coder" || len(manifest.Roles[3].RequiredTools) == 0 {
+		t.Fatalf("expected coder role tool requirements, got %+v", manifest.Roles[3])
+	}
+	packExtension, ok := loaded.Spec.Extensions["packs"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected pack extension metadata, got %+v", loaded.Spec.Extensions["packs"])
+	}
+	developerTeam, ok := packExtension[DeveloperTeamID].(map[string]any)
+	if !ok {
+		t.Fatalf("expected developer-team extension metadata, got %+v", packExtension[DeveloperTeamID])
+	}
+	if _, ok := developerTeam["roles"]; !ok {
+		t.Fatalf("expected installed pack role metadata, got %+v", developerTeam)
+	}
 
 	db, err := store.Open(dbPath)
 	if err != nil {

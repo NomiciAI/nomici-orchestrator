@@ -13,6 +13,7 @@ type Manifest struct {
 	Requires    map[string]string `json:"requires,omitempty" yaml:"requires,omitempty"`
 	Permissions Permissions       `json:"permissions" yaml:"permissions"`
 	Agents      PackAgents        `json:"agents,omitempty" yaml:"agents,omitempty"`
+	Roles       []PackRole        `json:"roles,omitempty" yaml:"roles,omitempty"`
 	Trust       Trust             `json:"trust,omitempty" yaml:"trust,omitempty"`
 }
 
@@ -34,6 +35,23 @@ type PackAgents struct {
 	Entrypoints []string `json:"entrypoints,omitempty" yaml:"entrypoints,omitempty"`
 	Includes    []string `json:"includes,omitempty" yaml:"includes,omitempty"`
 	Optional    []string `json:"optional,omitempty" yaml:"optional,omitempty"`
+}
+
+type PackRole struct {
+	ID                string         `json:"id" yaml:"id"`
+	Purpose           string         `json:"purpose" yaml:"purpose"`
+	RequiredTools     []string       `json:"required_tools,omitempty" yaml:"required_tools,omitempty"`
+	RequiredSkills    []string       `json:"required_skills,omitempty" yaml:"required_skills,omitempty"`
+	ModelPreference   string         `json:"model_preference,omitempty" yaml:"model_preference,omitempty"`
+	RuntimePreference string         `json:"runtime_preference,omitempty" yaml:"runtime_preference,omitempty"`
+	HandoffMode       string         `json:"handoff_mode,omitempty" yaml:"handoff_mode,omitempty"`
+	OutputContract    OutputContract `json:"output_contract,omitempty" yaml:"output_contract,omitempty"`
+}
+
+type OutputContract struct {
+	Kind        string   `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Required    []string `json:"required,omitempty" yaml:"required,omitempty"`
 }
 
 type Trust struct {
