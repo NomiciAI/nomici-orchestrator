@@ -26,15 +26,15 @@ Web UI: Nomici Console
 
 Tagline:
 
-> Open-source control plane for local and remote AI agents.
+> Open-source long-horizon agent harness for orchestrating, observing, and governing multi-agent AI work.
 
 Primary category:
 
-> Agent organization control plane.
+> Long-horizon agent orchestration harness.
 
 Description:
 
-> Nomici Orchestrator lets users run, register, connect, observe, and govern multiple AI agent runtimes from one local-first Gateway, CLI, Web Console, and versioned AgentSpec.
+> Nomici Orchestrator lets users run, register, connect, observe, and govern multiple AI agent runtimes from one local-first Gateway, CLI, Web Console, and versioned AgentSpec so teams can prototype reliable long-horizon agent workflows before that capability becomes native to every model.
 
 ## Users
 
