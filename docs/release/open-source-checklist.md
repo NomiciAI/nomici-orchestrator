@@ -99,7 +99,7 @@ gh repo create NomiciAI/nomici-orchestrator \
   --source . \
   --remote origin \
   --push \
-  --description "Open-source control plane for local and remote AI agents."
+  --description "Open-source long-horizon agent harness for orchestrating, observing, and governing multi-agent AI work."
 ```
 
 Important:

@@ -1,8 +1,8 @@
 # Nomici Orchestrator
 
-Open-source control plane and designer for local and remote AI agents.
+Open-source long-horizon agent harness for orchestrating, observing, and governing multi-agent AI work.
 
-Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
+Nomici Orchestrator is a local-first harness and control plane for exploring reliable long-horizon agent work before it becomes a default LLM capability. It composes local and remote agent runtimes, LLM providers, tools, skills, memory, approvals, artifacts, and traces into inspectable workflows that can run beyond a single prompt.
 
 > Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, dynamic provider/model catalog, guided provider setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install with role metadata, AgentSpec/AgentGraph validation, model-backed role execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, durable chat/session/task APIs, sequential role task execution with plan review, model-native tool loops, mediated file/bash/search/fetch tools, approval-backed blocked actions, local workspace uploads, typed plan/report/file artifacts, workspace locks, trace inspection commands, memory proposals, and chat-first Console workspace panels are implemented. General parallel multi-agent graph execution, MCP execution, channel adapters, and server/team mode remain later hardening work.
 
@@ -10,7 +10,7 @@ Nomici Orchestrator is a local-first agent control plane for configuring LLM pro
 
 Modern agents are becoming powerful but fragmented. A developer may have Claude Code, Codex, opencode, Aider, Cline, Continue, a Hermes coder, an OpenClaw operator, an Ollama model, a LangGraph workflow, several MCP tools, office documents, and multiple API keys spread across terminals, configs, ports, and dashboards.
 
-Nomici aims to provide one local-first control plane for composing those pieces into useful, inspectable, governed agent organizations.
+Nomici aims to provide the orchestration layer for that transition: a practical way to test how agent teams plan, hand off context, use tools, preserve memory, and stay governed across minutes-to-hours tasks while the underlying models continue to evolve.
 
 ## Quickstart
 
