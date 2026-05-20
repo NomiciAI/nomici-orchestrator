@@ -9,6 +9,33 @@ export function ChatPage({ state }: { state: ConsoleState }) {
       aria-label="Chat workspace"
     >
       <section className="chat-main">
+        <div className="chat-utility-bar">
+          <div>
+            <span>Tokens</span>
+            <strong>{state.tokenUsage.total.toLocaleString()}</strong>
+            <small>
+              input {state.tokenUsage.input.toLocaleString()} / output{" "}
+              {state.tokenUsage.output.toLocaleString()}
+            </small>
+          </div>
+          <div>
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={!state.chatDetail}
+              onClick={state.exportChat}
+            >
+              Export
+            </button>
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={state.draftAgentFromChat}
+            >
+              Save as agent
+            </button>
+          </div>
+        </div>
         <div className="chat-transcript">
           {(state.chatDetail?.messages ?? []).map((message) => (
             <article
@@ -46,6 +73,21 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             <div className="empty-chat">
               <p className="eyebrow">New Chat</p>
               <h2>Ask anything, or hand off a larger task.</h2>
+              <div className="starter-grid">
+                {[
+                  "Inspect this repo and suggest the next product improvement",
+                  "Create a reusable research agent",
+                  "Plan a long-horizon implementation run",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => state.setMessageText(prompt)}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -96,20 +138,22 @@ export function ChatPage({ state }: { state: ConsoleState }) {
                 Skills: {state.selectedSkillIds.length || "Auto"}
               </summary>
               <div className="checkbox-grid composer-skill-grid">
-                {state.skillCatalog.map((skill) => (
-                  <label key={skill.id}>
-                    <input
-                      type="checkbox"
-                      checked={state.selectedSkillIds.includes(skill.id)}
-                      onChange={() =>
-                        state.setSelectedSkillIds(
-                          toggleListValue(state.selectedSkillIds, skill.id),
-                        )
-                      }
-                    />
-                    <span>{skill.name || skill.id}</span>
-                  </label>
-                ))}
+                {state.skillCatalog
+                  .filter((skill) => skill.enabled !== false)
+                  .map((skill) => (
+                    <label key={skill.id}>
+                      <input
+                        type="checkbox"
+                        checked={state.selectedSkillIds.includes(skill.id)}
+                        onChange={() =>
+                          state.setSelectedSkillIds(
+                            toggleListValue(state.selectedSkillIds, skill.id),
+                          )
+                        }
+                      />
+                      <span>{skill.name || skill.id}</span>
+                    </label>
+                  ))}
               </div>
             </details>
             <button

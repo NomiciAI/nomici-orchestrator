@@ -31,6 +31,19 @@ func TestRouteDecisionModes(t *testing.T) {
 	}
 }
 
+func TestClarificationUsesNaturalProductLanguage(t *testing.T) {
+	decision := Route("fix", "", nil)
+	if decision.Mode != ModeClarify {
+		t.Fatalf("expected clarify mode, got %+v", decision)
+	}
+	if decision.Clarification != "What would you like me to help with?" {
+		t.Fatalf("expected natural clarification, got %q", decision.Clarification)
+	}
+	if len(decision.MissingInputs) != 1 || decision.MissingInputs[0] != "goal" {
+		t.Fatalf("expected simple missing input, got %+v", decision.MissingInputs)
+	}
+}
+
 func TestMatchRolesSelectsDynamicSubset(t *testing.T) {
 	manifest := packs.DeveloperTeamManifest()
 	snapshot := &graph.Snapshot{IR: graph.IR{Agents: map[string]graph.Agent{
