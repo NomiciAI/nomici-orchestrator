@@ -13,6 +13,7 @@ import (
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	"github.com/NomiciAI/nomici-orchestrator/internal/blocked"
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
@@ -141,6 +142,7 @@ func (server *Server) initialize() error {
 		Chats:     chats.NewStore(db),
 		Tools:     toolbroker.NewStore(db),
 		Memory:    memory.NewStore(db),
+		Blocked:   blocked.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

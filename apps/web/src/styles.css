@@ -985,6 +985,63 @@ h2 {
   border-left: 1px solid var(--border);
 }
 
+.blocked-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+}
+
+.blocked-card {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.blocked-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.blocked-card strong,
+.blocked-card span,
+.blocked-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blocked-card strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.blocked-card span,
+.blocked-card small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.clarification-form {
+  display: grid;
+  gap: 8px;
+}
+
+.clarification-form textarea {
+  min-height: 70px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  background: var(--surface-muted);
+  font: inherit;
+}
+
 .mini-heading {
   min-height: 42px;
   display: flex;
@@ -1447,8 +1504,40 @@ h2 {
   text-align: left;
 }
 
+.role-toggle > button:first-child {
+  min-width: 0;
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.role-toggle > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-toggle > div button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+
 .role-toggle:hover {
   background: var(--surface-muted);
+}
+
+.role-selected {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .role-toggle strong,
@@ -1471,6 +1560,25 @@ h2 {
 
 .role-disabled span {
   color: var(--text-faint);
+}
+
+.role-config {
+  background: var(--surface-muted);
+}
+
+.config-preview {
+  display: grid;
+  border-bottom: 1px solid var(--border);
+}
+
+.config-preview pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 15px;
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: 11px;
 }
 
 .list-item {

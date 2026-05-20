@@ -110,6 +110,47 @@ INSERT INTO context_snapshots (
 	return nil
 }
 
+func (store *Store) ListItems(ctx context.Context, projectID string, scope string, limit int) ([]*Item, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	query := `
+SELECT context_id, project_id, run_id, task_id, agent_id, agent_pair, task_type,
+	scope, kind, title, body, tags_json, subject_refs_json, artifact_refs_json,
+	source_json, confidence, sensitivity, status, expires_at, supersedes,
+	metadata_json, created_at, updated_at
+FROM context_items
+WHERE status = ?`
+	args := []any{StatusActive}
+	if projectID != "" {
+		query += " AND project_id = ?"
+		args = append(args, projectID)
+	}
+	if scope != "" {
+		query += " AND scope = ?"
+		args = append(args, scope)
+	}
+	query += " ORDER BY updated_at DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := store.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list context items: %w", err)
+	}
+	defer rows.Close()
+	var items []*Item
+	for rows.Next() {
+		item, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list context items: %w", err)
+	}
+	return items, nil
+}
+
 func (store *Store) ListSnapshots(ctx context.Context, projectID string, limit int) ([]*Snapshot, error) {
 	if limit <= 0 {
 		limit = 50
@@ -146,6 +187,69 @@ FROM context_snapshots`
 		return nil, fmt.Errorf("list context snapshots: %w", err)
 	}
 	return snapshots, nil
+}
+
+func scanItem(row snapshotScanner) (*Item, error) {
+	var item Item
+	var tagsJSON string
+	var subjectRefsJSON string
+	var artifactRefsJSON string
+	var sourceJSON string
+	var metadataJSON string
+	var createdAt string
+	var updatedAt string
+	if err := row.Scan(
+		&item.ContextID,
+		&item.ProjectID,
+		&item.RunID,
+		&item.TaskID,
+		&item.AgentID,
+		&item.AgentPair,
+		&item.TaskType,
+		&item.Scope,
+		&item.Kind,
+		&item.Title,
+		&item.Body,
+		&tagsJSON,
+		&subjectRefsJSON,
+		&artifactRefsJSON,
+		&sourceJSON,
+		&item.Confidence,
+		&item.Sensitivity,
+		&item.Status,
+		&item.ExpiresAt,
+		&item.Supersedes,
+		&metadataJSON,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("scan context item: %w", err)
+	}
+	if err := json.Unmarshal([]byte(tagsJSON), &item.Tags); err != nil {
+		return nil, fmt.Errorf("decode context item tags: %w", err)
+	}
+	if err := json.Unmarshal([]byte(subjectRefsJSON), &item.SubjectRefs); err != nil {
+		return nil, fmt.Errorf("decode context item subjects: %w", err)
+	}
+	if err := json.Unmarshal([]byte(artifactRefsJSON), &item.ArtifactRefs); err != nil {
+		return nil, fmt.Errorf("decode context item artifacts: %w", err)
+	}
+	if err := json.Unmarshal([]byte(sourceJSON), &item.Source); err != nil {
+		return nil, fmt.Errorf("decode context item source: %w", err)
+	}
+	if err := json.Unmarshal([]byte(metadataJSON), &item.Metadata); err != nil {
+		return nil, fmt.Errorf("decode context item metadata: %w", err)
+	}
+	var err error
+	item.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse context item created_at: %w", err)
+	}
+	item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse context item updated_at: %w", err)
+	}
+	return &item, nil
 }
 
 type snapshotScanner interface {

@@ -192,6 +192,24 @@ type ToolCallRecord = {
   updated_at: string;
 };
 
+type BlockedAction = {
+  blocked_action_id: string;
+  session_id: string;
+  run_id: string;
+  task_id?: string;
+  kind: string;
+  status: string;
+  title: string;
+  body?: string;
+  required_action?: string;
+  resume_target_task_id?: string;
+  approval_id?: string;
+  artifact_id?: string;
+  tool_call_id?: string;
+  metadata?: Record<string, unknown>;
+  updated_at: string;
+};
+
 type RunSessionDetail = {
   session: RunSession;
   tasks: RunTask[];
@@ -199,6 +217,7 @@ type RunSessionDetail = {
   uploads?: UploadRecord[];
   artifacts?: ArtifactRecord[];
   tool_calls?: ToolCallRecord[];
+  blocked_actions?: BlockedAction[];
 };
 
 type TraceEvent = {
@@ -290,6 +309,18 @@ type OrchestrationConfig = {
   role_order?: string[];
   disabled_roles?: string[];
   plan_review_policy?: string;
+  roles?: Record<
+    string,
+    {
+      purpose?: string;
+      instructions?: string;
+      output_contract?: {
+        kind?: string;
+        description?: string;
+        required?: string[];
+      };
+    }
+  >;
 };
 
 type Overview = {
@@ -371,6 +402,7 @@ export function App() {
   const [planRevision, setPlanRevision] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [workspaceMutation, setWorkspaceMutation] = useState("");
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [mutatingApproval, setMutatingApproval] = useState("");
   const [memoryProposals, setMemoryProposals] = useState<MemoryProposal[]>([]);
   const [mutatingMemory, setMutatingMemory] = useState("");
@@ -380,6 +412,10 @@ export function App() {
     model: "",
     role: "",
     instructions: "",
+    tools: [],
+    skills: [],
+    tags: [],
+    triggers: [],
   });
   const [settingsMutation, setSettingsMutation] = useState("");
 
@@ -827,7 +863,7 @@ export function App() {
         {
           method: "POST",
           body:
-            action === "grant" ? JSON.stringify({ scope: "once" }) : undefined,
+            action === "grant" ? JSON.stringify({ scope: "run" }) : undefined,
         },
       );
       if (action === "grant" && activeSessionId) {
@@ -862,6 +898,37 @@ export function App() {
     }
   }
 
+  async function submitClarification(blockedActionID: string) {
+    if (!activeSessionId || clarificationAnswer.trim() === "") {
+      return;
+    }
+    setWorkspaceError("");
+    setWorkspaceMutation("clarification");
+    try {
+      const detail = await apiRequest<RunSessionDetail>(
+        `/api/sessions/${encodeURIComponent(activeSessionId)}/clarifications`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            blocked_action_id: blockedActionID,
+            answer: clarificationAnswer,
+          }),
+        },
+      );
+      setClarificationAnswer("");
+      setSessionDetail(detail);
+      setRunStatus("running");
+    } catch (clarificationError) {
+      setWorkspaceError(
+        clarificationError instanceof Error
+          ? clarificationError.message
+          : "Clarification could not be submitted",
+      );
+    } finally {
+      setWorkspaceMutation("");
+    }
+  }
+
   async function saveAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (agentDraft.id.trim() === "") {
@@ -878,6 +945,7 @@ export function App() {
           tools: splitCSV(agentDraft.tools?.join(",") ?? ""),
           skills: splitCSV(agentDraft.skills?.join(",") ?? ""),
           tags: splitCSV(agentDraft.tags?.join(",") ?? ""),
+          triggers: splitCSV(agentDraft.triggers?.join(",") ?? ""),
         }),
       });
       setAgentDraft({
@@ -886,6 +954,10 @@ export function App() {
         model: "",
         role: "",
         instructions: "",
+        tools: [],
+        skills: [],
+        tags: [],
+        triggers: [],
       });
       await loadOverview();
     } catch (saveError) {
@@ -1142,6 +1214,8 @@ export function App() {
               workspaceMutation={workspaceMutation}
               mutatingApproval={mutatingApproval}
               mutatingMemory={mutatingMemory}
+              clarificationAnswer={clarificationAnswer}
+              setClarificationAnswer={setClarificationAnswer}
               onApprovePlan={() => void approvePlan()}
               onRevisePlan={() => void revisePlan()}
               onUpload={() => void uploadInput()}
@@ -1151,6 +1225,9 @@ export function App() {
               }
               onResolveMemory={(proposalID, action) =>
                 void resolveMemory(proposalID, action)
+              }
+              onSubmitClarification={(blockedActionID) =>
+                void submitClarification(blockedActionID)
               }
             />
           </section>
@@ -1179,6 +1256,8 @@ export function App() {
               workspaceMutation={workspaceMutation}
               mutatingApproval={mutatingApproval}
               mutatingMemory={mutatingMemory}
+              clarificationAnswer={clarificationAnswer}
+              setClarificationAnswer={setClarificationAnswer}
               onApprovePlan={() => void approvePlan()}
               onRevisePlan={() => void revisePlan()}
               onUpload={() => void uploadInput()}
@@ -1188,6 +1267,9 @@ export function App() {
               }
               onResolveMemory={(proposalID, action) =>
                 void resolveMemory(proposalID, action)
+              }
+              onSubmitClarification={(blockedActionID) =>
+                void submitClarification(blockedActionID)
               }
             />
             <section className="panel" aria-label="Recent sessions">
@@ -1329,12 +1411,15 @@ function WorkspacePanel({
   workspaceMutation,
   mutatingApproval,
   mutatingMemory,
+  clarificationAnswer,
+  setClarificationAnswer,
   onApprovePlan,
   onRevisePlan,
   onUpload,
   onCancel,
   onResolveApproval,
   onResolveMemory,
+  onSubmitClarification,
 }: {
   activeRunId: string;
   runStatus: string;
@@ -1356,6 +1441,8 @@ function WorkspacePanel({
   workspaceMutation: string;
   mutatingApproval: string;
   mutatingMemory: string;
+  clarificationAnswer: string;
+  setClarificationAnswer: (value: string) => void;
   onApprovePlan: () => void;
   onRevisePlan: () => void;
   onUpload: () => void;
@@ -1365,10 +1452,14 @@ function WorkspacePanel({
     proposalID: string,
     action: "approve" | "reject" | "delete",
   ) => void;
+  onSubmitClarification: (blockedActionID: string) => void;
 }) {
   const latestOutput = humanOutput(traceEvents);
   const decision =
     routeDecision ?? sessionDetail?.session.metadata?.route_decision ?? null;
+  const openBlockedActions = (sessionDetail?.blocked_actions ?? []).filter(
+    (action) => action.status === "open",
+  );
   return (
     <section className="run-workspace" aria-label="Current workspace">
       <div className="run-header">
@@ -1434,6 +1525,52 @@ function WorkspacePanel({
           {decision.missing_inputs?.length ? (
             <p>Missing: {decision.missing_inputs.join(", ")}</p>
           ) : null}
+        </div>
+      ) : null}
+
+      {openBlockedActions.length > 0 ? (
+        <div className="blocked-panel">
+          <div className="mini-heading no-border">
+            <strong>Needs input</strong>
+            <span>{openBlockedActions.length}</span>
+          </div>
+          {openBlockedActions.map((action) => (
+            <div className="blocked-card" key={action.blocked_action_id}>
+              <div>
+                <strong>{action.title}</strong>
+                <span>{action.body || action.required_action}</span>
+                <small>
+                  {action.kind}
+                  {action.approval_id ? ` / ${action.approval_id}` : ""}
+                  {action.tool_call_id ? ` / ${action.tool_call_id}` : ""}
+                </small>
+              </div>
+              {action.kind === "clarification" ? (
+                <div className="clarification-form">
+                  <textarea
+                    value={clarificationAnswer}
+                    onChange={(event) =>
+                      setClarificationAnswer(event.target.value)
+                    }
+                    placeholder="Answer the blocking question"
+                  />
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={
+                      workspaceMutation !== "" ||
+                      clarificationAnswer.trim() === ""
+                    }
+                    onClick={() =>
+                      onSubmitClarification(action.blocked_action_id)
+                    }
+                  >
+                    Submit
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -1723,10 +1860,38 @@ function OrchestrateBuilder({
   onSave: (next: OrchestrationConfig) => void;
 }) {
   const modelAgents = agents.filter((agent) => agent.kind !== "tool_agent");
-  const roleOrder = orchestration.role_order?.length
-    ? orchestration.role_order
+  const [draft, setDraft] = useState<OrchestrationConfig>(orchestration);
+  const [selectedRole, setSelectedRole] = useState("");
+  useEffect(() => {
+    setDraft(orchestration);
+  }, [orchestration]);
+  const roleOrder = draft.role_order?.length
+    ? draft.role_order
     : modelAgents.map((agent) => agent.id);
-  const disabled = new Set(orchestration.disabled_roles ?? []);
+  const disabled = new Set(draft.disabled_roles ?? []);
+  const currentRole = selectedRole || roleOrder[0] || "";
+  const currentRoleConfig = draft.roles?.[currentRole] ?? {};
+  const updateRole = (
+    roleID: string,
+    patch: NonNullable<OrchestrationConfig["roles"]>[string],
+  ) =>
+    setDraft({
+      ...draft,
+      roles: {
+        ...(draft.roles ?? {}),
+        [roleID]: { ...(draft.roles?.[roleID] ?? {}), ...patch },
+      },
+    });
+  const moveRole = (roleID: string, direction: -1 | 1) => {
+    const next = [...roleOrder];
+    const index = next.indexOf(roleID);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= next.length) {
+      return;
+    }
+    [next[index], next[target]] = [next[target], next[index]];
+    setDraft({ ...draft, role_order: next });
+  };
   return (
     <section className="panel" aria-label="Role flow builder">
       <div className="panel-heading">
@@ -1740,9 +1905,9 @@ function OrchestrateBuilder({
         <label>
           <span>Entrypoint</span>
           <select
-            value={orchestration.entrypoint ?? ""}
+            value={draft.entrypoint ?? ""}
             onChange={(event) =>
-              onSave({ ...orchestration, entrypoint: event.target.value })
+              setDraft({ ...draft, entrypoint: event.target.value })
             }
             disabled={saving}
           >
@@ -1757,10 +1922,10 @@ function OrchestrateBuilder({
         <label>
           <span>Plan review</span>
           <select
-            value={orchestration.plan_review_policy ?? "auto"}
+            value={draft.plan_review_policy ?? "auto"}
             onChange={(event) =>
-              onSave({
-                ...orchestration,
+              setDraft({
+                ...draft,
                 plan_review_policy: event.target.value,
               })
             }
@@ -1774,30 +1939,117 @@ function OrchestrateBuilder({
       </div>
       <div className="role-library">
         {roleOrder.map((roleID) => (
-          <button
-            className={`role-toggle ${disabled.has(roleID) ? "role-disabled" : ""}`}
-            type="button"
+          <div
+            className={`role-toggle ${disabled.has(roleID) ? "role-disabled" : ""} ${
+              currentRole === roleID ? "role-selected" : ""
+            }`}
             key={roleID}
-            disabled={saving}
-            onClick={() => {
-              const nextDisabled = new Set(disabled);
-              if (nextDisabled.has(roleID)) {
-                nextDisabled.delete(roleID);
-              } else {
-                nextDisabled.add(roleID);
-              }
-              onSave({
-                ...orchestration,
-                role_order: roleOrder,
-                disabled_roles: [...nextDisabled],
-              });
-            }}
           >
-            <strong>{roleID}</strong>
-            <span>{disabled.has(roleID) ? "disabled" : "enabled"}</span>
-          </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setSelectedRole(roleID)}
+            >
+              <strong>{roleID}</strong>
+              <span>{disabled.has(roleID) ? "disabled" : "enabled"}</span>
+            </button>
+            <div>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => moveRole(roleID, -1)}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => moveRole(roleID, 1)}
+              >
+                Down
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  const nextDisabled = new Set(disabled);
+                  if (nextDisabled.has(roleID)) {
+                    nextDisabled.delete(roleID);
+                  } else {
+                    nextDisabled.add(roleID);
+                  }
+                  setDraft({
+                    ...draft,
+                    role_order: roleOrder,
+                    disabled_roles: [...nextDisabled],
+                  });
+                }}
+              >
+                {disabled.has(roleID) ? "Enable" : "Disable"}
+              </button>
+            </div>
+          </div>
         ))}
       </div>
+      {currentRole ? (
+        <div className="builder-form role-config">
+          <div className="mini-heading">
+            <strong>{currentRole}</strong>
+            <span>Role config</span>
+          </div>
+          <label>
+            <span>Purpose</span>
+            <input
+              value={currentRoleConfig.purpose ?? ""}
+              onChange={(event) =>
+                updateRole(currentRole, { purpose: event.target.value })
+              }
+              placeholder="Role purpose"
+            />
+          </label>
+          <label>
+            <span>Instructions</span>
+            <textarea
+              rows={3}
+              value={currentRoleConfig.instructions ?? ""}
+              onChange={(event) =>
+                updateRole(currentRole, { instructions: event.target.value })
+              }
+              placeholder="Role-specific operating instructions"
+            />
+          </label>
+          <label>
+            <span>Output contract</span>
+            <input
+              value={currentRoleConfig.output_contract?.description ?? ""}
+              onChange={(event) =>
+                updateRole(currentRole, {
+                  output_contract: {
+                    ...(currentRoleConfig.output_contract ?? {}),
+                    description: event.target.value,
+                  },
+                })
+              }
+              placeholder="Expected deliverable"
+            />
+          </label>
+        </div>
+      ) : null}
+      <div className="config-preview">
+        <div className="mini-heading">
+          <strong>Pending config</strong>
+          <span>{saving ? "saving" : "local draft"}</span>
+        </div>
+        <pre>{JSON.stringify(draft, null, 2)}</pre>
+      </div>
+      <button
+        className="button"
+        type="button"
+        disabled={saving}
+        onClick={() => onSave({ ...draft, role_order: roleOrder })}
+      >
+        Save role flow
+      </button>
     </section>
   );
 }
@@ -1837,6 +2089,16 @@ function AgentBuilder({
             />
           </label>
           <label>
+            <span>Name</span>
+            <input
+              value={draft.name ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, name: event.target.value })
+              }
+              placeholder="Research Agent"
+            />
+          </label>
+          <label>
             <span>Kind</span>
             <select
               value={draft.kind}
@@ -1871,6 +2133,16 @@ function AgentBuilder({
           </label>
         </div>
         <label>
+          <span>Description</span>
+          <input
+            value={draft.description ?? ""}
+            onChange={(event) =>
+              setDraft({ ...draft, description: event.target.value })
+            }
+            placeholder="When this agent should be selected"
+          />
+        </label>
+        <label>
           <span>Role</span>
           <input
             value={draft.role ?? ""}
@@ -1891,6 +2163,48 @@ function AgentBuilder({
             placeholder="Operating instructions"
           />
         </label>
+        <div className="builder-grid">
+          <label>
+            <span>Tools</span>
+            <input
+              value={draft.tools?.join(", ") ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, tools: splitCSV(event.target.value) })
+              }
+              placeholder="read_project, write_project, run_checks"
+            />
+          </label>
+          <label>
+            <span>Skills</span>
+            <input
+              value={draft.skills?.join(", ") ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, skills: splitCSV(event.target.value) })
+              }
+              placeholder="research, coding"
+            />
+          </label>
+          <label>
+            <span>Triggers</span>
+            <input
+              value={draft.triggers?.join(", ") ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, triggers: splitCSV(event.target.value) })
+              }
+              placeholder="investigate, implement, verify"
+            />
+          </label>
+          <label>
+            <span>Tags</span>
+            <input
+              value={draft.tags?.join(", ") ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, tags: splitCSV(event.target.value) })
+              }
+              placeholder="project, local"
+            />
+          </label>
+        </div>
         <button
           className="button"
           type="submit"

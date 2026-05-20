@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	blockedpkg "github.com/NomiciAI/nomici-orchestrator/internal/blocked"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	uploadpkg "github.com/NomiciAI/nomici-orchestrator/internal/uploads"
@@ -162,6 +163,9 @@ func sessionPlanApproveHandler(options Options, services Services) http.HandlerF
 			writeError(response, http.StatusBadRequest, requestID, "plan_approve_failed", err.Error(), "Refresh the plan and retry.")
 			return
 		}
+		if services.Blocked != nil {
+			_ = services.Blocked.ResolveByArtifact(request.Context(), artifact.ArtifactID)
+		}
 		if err := services.Runs.ResumeSession(request.Context(), detail.Session.SessionID); err != nil {
 			writeError(response, http.StatusConflict, requestID, "session_not_resumable", err.Error(), "Only plan review sessions can be approved.")
 			return
@@ -177,6 +181,103 @@ func sessionPlanApproveHandler(options Options, services Services) http.HandlerF
 			return
 		}
 		updated, err := services.Runs.GetBySession(request.Context(), detail.Session.SessionID)
+		if err != nil {
+			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		if startErr := resumeWorkspaceWorker(request.Context(), options, services, updated); startErr != nil {
+			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
+			return
+		}
+		payload, err := sessionDetailPayload(request.Context(), services, updated)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, payload, nil)
+	}
+}
+
+func sessionBlockedActionsHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Blocked == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "blocked_actions_unavailable", "Blocked action store is not initialized.", "Restart Gateway.")
+			return
+		}
+		status := request.URL.Query().Get("status")
+		actions, err := services.Blocked.ListBySession(request.Context(), chi.URLParam(request, "session_id"), status, 50)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "blocked_actions_failed", "Blocked actions could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, actions, nil)
+	}
+}
+
+func sessionClarificationHandler(options Options, services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Blocked == nil || services.Trace == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "clarifications_unavailable", "Clarification services are not initialized.", "Restart Gateway.")
+			return
+		}
+		var body struct {
+			BlockedActionID string `json:"blocked_action_id"`
+			Answer          string `json:"answer"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send blocked_action_id and answer.")
+			return
+		}
+		body.Answer = strings.TrimSpace(body.Answer)
+		if body.Answer == "" {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "answer is required.", "Send the missing information.")
+			return
+		}
+		sessionID := chi.URLParam(request, "session_id")
+		detail, err := services.Runs.GetBySession(request.Context(), sessionID)
+		if err != nil {
+			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		actionID := body.BlockedActionID
+		if actionID == "" {
+			actions, err := services.Blocked.ListBySession(request.Context(), sessionID, blockedpkg.StatusOpen, 20)
+			if err != nil {
+				writeError(response, http.StatusInternalServerError, requestID, "blocked_actions_failed", "Blocked actions could not be loaded.", "Check Gateway logs.")
+				return
+			}
+			for _, action := range actions {
+				if action.Kind == blockedpkg.KindClarification {
+					actionID = action.BlockedActionID
+					break
+				}
+			}
+		}
+		if actionID == "" {
+			writeError(response, http.StatusNotFound, requestID, "clarification_not_found", "No open clarification was found for this session.", "Refresh the workspace.")
+			return
+		}
+		action, err := services.Blocked.Resolve(request.Context(), actionID, rawJSON(map[string]string{"answer": body.Answer}))
+		if err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "clarification_resolve_failed", err.Error(), "Refresh the workspace and retry.")
+			return
+		}
+		if err := appendRunLedgerTrace(request.Context(), services.Trace, detail.Session.RunID, trace.EventTaskBlocked, "", map[string]any{
+			"session_id":        sessionID,
+			"blocked_action_id": action.BlockedActionID,
+			"kind":              blockedpkg.KindClarification,
+			"reason":            "clarification_answered",
+		}); err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "clarification_trace_failed", "Clarification trace event could not be written.", "Check Gateway logs.")
+			return
+		}
+		if err := services.Runs.ResumeSession(request.Context(), sessionID); err != nil {
+			writeError(response, http.StatusConflict, requestID, "session_not_resumable", err.Error(), "Only blocked or clarification sessions can be resumed.")
+			return
+		}
+		updated, err := services.Runs.GetBySession(request.Context(), sessionID)
 		if err != nil {
 			writeSessionLookupError(response, requestID, err)
 			return

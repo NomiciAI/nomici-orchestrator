@@ -3,6 +3,7 @@ package gateway
 import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	"github.com/NomiciAI/nomici-orchestrator/internal/blocked"
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway/web"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
@@ -36,6 +37,7 @@ type Services struct {
 	Chats     *chats.Store
 	Tools     *toolbroker.Store
 	Memory    *memory.Store
+	Blocked   *blocked.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -65,6 +67,8 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		api.Post("/api/sessions/{session_id}/resume", sessionResumeHandler(options, services))
 		api.Post("/api/sessions/{session_id}/plan/revise", sessionPlanReviseHandler(services))
 		api.Post("/api/sessions/{session_id}/plan/approve", sessionPlanApproveHandler(options, services))
+		api.Get("/api/sessions/{session_id}/blocked-actions", sessionBlockedActionsHandler(services))
+		api.Post("/api/sessions/{session_id}/clarifications", sessionClarificationHandler(options, services))
 		api.Get("/api/sessions/{session_id}/tool-calls", sessionToolCallsHandler(services))
 		api.Post("/api/sessions/{session_id}/tool-calls", sessionToolCallCreateHandler(options, services))
 		api.Get("/api/sessions/{session_id}/events", sessionEventsHandler(services))
