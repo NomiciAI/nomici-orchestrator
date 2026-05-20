@@ -37,6 +37,7 @@ type setupOptions struct {
 	model           string
 	baseURL         string
 	apiKeyEnv       string
+	apiKeyValue     string
 	packID          string
 	webSearch       string
 	webSearchKeyEnv string
@@ -121,6 +122,12 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 	}
 	fmt.Fprintln(out, "\nStep 4/4 - Writing configuration")
 	fmt.Fprintf(out, "\n  ✓ Model profile saved: %s (%s / %s)\n", profile.ID, profile.Kind, profile.Model)
+	if options.apiKeyValue != "" && profile.APIKeyEnv != "" {
+		if err := writeLocalSecret(options.configPath, profile.APIKeyEnv, options.apiKeyValue); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "  ✓ Local secret saved: %s (%s)\n", localSecretPath(options.configPath), profile.APIKeyEnv)
+	}
 
 	if options.packID == setupPackDeveloperTeam {
 		result, err := packs.InstallDeveloperTeam(command.Context(), packs.InstallOptions{
@@ -195,11 +202,17 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 		options.apiKeyEnv = definition.DefaultAPIKeyEnv
 	}
 	if interactive && definition.AuthMode == providers.AuthModeAPIKeyEnv {
-		value, err := promptAPIKeyEnv(in, out, "API key env var", options.apiKeyEnv)
+		value, rawSecret, err := promptAPIKeyEnvOrSecret(in, out, "API key env var or key", options.apiKeyEnv, options.configPath)
 		if err != nil {
 			return err
 		}
 		options.apiKeyEnv = value
+		if rawSecret != "" {
+			options.apiKeyValue = rawSecret
+			if err := os.Setenv(options.apiKeyEnv, rawSecret); err != nil {
+				return fmt.Errorf("set local setup secret env: %w", err)
+			}
+		}
 	}
 	if definition.AuthMode == providers.AuthModeAPIKeyEnv {
 		if err := validateAPIKeyEnv(options.apiKeyEnv); err != nil {
@@ -747,15 +760,26 @@ func promptString(in *bufio.Reader, out io.Writer, label string, defaultValue st
 	return value, nil
 }
 
-func promptAPIKeyEnv(in *bufio.Reader, out io.Writer, label string, defaultValue string) (string, error) {
+func promptAPIKeyEnvOrSecret(in *bufio.Reader, out io.Writer, label string, defaultValue string, configPath string) (string, string, error) {
 	value, err := promptString(in, out, label, defaultValue, true)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	if providers.LooksLikeRawSecret(value) {
+		envName := strings.TrimSpace(defaultValue)
+		if envName == "" {
+			envName = "NOMICI_PROVIDER_API_KEY"
+		}
+		if !providers.ValidEnvVarName(envName) {
+			return "", "", fmt.Errorf("default api key env var %q is invalid", envName)
+		}
+		fmt.Fprintf(out, "  → Raw key will be stored locally in %s as %s\n", localSecretPath(configPath), envName)
+		return envName, value, nil
 	}
 	if err := validateAPIKeyEnv(value); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return value, nil
+	return value, "", nil
 }
 
 func validateAPIKeyEnv(value string) error {
@@ -765,6 +789,56 @@ func validateAPIKeyEnv(value string) error {
 	}
 	if !providers.ValidEnvVarName(value) {
 		return fmt.Errorf("api key env var %q is invalid; use a name like OPENAI_API_KEY", value)
+	}
+	return nil
+}
+
+func localSecretPath(configPath string) string {
+	configDir := filepath.Dir(strings.TrimSpace(configPath))
+	if configDir == "" || configDir == "." {
+		return filepath.Join(".nomici", "secrets.env")
+	}
+	return filepath.Join(configDir, ".nomici", "secrets.env")
+}
+
+func writeLocalSecret(configPath string, envName string, secretValue string) error {
+	envName = strings.TrimSpace(envName)
+	secretValue = strings.TrimSpace(secretValue)
+	if !providers.ValidEnvVarName(envName) {
+		return fmt.Errorf("api key env var %q is invalid; use a name like OPENAI_API_KEY", envName)
+	}
+	if secretValue == "" {
+		return fmt.Errorf("local secret value is empty")
+	}
+	if strings.ContainsAny(secretValue, "\r\n") {
+		return fmt.Errorf("local secret value must be a single line")
+	}
+	path := localSecretPath(configPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create local secret directory: %w", err)
+	}
+	lines := []string{}
+	if data, err := os.ReadFile(path); err == nil {
+		if text := strings.TrimRight(string(data), "\r\n"); text != "" {
+			lines = strings.Split(text, "\n")
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read local secrets: %w", err)
+	}
+	entry := envName + "=" + secretValue
+	replaced := false
+	for index, line := range lines {
+		key, _, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(key) == envName {
+			lines[index] = entry
+			replaced = true
+		}
+	}
+	if !replaced {
+		lines = append(lines, entry)
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write local secrets: %w", err)
 	}
 	return nil
 }

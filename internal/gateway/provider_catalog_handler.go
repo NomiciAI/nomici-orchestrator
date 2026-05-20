@@ -3,9 +3,9 @@ package gateway
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -26,7 +26,7 @@ func providerCatalogHandler() http.HandlerFunc {
 	}
 }
 
-func providerCatalogModelsHandler() http.HandlerFunc {
+func providerCatalogModelsHandler(options Options) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		providerID := chi.URLParam(request, "provider_id")
@@ -45,7 +45,9 @@ func providerCatalogModelsHandler() http.HandlerFunc {
 		}
 		apiKey := ""
 		if apiKeyEnv != "" {
-			apiKey = os.Getenv(apiKeyEnv)
+			if value, ok := secrets.NewResolverForConfig(options.ConfigPath).ResolveEnv(apiKeyEnv); ok {
+				apiKey = value
+			}
 		}
 		result, err := (providers.ModelCatalogClient{}).ListModels(request.Context(), providers.ModelCatalogRequest{
 			ProviderID: provider.ID,
@@ -65,7 +67,7 @@ func providerCatalogModelsHandler() http.HandlerFunc {
 	}
 }
 
-func providerCatalogDoctorHandler() http.HandlerFunc {
+func providerCatalogDoctorHandler(options Options) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		providerID := chi.URLParam(request, "provider_id")
@@ -100,7 +102,7 @@ func providerCatalogDoctorHandler() http.HandlerFunc {
 		}
 		apiKey := ""
 		if apiKeyEnv != "" {
-			if value, ok := os.LookupEnv(apiKeyEnv); ok {
+			if value, ok := secrets.NewResolverForConfig(options.ConfigPath).ResolveEnv(apiKeyEnv); ok {
 				apiKey = value
 			} else if provider.AuthMode == providers.AuthModeAPIKeyEnv {
 				writeSuccess(response, requestID, providerDoctorResponse{

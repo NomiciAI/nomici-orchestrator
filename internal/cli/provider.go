@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -64,7 +64,9 @@ func newProviderModelsCommand() *cobra.Command {
 			}
 			apiKey := ""
 			if apiKeyEnv != "" {
-				apiKey = os.Getenv(apiKeyEnv)
+				if value, ok := secrets.NewResolver().ResolveEnv(apiKeyEnv); ok {
+					apiKey = value
+				}
 			}
 			_ = refresh
 			result, err := (providers.ModelCatalogClient{}).ListModels(command.Context(), providers.ModelCatalogRequest{
@@ -142,7 +144,7 @@ func providerDoctor(providerID string, baseURL string, apiKeyEnv string) doctorR
 	}
 	apiKey := ""
 	if apiKeyEnv != "" {
-		if value, ok := os.LookupEnv(apiKeyEnv); ok {
+		if value, ok := secrets.NewResolver().ResolveEnv(apiKeyEnv); ok {
 			apiKey = value
 		} else if provider.AuthMode == providers.AuthModeAPIKeyEnv {
 			return doctorResult{Name: provider.ID, Status: "warning", Message: apiKeyEnv + " is not set"}

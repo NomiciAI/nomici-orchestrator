@@ -11,6 +11,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/lifecycle"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +34,7 @@ func newDoctorCommand() *cobra.Command {
 				checkProjectConfigBoundary(configPath),
 				checkSandbox(configPath),
 				checkWebTools(configPath),
-				checkProviders(command, dbPath),
+				checkProviders(command, configPath, dbPath),
 				checkManagedRuntimes(dbPath),
 			}
 			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -164,7 +165,7 @@ func checkSandbox(configPath string) doctorResult {
 	}
 }
 
-func checkProviders(command *cobra.Command, dbPath string) doctorResult {
+func checkProviders(command *cobra.Command, configPath string, dbPath string) doctorResult {
 	db, err := openMigratedDB(dbPath)
 	if err != nil {
 		return doctorResult{Name: "models", Status: "failed", Message: err.Error()}
@@ -178,6 +179,7 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 		return doctorResult{Name: "models", Status: "warning", Message: "no model profiles configured"}
 	}
 	var warnings []string
+	resolver := secrets.NewResolverForConfig(configPath)
 	for _, profile := range profiles {
 		if err := profile.Validate(); err != nil {
 			return doctorResult{Name: "models", Status: "failed", Message: profile.ID + ": " + err.Error()}
@@ -185,7 +187,7 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 		switch providers.NormalizeKind(profile.Kind) {
 		case providers.KindOpenAICompatible, providers.KindAnthropic, providers.KindGemini:
 			if profile.RequiresAPIKey() && profile.APIKeyEnv != "" {
-				if _, ok := os.LookupEnv(profile.APIKeyEnv); !ok {
+				if _, ok := resolver.ResolveEnv(profile.APIKeyEnv); !ok {
 					warnings = append(warnings, profile.ID+" missing "+profile.APIKeyEnv)
 				}
 			}
@@ -219,12 +221,13 @@ func checkWebTools(configPath string) doctorResult {
 	search := toolProviderSummary(loaded.Spec.Tools["web_search"])
 	fetch := toolProviderSummary(loaded.Spec.Tools["web_fetch"])
 	var warnings []string
+	resolver := secrets.NewResolverForConfig(configPath)
 	for id, config := range loaded.Spec.Tools {
 		keyEnv, _ := config["api_key_env"].(string)
 		if keyEnv == "" {
 			continue
 		}
-		if _, ok := os.LookupEnv(keyEnv); !ok {
+		if _, ok := resolver.ResolveEnv(keyEnv); !ok {
 			warnings = append(warnings, id+" missing "+keyEnv)
 		}
 	}

@@ -52,8 +52,8 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		}
 		api.Get("/api/console/overview", consoleOverviewHandler(options, services))
 		api.Get("/api/provider-catalog", providerCatalogHandler())
-		api.Get("/api/provider-catalog/{provider_id}/models", providerCatalogModelsHandler())
-		api.Post("/api/provider-catalog/{provider_id}/doctor", providerCatalogDoctorHandler())
+		api.Get("/api/provider-catalog/{provider_id}/models", providerCatalogModelsHandler(options))
+		api.Post("/api/provider-catalog/{provider_id}/doctor", providerCatalogDoctorHandler(options))
 		api.Get("/api/chats", chatListHandler(services))
 		api.Post("/api/chats", chatCreateHandler(options, services))
 		api.Get("/api/chats/{chat_id}", chatDetailHandler(services))

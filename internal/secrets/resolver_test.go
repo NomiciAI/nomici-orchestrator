@@ -1,6 +1,10 @@
 package secrets
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestResolveEnv(t *testing.T) {
 	t.Setenv("NOMICI_TEST_SECRET", "secret-value")
@@ -19,6 +23,46 @@ func TestResolveEnvMissing(t *testing.T) {
 	resolver := NewResolver()
 	if value, ok := resolver.ResolveEnv("NOMICI_MISSING_SECRET"); ok || value != "" {
 		t.Fatalf("expected missing env var, got %q", value)
+	}
+}
+
+func TestResolveLocalSecretFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(".nomici", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".nomici", "secrets.env"), []byte("NOMICI_LOCAL_SECRET=local-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := NewResolver()
+	value, ok := resolver.ResolveEnv("NOMICI_LOCAL_SECRET")
+	if !ok {
+		t.Fatal("expected local secret file to resolve")
+	}
+	if value != "local-value" {
+		t.Fatalf("expected local-value, got %q", value)
+	}
+}
+
+func TestResolveLocalSecretFileFromConfigDir(t *testing.T) {
+	dir := t.TempDir()
+	secretDir := filepath.Join(dir, ".nomici")
+	if err := os.MkdirAll(secretDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretDir, "secrets.env"), []byte("NOMICI_CONFIG_SECRET=config-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := NewResolverForConfig(filepath.Join(dir, "nomici.yaml"))
+	value, ok := resolver.ResolveEnv("NOMICI_CONFIG_SECRET")
+	if !ok {
+		t.Fatal("expected config-local secret file to resolve")
+	}
+	if value != "config-value" {
+		t.Fatalf("expected config-value, got %q", value)
 	}
 }
 

@@ -196,6 +196,58 @@ func TestSetupRejectsRawSecretAsAPIKeyEnv(t *testing.T) {
 	}
 }
 
+func TestSetupInteractiveAcceptsRawSecret(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nomici.yaml")
+	dbPath := filepath.Join(dir, "state.db")
+	rawSecret := "sk-proj-local-secret-value-for-test"
+	output, err := executeRootWithInputForTest(
+		rawSecret+"\n\n\n2\n1\nn\ny\n",
+		"setup",
+		"--config", configPath,
+		"--db-path", dbPath,
+		"--provider", "openai",
+		"--model", "gpt-4.1",
+	)
+	if err != nil {
+		t.Fatalf("setup failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "Local secret saved") {
+		t.Fatalf("expected local secret message, got:\n%s", output)
+	}
+	secretPath := filepath.Join(dir, ".nomici", "secrets.env")
+	secretData, err := os.ReadFile(secretPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(secretData), "OPENAI_API_KEY="+rawSecret) {
+		t.Fatalf("expected raw secret in local secret file, got %q", string(secretData))
+	}
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(configData), rawSecret) {
+		t.Fatal("project config leaked raw secret")
+	}
+	db, err := openMigratedDB(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	profiles, err := providers.NewStore(db).List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected one profile, got %d", len(profiles))
+	}
+	profile := profiles[0]
+	if profile.APIKeyEnv != "OPENAI_API_KEY" {
+		t.Fatalf("expected env var reference, got %q", profile.APIKeyEnv)
+	}
+}
+
 func TestProviderModelsCommandUsesLiveCatalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		_, _ = response.Write([]byte(`{"data":[{"id":"alpha-model","object":"model","owned_by":"test"}]}`))
@@ -249,9 +301,14 @@ func installFakeCodexCLI(t *testing.T) {
 }
 
 func executeRootForTest(args ...string) (string, error) {
+	return executeRootWithInputForTest("", args...)
+}
+
+func executeRootWithInputForTest(input string, args ...string) (string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	command := NewRootCommand("test")
+	command.SetIn(strings.NewReader(input))
 	command.SetOut(&stdout)
 	command.SetErr(&stderr)
 	command.SetArgs(args)
