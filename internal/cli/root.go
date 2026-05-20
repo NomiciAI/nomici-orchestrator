@@ -31,6 +31,8 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(newGraphCommand())
 	root.AddCommand(newRunCommand())
 	root.AddCommand(newSessionCommand())
+	root.AddCommand(newUploadCommand())
+	root.AddCommand(newArtifactCommand())
 	root.AddCommand(newTraceCommand())
 
 	return root

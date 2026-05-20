@@ -588,9 +588,60 @@ h2 {
   white-space: nowrap;
 }
 
+.plan-review {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-review div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plan-review p {
+  max-height: 120px;
+  overflow: auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.plan-review textarea {
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
+.upload-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.upload-box input {
+  max-width: 100%;
+  color: var(--text-muted);
+}
+
+.passive-row {
+  cursor: default;
+}
+
 .workspace-lists {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.85fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   min-height: 220px;
 }
 

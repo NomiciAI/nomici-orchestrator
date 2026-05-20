@@ -24,6 +24,7 @@ Nomici already has several foundations for long-horizon work:
 - Shared Context items and handoff snapshots.
 - Trace events, approvals, policy service, and artifact metadata foundations.
 - Run sessions, run tasks, and sandbox records in storage migrations.
+- Sequential role task execution, plan review pause/resume, workspace uploads, and typed plan/report artifacts.
 - Runtime registry and local process lifecycle commands.
 
 The missing work is not to add a hidden agent framework inside Gateway. The missing work is making the control-plane records, APIs, policies, adapters, and Console surfaces rich enough that long tasks can be managed, observed, resumed, and governed across multiple runtimes.
@@ -32,8 +33,8 @@ The missing work is not to add a hidden agent framework inside Gateway. The miss
 
 | Capability area | Nomici status | Required Nomici improvement | Target phase |
 | --- | --- | --- | --- |
-| Long-horizon tasks | Run sessions and tasks exist in storage; execution is still narrow | Make sessions/tasks authoritative across CLI, Console, channels, and adapters; add durable status transitions, resume/read APIs, budgets, cancellation, and checkpoint references | Phase 1 |
-| Coordinator / planner / researcher / coder / reporter roles | `developer-team` exposes role metadata and task ledger planning can use installed pack roles; execution is still mostly single-node or linear handoff | Complete sequential role execution, bounded context snapshots, and task status transitions before parallel fan-out | Phase 2 |
+| Long-horizon tasks | Run sessions and tasks are authoritative across Gateway, CLI, and Console; plan review/resume exists; budgets remain missing | Add budgets, retry policy, checkpoint references, and channel-created sessions | Phase 1 |
+| Coordinator / planner / researcher / coder / reporter roles | `developer-team` exposes role metadata, ordered task planning, and sequential role execution; bounded context snapshots are still basic | Improve role-specific context compression and add controlled parallel fan-out after locks/budgets | Phase 2 |
 | Parallel subagents | Parallel edges validate but do not execute | Add fan-out/fan-in only after task ledger, budget caps, workspace locks, and result merge contracts exist | Phase 5 |
 | Sandbox and filesystem | Sandbox policy metadata and sandbox records exist; execution support is adapter-specific | Define provider interface and workspace lifecycle records; map uploads, workspace, outputs, artifact roots, cleanup, and provider readiness | Phase 3 |
 | File operations | Policy and approvals exist; tool mediation is incomplete | Route mediated file tools through Tool Broker with sandbox constraints, approvals, redaction, and artifact registration | Phase 3 |
@@ -46,8 +47,8 @@ The missing work is not to add a hidden agent framework inside Gateway. The miss
 | Long-term memory | Shared Context can store curated items | Add explicit memory scopes, promotion proposals, approval before persistence, review/delete UI, and no scraping of runtime-private memory | Phase 5 |
 | Human-in-the-loop clarification | Approval queue exists; clarification state is not first-class | Add `needs_clarification`, `plan_review`, and `blocked` task states with resumable user responses | Phase 6 |
 | Plan mode | Task records exist; plan editing is not surfaced | Add plan artifacts, user edits, approval gates, and task regeneration from approved plans | Phase 6 |
-| Artifact production | Artifact metadata foundation exists | Add artifact revisions, review status, source task, preview metadata, and Console artifact viewer/editor | Phase 6 |
-| Uploads | No complete upload workflow | Add Gateway upload APIs, sandbox path mapping, malware/size/type policy, trace events, and adapter handoff references | Phase 6 |
+| Artifact production | Typed plan/report artifacts, source task refs, revisions, review state, preview metadata, and Console list exist | Add richer artifact editing, safe previews, binary artifact handling, and artifact-pack contracts | Phase 6 |
+| Uploads | Gateway and CLI upload workflow maps files into session upload roots with trace events | Add conversion, scanning hooks, task input binding, and richer policy controls | Phase 6 |
 | Multimodal outputs | Artifact types are minimal | Add pack contracts for reports, slide decks, audio, transcripts, image sets, datasets, and provider-specific media adapters | Phase 7 |
 | Vision/image handling | Model capability metadata exists | Add image artifact/input metadata, vision capability checks, safe previews, and adapter-specific image payload support | Phase 7 |
 | Message gateways | Message gateway is planned | Normalize inbound channel messages into sessions, route updates through channel adapters, redact outbound payloads, and keep channels disabled by default | Phase 6 |

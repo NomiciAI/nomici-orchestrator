@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
@@ -23,6 +24,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 )
 
 const (
@@ -131,6 +133,8 @@ func (server *Server) initialize() error {
 		Context:   sharedcontext.NewStore(db),
 		Runs:      runpkg.NewStore(db),
 		Sandboxes: sandbox.NewStore(db),
+		Artifacts: artifacts.NewStore(db),
+		Uploads:   uploads.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

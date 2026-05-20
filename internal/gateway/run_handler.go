@@ -9,17 +9,21 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
+	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	uploadpkg "github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -52,9 +56,11 @@ type traceEventResponse struct {
 }
 
 type runSessionDetailResponse struct {
-	Session *runpkg.Session `json:"session"`
-	Tasks   []*runpkg.Task  `json:"tasks"`
-	Sandbox *sandbox.Record `json:"sandbox,omitempty"`
+	Session   *runpkg.Session         `json:"session"`
+	Tasks     []*runpkg.Task          `json:"tasks"`
+	Sandbox   *sandbox.Record         `json:"sandbox,omitempty"`
+	Uploads   []*uploadpkg.Upload     `json:"uploads,omitempty"`
+	Artifacts []*artifactpkg.Artifact `json:"artifacts,omitempty"`
 }
 
 var detectSandboxAvailability = sandbox.Detect
@@ -62,7 +68,7 @@ var detectSandboxAvailability = sandbox.Detect
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil {
+		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil || services.Artifacts == nil {
 			writeError(response, http.StatusServiceUnavailable, requestID, "runs_unavailable", "Run services are not initialized.", "Restart Gateway.")
 			return
 		}
@@ -103,7 +109,7 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 			writeError(response, http.StatusBadRequest, requestID, "sandbox_config_invalid", err.Error(), "Use a valid AgentSpec config path.")
 			return
 		}
-		session, sandboxRecord, taskIDs, err := createRunLedger(request.Context(), services, snapshot, runRequest, agent.ID, intent, baseDir)
+		session, sandboxRecord, tasks, err := createRunLedger(request.Context(), services, snapshot, runRequest, agent.ID, intent, baseDir)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, requestID, "run_session_failed", "Run session could not be created.", "Check Gateway logs.")
 			return
@@ -112,19 +118,15 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
-			result, err := executor.Execute(ctx, runRequest)
-			if err != nil {
-				_ = completeRunLedger(ctx, services, runRequest.RunID, runpkg.SessionStatusFailed, runpkg.TaskStatusFailed, taskIDs)
+			if err := executeWorkspaceSession(ctx, services, executor, runRequest, session, tasks); err != nil {
+				if current, lookupErr := services.Runs.GetBySession(ctx, session.SessionID); lookupErr == nil && current.Session.Status == runpkg.SessionStatusCancelled {
+					log.Printf("Console run %s cancelled", runRequest.RunID)
+					return
+				}
+				_ = completeRunLedger(ctx, services, runRequest.RunID, runpkg.SessionStatusFailed, runpkg.TaskStatusFailed, taskIDs(tasks))
 				log.Printf("Console run %s failed: %v", runRequest.RunID, err)
 				return
 			}
-			sessionStatus := runpkg.SessionStatusCompleted
-			taskStatus := runpkg.TaskStatusCompleted
-			if result.Status != "" && result.Status != "completed" {
-				sessionStatus = runpkg.SessionStatusFailed
-				taskStatus = runpkg.TaskStatusFailed
-			}
-			_ = completeRunLedger(ctx, services, runRequest.RunID, sessionStatus, taskStatus, taskIDs)
 		}()
 
 		writeSuccess(response, requestID, runCreateResponse{
@@ -360,10 +362,26 @@ func sessionDetailPayload(ctx context.Context, services Services, detail *runpkg
 		}
 		sandboxRecord = record
 	}
-	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord}, nil
+	var uploads []*uploadpkg.Upload
+	if services.Uploads != nil {
+		records, err := services.Uploads.List(ctx, detail.Session.SessionID, 50)
+		if err != nil {
+			return nil, err
+		}
+		uploads = records
+	}
+	var artifacts []*artifactpkg.Artifact
+	if services.Artifacts != nil {
+		records, err := services.Artifacts.List(ctx, detail.Session.SessionID, 50)
+		if err != nil {
+			return nil, err
+		}
+		artifacts = records
+	}
+	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts}, nil
 }
 
-func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string) (*runpkg.Session, *sandbox.Record, []string, error) {
+func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string) (*runpkg.Session, *sandbox.Record, []*runpkg.Task, error) {
 	session, err := services.Runs.CreateSession(ctx, runpkg.CreateSessionRequest{
 		RunID:           request.RunID,
 		ProjectID:       snapshot.ProjectID,
@@ -389,13 +407,10 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	taskIDs := make([]string, 0, len(plans))
+	tasks := make([]*runpkg.Task, 0, len(plans))
 	parentTaskID := ""
-	for index, plan := range plans {
+	for _, plan := range plans {
 		status := runpkg.TaskStatusQueued
-		if index == 0 {
-			status = runpkg.TaskStatusRunning
-		}
 		metadata, err := json.Marshal(plan.Metadata)
 		if err != nil {
 			return nil, nil, nil, err
@@ -411,7 +426,7 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		taskIDs = append(taskIDs, task.TaskID)
+		tasks = append(tasks, task)
 		parentTaskID = task.TaskID
 		if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCreated, task.AgentID, map[string]any{
 			"task_id":        task.TaskID,
@@ -425,8 +440,8 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		}
 	}
 	taskID := ""
-	if len(taskIDs) > 0 {
-		taskID = taskIDs[0]
+	if len(tasks) > 0 {
+		taskID = tasks[0].TaskID
 	}
 	sandboxRecord, err := services.Sandboxes.CreateForRun(ctx, sandbox.CreateRecordRequest{
 		RunID:     request.RunID,
@@ -449,7 +464,282 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 	}); err != nil {
 		return nil, nil, nil, err
 	}
-	return session, sandboxRecord, taskIDs, nil
+	return session, sandboxRecord, tasks, nil
+}
+
+func executeWorkspaceSession(ctx context.Context, services Services, executor *runpkg.Executor, request runpkg.Request, session *runpkg.Session, tasks []*runpkg.Task) error {
+	var summaries []string
+	for index, task := range tasks {
+		if err := stopIfSessionCancelled(ctx, services, session.SessionID); err != nil {
+			return err
+		}
+		if err := services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusRunning); err != nil {
+			return err
+		}
+		if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskStarted, task.AgentID, map[string]any{
+			"task_id": task.TaskID,
+			"status":  runpkg.TaskStatusRunning,
+		}); err != nil {
+			return err
+		}
+		roleRequest := request
+		roleRequest.AgentID = task.AgentID
+		roleRequest.Prompt = rolePrompt(request.Prompt, task, summaries)
+		result, err := executor.ExecuteTask(ctx, roleRequest, task.TaskID)
+		if err != nil {
+			_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+				"summary":        err.Error(),
+				"failure_reason": err.Error(),
+			})
+			_ = services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusFailed)
+			_ = appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskFailed, task.AgentID, map[string]any{
+				"task_id": task.TaskID,
+				"status":  runpkg.TaskStatusFailed,
+				"error":   err.Error(),
+			})
+			return err
+		}
+		preview := resultPreview(result)
+		summary := taskSummary(task, preview)
+		if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+			"summary":        summary,
+			"output_preview": preview,
+		}); err != nil {
+			return err
+		}
+		summaries = append(summaries, fmt.Sprintf("%s: %s", task.AgentID, summary))
+		if err := createRoleArtifact(ctx, services, session, task, preview, index == len(tasks)-1); err != nil {
+			return err
+		}
+		if err := services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusCompleted); err != nil {
+			return err
+		}
+		if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCompleted, task.AgentID, map[string]any{
+			"task_id": task.TaskID,
+			"status":  runpkg.TaskStatusCompleted,
+			"summary": summary,
+		}); err != nil {
+			return err
+		}
+		if taskRoleID(task) == "planner" {
+			if err := pauseForPlanReview(ctx, services, session.SessionID, request.RunID); err != nil {
+				return err
+			}
+		}
+	}
+	return completeSessionLifecycle(ctx, services, request.RunID, runpkg.SessionStatusCompleted)
+}
+
+func completeSessionLifecycle(ctx context.Context, services Services, runID string, sessionStatus string) error {
+	if err := services.Runs.CompleteSession(ctx, runID, sessionStatus); err != nil {
+		return err
+	}
+	if services.Sandboxes != nil {
+		if err := services.Sandboxes.ReleaseByRun(ctx, runID); err != nil {
+			return err
+		}
+		if err := appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventSandboxReleased, "", map[string]any{
+			"status": "released",
+		}); err != nil {
+			return err
+		}
+	}
+	return appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCompleted, "", map[string]any{
+		"status": sessionStatus,
+	})
+}
+
+func pauseForPlanReview(ctx context.Context, services Services, sessionID string, runID string) error {
+	if err := services.Runs.UpdateSessionStatus(ctx, runID, runpkg.SessionStatusPlanReview); err != nil {
+		return err
+	}
+	if err := appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventTaskBlocked, "", map[string]any{
+		"session_id": sessionID,
+		"status":     runpkg.SessionStatusPlanReview,
+		"reason":     "plan_review",
+	}); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		detail, err := services.Runs.GetBySession(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		switch detail.Session.Status {
+		case runpkg.SessionStatusRunning:
+			return appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCreated, "", map[string]any{
+				"session_id": sessionID,
+				"status":     runpkg.SessionStatusRunning,
+				"reason":     "plan_approved",
+			})
+		case runpkg.SessionStatusCancelled, runpkg.SessionStatusFailed, runpkg.SessionStatusCompleted:
+			return fmt.Errorf("session stopped during plan review: %s", detail.Session.Status)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func stopIfSessionCancelled(ctx context.Context, services Services, sessionID string) error {
+	detail, err := services.Runs.GetBySession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if detail.Session.Status == runpkg.SessionStatusCancelled {
+		return fmt.Errorf("session cancelled")
+	}
+	return nil
+}
+
+func rolePrompt(originalPrompt string, task *runpkg.Task, summaries []string) string {
+	var builder strings.Builder
+	builder.WriteString(originalPrompt)
+	builder.WriteString("\n\nRole task:\n")
+	builder.WriteString(task.AgentID)
+	if purpose := taskMetadataString(task, "purpose"); purpose != "" {
+		builder.WriteString("\nPurpose: ")
+		builder.WriteString(purpose)
+	}
+	if len(summaries) > 0 {
+		builder.WriteString("\n\nPrior role summaries:\n")
+		for _, summary := range summaries {
+			builder.WriteString("- ")
+			builder.WriteString(summary)
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\nReturn a concise task result with decisions, evidence, and next handoff notes.")
+	return builder.String()
+}
+
+func taskSummary(task *runpkg.Task, preview string) string {
+	if preview == "" {
+		return task.AgentID + " completed without text output."
+	}
+	if len(preview) > 600 {
+		return preview[:600]
+	}
+	return preview
+}
+
+func resultPreview(result *runpkg.Result) string {
+	if result == nil {
+		return ""
+	}
+	if len(result.Messages) > 0 {
+		return result.Messages[len(result.Messages)-1].Content
+	}
+	if result.CLI != nil {
+		if result.CLI.Stdout != "" {
+			return result.CLI.Stdout
+		}
+		return result.CLI.Stderr
+	}
+	return ""
+}
+
+func createRoleArtifact(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, preview string, finalRole bool) error {
+	if services.Artifacts == nil {
+		return nil
+	}
+	artifactType := ""
+	title := ""
+	reviewState := artifactpkg.ReviewDraft
+	switch {
+	case taskRoleID(task) == "planner":
+		artifactType = artifactpkg.TypePlan
+		title = "Plan"
+	case finalRole:
+		artifactType = artifactpkg.TypeReport
+		title = "Final report"
+		reviewState = artifactpkg.ReviewApproved
+	default:
+		return nil
+	}
+	path := ""
+	if services.Sandboxes != nil {
+		if record, err := services.Sandboxes.GetByRun(ctx, session.RunID); err == nil && record.ArtifactRoot != "" {
+			if err := os.MkdirAll(record.ArtifactRoot, 0o700); err != nil {
+				return err
+			}
+			filename := strings.ReplaceAll(strings.ToLower(title), " ", "-") + ".md"
+			path = filepath.Join(record.ArtifactRoot, filename)
+			if err := os.WriteFile(path, []byte(preview), 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	artifact, err := services.Artifacts.Create(ctx, artifactpkg.CreateRequest{
+		SessionID:   session.SessionID,
+		RunID:       session.RunID,
+		TaskID:      task.TaskID,
+		Type:        artifactType,
+		Title:       title,
+		Path:        path,
+		ReviewState: reviewState,
+		Preview:     preview,
+	})
+	if err != nil {
+		return err
+	}
+	if err := services.Runs.AddTaskArtifactRef(ctx, task.TaskID, artifact.ArtifactID); err != nil {
+		return err
+	}
+	return appendRunLedgerTrace(ctx, services.Trace, session.RunID, trace.EventArtifactCreated, task.AgentID, map[string]any{
+		"artifact_id":  artifact.ArtifactID,
+		"task_id":      task.TaskID,
+		"type":         artifact.Type,
+		"title":        artifact.Title,
+		"review_state": artifact.ReviewState,
+	})
+}
+
+func updateTaskMetadata(ctx context.Context, store *runpkg.Store, task *runpkg.Task, updates map[string]any) error {
+	metadata := map[string]any{}
+	if len(task.Metadata) > 0 {
+		_ = json.Unmarshal(task.Metadata, &metadata)
+	}
+	for key, value := range updates {
+		metadata[key] = value
+	}
+	payload, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	task.Metadata = payload
+	return store.UpdateTaskMetadata(ctx, task.TaskID, payload)
+}
+
+func taskMetadataString(task *runpkg.Task, key string) string {
+	metadata := map[string]any{}
+	if len(task.Metadata) == 0 {
+		return ""
+	}
+	if err := json.Unmarshal(task.Metadata, &metadata); err != nil {
+		return ""
+	}
+	value, _ := metadata[key].(string)
+	return value
+}
+
+func taskRoleID(task *runpkg.Task) string {
+	if roleID := taskMetadataString(task, "role_id"); roleID != "" {
+		return roleID
+	}
+	return task.AgentID
+}
+
+func taskIDs(tasks []*runpkg.Task) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.TaskID)
+	}
+	return ids
 }
 
 func completeRunLedger(ctx context.Context, services Services, runID string, sessionStatus string, taskStatus string, taskIDs []string) error {

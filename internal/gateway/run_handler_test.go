@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
@@ -24,6 +25,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 )
 
 func TestRunCreateEndpointValidation(t *testing.T) {
@@ -117,8 +119,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 		t.Fatalf("decode run create: %v", err)
 	}
 	events := waitForRunEvents(t, trace.NewStore(db), envelope.Data.RunID, trace.EventRunCompleted)
-	if len(events) != 10 {
-		t.Fatalf("expected ten trace events, got %d", len(events))
+	if len(events) != 12 {
+		t.Fatalf("expected twelve trace events, got %d", len(events))
 	}
 
 	eventsRequest := httptest.NewRequest(http.MethodGet, "/api/runs/"+envelope.Data.RunID+"/events?after_sequence=2", nil)
@@ -139,8 +141,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if err := json.NewDecoder(eventsResponse.Body).Decode(&eventsEnvelope); err != nil {
 		t.Fatalf("decode events: %v", err)
 	}
-	if len(eventsEnvelope.Data) != 8 {
-		t.Fatalf("expected eight events after sequence 2, got %d", len(eventsEnvelope.Data))
+	if len(eventsEnvelope.Data) != 10 {
+		t.Fatalf("expected ten events after sequence 2, got %d", len(eventsEnvelope.Data))
 	}
 	if eventsEnvelope.Data[0].Sequence <= 2 {
 		t.Fatalf("expected sequence filtering, got %+v", eventsEnvelope.Data)
@@ -198,6 +200,75 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	}
 	if !strings.Contains(tasksResponse.Body.String(), `"agent_id":"product_pm"`) {
 		t.Fatalf("expected task list, got %s", tasksResponse.Body.String())
+	}
+}
+
+func TestRunCreateEndpointRolePlanReviewAndArtifacts(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{
+			"choices": [{"message": {"role": "assistant", "content": "Role output with plan and report evidence."}}],
+			"usage": {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}
+		}`))
+	}))
+	defer providerServer.Close()
+
+	db, router := newRunTestRouter(t)
+	manifest := packs.DeveloperTeamManifest()
+	if err := packs.NewStore(db).SaveInstallation(context.Background(), &packs.Installation{
+		PackID:      manifest.ID,
+		Version:     manifest.Version,
+		Kind:        manifest.Kind,
+		Trust:       manifest.Trust.Level,
+		ConfigPath:  "nomici.yaml",
+		Entrypoints: manifest.Agents.Entrypoints,
+		InstalledAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saveRunTestRoleGraph(t, graph.NewStore(db), providerServer.URL)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"ship workspace"}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Data runCreateResponse `json:"data"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode run create: %v", err)
+	}
+	detail := waitForSessionStatus(t, runpkg.NewStore(db), envelope.Data.SessionID, runpkg.SessionStatusPlanReview)
+	if len(detail.Tasks) != 5 {
+		t.Fatalf("expected five role tasks, got %+v", detail.Tasks)
+	}
+	planArtifacts, err := artifacts.NewStore(db).List(context.Background(), envelope.Data.SessionID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planArtifacts) != 1 || planArtifacts[0].Type != artifacts.TypePlan {
+		t.Fatalf("expected plan artifact, got %+v", planArtifacts)
+	}
+
+	approve := httptest.NewRecorder()
+	router.ServeHTTP(approve, httptest.NewRequest(http.MethodPost, "/api/sessions/"+envelope.Data.SessionID+"/plan/approve", nil))
+	if approve.Code != http.StatusOK {
+		t.Fatalf("expected plan approve 200, got %d: %s", approve.Code, approve.Body.String())
+	}
+	completed := waitForSessionStatus(t, runpkg.NewStore(db), envelope.Data.SessionID, runpkg.SessionStatusCompleted)
+	for _, task := range completed.Tasks {
+		if task.Status != runpkg.TaskStatusCompleted {
+			t.Fatalf("expected completed role task, got %+v", completed.Tasks)
+		}
+	}
+	finalArtifacts, err := artifacts.NewStore(db).List(context.Background(), envelope.Data.SessionID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(finalArtifacts) < 2 {
+		t.Fatalf("expected plan and final report artifacts, got %+v", finalArtifacts)
 	}
 }
 
@@ -475,6 +546,8 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 		Context:   sharedcontext.NewStore(db),
 		Runs:      runpkg.NewStore(db),
 		Sandboxes: sandbox.NewStore(db),
+		Artifacts: artifacts.NewStore(db),
+		Uploads:   uploads.NewStore(db),
 	})
 }
 
@@ -508,6 +581,41 @@ func saveRunTestGraph(t *testing.T, store *graph.Store, baseURL string, edges []
 	}
 }
 
+func saveRunTestRoleGraph(t *testing.T, store *graph.Store, baseURL string) {
+	t.Helper()
+	agents := map[string]graph.Agent{}
+	for _, id := range []string{"product_pm", "planner", "researcher", "coder", "reporter"} {
+		kind := "model_agent"
+		if id == "product_pm" {
+			kind = "gateway_agent"
+		}
+		agents[id] = graph.Agent{ID: id, Kind: kind, Model: "gpt"}
+	}
+	if err := store.Save(context.Background(), &graph.Snapshot{
+		SnapshotID:    "graph_roles",
+		SchemaVersion: "0.1",
+		ProjectID:     "test-project",
+		CreatedAt:     time.Now().UTC(),
+		SourceHash:    "sha256:test",
+		IR: graph.IR{
+			Models: map[string]graph.Model{
+				"gpt": {
+					ID:        "gpt",
+					Kind:      providers.KindOpenAICompatible,
+					BaseURL:   baseURL,
+					Model:     "test-model",
+					APIKeyEnv: "NOMICI_TEST_API_KEY",
+				},
+			},
+			Runtimes: map[string]graph.Runtime{},
+			Agents:   agents,
+			Edges:    []graph.Edge{},
+		},
+	}); err != nil {
+		t.Fatalf("save graph: %v", err)
+	}
+}
+
 func waitForRunEvents(t *testing.T, store *trace.Store, runID string, terminalType string) []*trace.Event {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -524,5 +632,22 @@ func waitForRunEvents(t *testing.T, store *trace.Store, runID string, terminalTy
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("run %s did not reach %s", runID, terminalType)
+	return nil
+}
+
+func waitForSessionStatus(t *testing.T, store *runpkg.Store, sessionID string, status string) *runpkg.SessionDetail {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		detail, err := store.GetBySession(context.Background(), sessionID)
+		if err != nil {
+			t.Fatalf("get session: %v", err)
+		}
+		if detail.Session.Status == status {
+			return detail
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("session %s did not reach %s", sessionID, status)
 	return nil
 }

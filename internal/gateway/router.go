@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
+	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway/web"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
@@ -12,6 +13,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -26,6 +28,8 @@ type Services struct {
 	Context   *sharedcontext.Store
 	Runs      *runpkg.Store
 	Sandboxes *sandbox.Store
+	Artifacts *artifacts.Store
+	Uploads   *uploads.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -45,7 +49,14 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		api.Get("/api/sessions/{session_id}", sessionDetailHandler(services))
 		api.Get("/api/sessions/{session_id}/tasks", sessionTasksHandler(services))
 		api.Post("/api/sessions/{session_id}/cancel", sessionCancelHandler(services))
+		api.Post("/api/sessions/{session_id}/resume", sessionResumeHandler(services))
+		api.Post("/api/sessions/{session_id}/plan/revise", sessionPlanReviseHandler(services))
+		api.Post("/api/sessions/{session_id}/plan/approve", sessionPlanApproveHandler(services))
 		api.Get("/api/sessions/{session_id}/events", sessionEventsHandler(services))
+		api.Get("/api/uploads", uploadListHandler(services))
+		api.Post("/api/uploads", uploadCreateHandler(services))
+		api.Get("/api/artifacts", artifactListHandler(services))
+		api.Get("/api/artifacts/{artifact_id}", artifactDetailHandler(services))
 		api.Get("/api/runs", runListHandler(services))
 		api.Post("/api/runs", runCreateHandler(options, services))
 		api.Get("/api/runs/{run_id}", runDetailHandler(services))

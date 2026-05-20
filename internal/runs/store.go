@@ -11,10 +11,13 @@ import (
 )
 
 const (
-	SessionStatusRunning   = "running"
-	SessionStatusCompleted = "completed"
-	SessionStatusFailed    = "failed"
-	SessionStatusCancelled = "cancelled"
+	SessionStatusRunning            = "running"
+	SessionStatusPlanReview         = "plan_review"
+	SessionStatusBlocked            = "blocked"
+	SessionStatusNeedsClarification = "needs_clarification"
+	SessionStatusCompleted          = "completed"
+	SessionStatusFailed             = "failed"
+	SessionStatusCancelled          = "cancelled"
 
 	TaskStatusQueued             = "queued"
 	TaskStatusRunning            = "running"
@@ -223,6 +226,57 @@ WHERE run_id = ?`, status, now, now, runID)
 	return nil
 }
 
+func (store *Store) UpdateSessionStatus(ctx context.Context, runID string, status string) error {
+	if runID == "" {
+		return fmt.Errorf("update run session status: run_id is required")
+	}
+	if status == "" {
+		return fmt.Errorf("update run session status: status is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_sessions
+SET status = ?, updated_at = ?
+WHERE run_id = ?`, status, now, runID)
+	if err != nil {
+		return fmt.Errorf("update run session status: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) ResumeSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("resume run session: session_id is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := store.db.ExecContext(ctx, `
+UPDATE run_sessions
+SET status = ?, updated_at = ?
+WHERE session_id = ? AND status IN (?, ?, ?)`,
+		SessionStatusRunning,
+		now,
+		sessionID,
+		SessionStatusPlanReview,
+		SessionStatusBlocked,
+		SessionStatusNeedsClarification,
+	)
+	if err != nil {
+		return fmt.Errorf("resume run session: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("resume run session: %w", err)
+	}
+	if affected == 0 {
+		existing, lookupErr := store.GetBySession(ctx, sessionID)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("resume run session: session is %s", existing.Session.Status)
+	}
+	return nil
+}
+
 func (store *Store) CompleteTasks(ctx context.Context, runID string, status string) error {
 	if status == "" {
 		status = TaskStatusCompleted
@@ -238,6 +292,99 @@ WHERE run_id = ? AND status IN (?, ?)`, status, now, now, runID, TaskStatusQueue
 	return nil
 }
 
+func (store *Store) UpdateTaskStatus(ctx context.Context, taskID string, status string) error {
+	if taskID == "" {
+		return fmt.Errorf("update run task status: task_id is required")
+	}
+	if status == "" {
+		return fmt.Errorf("update run task status: status is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	completedAt := ""
+	switch status {
+	case TaskStatusCompleted, TaskStatusFailed, TaskStatusCancelled:
+		completedAt = now
+	}
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET status = ?, updated_at = ?, completed_at = ?
+WHERE task_id = ?`, status, now, completedAt, taskID)
+	if err != nil {
+		return fmt.Errorf("update run task status: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) UpdateTaskMetadata(ctx context.Context, taskID string, metadata json.RawMessage) error {
+	if taskID == "" {
+		return fmt.Errorf("update run task metadata: task_id is required")
+	}
+	if len(metadata) == 0 {
+		metadata = json.RawMessage("{}")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET metadata_json = ?, updated_at = ?
+WHERE task_id = ?`, string(metadata), now, taskID)
+	if err != nil {
+		return fmt.Errorf("update run task metadata: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) SetTaskContextSnapshot(ctx context.Context, taskID string, snapshotID string) error {
+	if taskID == "" {
+		return fmt.Errorf("set run task context snapshot: task_id is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET context_snapshot_id = ?, updated_at = ?
+WHERE task_id = ?`, snapshotID, now, taskID)
+	if err != nil {
+		return fmt.Errorf("set run task context snapshot: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) AddTaskArtifactRef(ctx context.Context, taskID string, artifactID string) error {
+	if taskID == "" {
+		return fmt.Errorf("add task artifact ref: task_id is required")
+	}
+	if artifactID == "" {
+		return fmt.Errorf("add task artifact ref: artifact_id is required")
+	}
+	row := store.db.QueryRowContext(ctx, `SELECT artifact_refs_json FROM run_tasks WHERE task_id = ?`, taskID)
+	var raw string
+	if err := row.Scan(&raw); err != nil {
+		return fmt.Errorf("load task artifact refs: %w", err)
+	}
+	var refs []string
+	if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+		return fmt.Errorf("decode task artifact refs: %w", err)
+	}
+	for _, ref := range refs {
+		if ref == artifactID {
+			return nil
+		}
+	}
+	refs = append(refs, artifactID)
+	payload, err := json.Marshal(refs)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET artifact_refs_json = ?, updated_at = ?
+WHERE task_id = ?`, string(payload), now, taskID)
+	if err != nil {
+		return fmt.Errorf("update task artifact refs: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) CancelSession(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("cancel run session: session_id is required")
@@ -246,7 +393,16 @@ func (store *Store) CancelSession(ctx context.Context, sessionID string) error {
 	result, err := store.db.ExecContext(ctx, `
 UPDATE run_sessions
 SET status = ?, updated_at = ?, completed_at = ?
-WHERE session_id = ? AND status = ?`, SessionStatusCancelled, now, now, sessionID, SessionStatusRunning)
+WHERE session_id = ? AND status IN (?, ?, ?, ?)`,
+		SessionStatusCancelled,
+		now,
+		now,
+		sessionID,
+		SessionStatusRunning,
+		SessionStatusPlanReview,
+		SessionStatusBlocked,
+		SessionStatusNeedsClarification,
+	)
 	if err != nil {
 		return fmt.Errorf("cancel run session: %w", err)
 	}
