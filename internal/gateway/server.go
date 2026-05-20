@@ -16,6 +16,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gatewayauth"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/memory"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
@@ -24,6 +25,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
+	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 )
@@ -137,6 +139,8 @@ func (server *Server) initialize() error {
 		Artifacts: artifacts.NewStore(db),
 		Uploads:   uploads.NewStore(db),
 		Chats:     chats.NewStore(db),
+		Tools:     toolbroker.NewStore(db),
+		Memory:    memory.NewStore(db),
 	}
 	server.httpServer = &http.Server{
 		Addr:              net.JoinHostPort(server.options.Host, strconv.Itoa(server.options.Port)),

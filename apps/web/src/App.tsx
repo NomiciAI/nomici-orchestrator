@@ -75,6 +75,10 @@ type RouteDecision = {
   selected_roles?: string[];
   needs_plan_review?: boolean;
   required_tools?: string[];
+  required_skills?: string[];
+  missing_inputs?: string[];
+  risk?: string;
+  confidence?: number;
   rationale?: string;
   clarification?: string;
   manual_agent_id?: string;
@@ -174,12 +178,27 @@ type ArtifactRecord = {
   updated_at: string;
 };
 
+type ToolCallRecord = {
+  tool_call_id: string;
+  task_id?: string;
+  tool_id: string;
+  status: string;
+  risk?: string;
+  input_preview?: string;
+  output_preview?: string;
+  artifact_refs?: string[];
+  approval_id?: string;
+  error?: string;
+  updated_at: string;
+};
+
 type RunSessionDetail = {
   session: RunSession;
   tasks: RunTask[];
   sandbox?: SandboxRecord;
   uploads?: UploadRecord[];
   artifacts?: ArtifactRecord[];
+  tool_calls?: ToolCallRecord[];
 };
 
 type TraceEvent = {
@@ -202,6 +221,15 @@ type Approval = {
   risk: string;
   summary: string;
   requested_by_agent?: string;
+};
+
+type MemoryProposal = {
+  proposal_id: string;
+  title: string;
+  body: string;
+  status: string;
+  context_id?: string;
+  updated_at: string;
 };
 
 type ChatThread = {
@@ -344,6 +372,8 @@ export function App() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [workspaceMutation, setWorkspaceMutation] = useState("");
   const [mutatingApproval, setMutatingApproval] = useState("");
+  const [memoryProposals, setMemoryProposals] = useState<MemoryProposal[]>([]);
+  const [mutatingMemory, setMutatingMemory] = useState("");
   const [agentDraft, setAgentDraft] = useState<AgentRecord>({
     id: "",
     kind: "model_agent",
@@ -363,6 +393,7 @@ export function App() {
   const workspaceTasks = sessionDetail?.tasks ?? [];
   const workspaceUploads = sessionDetail?.uploads ?? [];
   const workspaceArtifacts = sessionDetail?.artifacts ?? [];
+  const workspaceToolCalls = sessionDetail?.tool_calls ?? [];
   const planArtifact = workspaceArtifacts.find(
     (artifact) => artifact.type === "plan",
   );
@@ -418,7 +449,7 @@ export function App() {
         nextToken,
       );
       setOverview(normalizeOverview(nextOverview));
-      const [nextChats, catalog, nextAgents, nextOrchestration] =
+      const [nextChats, catalog, nextAgents, nextOrchestration, nextMemory] =
         await Promise.all([
           apiRequest<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
           apiRequest<ProviderDefinition[]>(
@@ -434,11 +465,17 @@ export function App() {
             {},
             nextToken,
           ).catch(() => ({})),
+          apiRequest<MemoryProposal[]>(
+            "/api/memory/proposals?status=proposed",
+            {},
+            nextToken,
+          ).catch(() => []),
         ]);
       setChats(nextChats ?? []);
       setProviderCatalog(catalog ?? []);
       setAgents(nextAgents ?? []);
       setOrchestration(nextOrchestration ?? {});
+      setMemoryProposals(nextMemory ?? []);
       setStatus("ready");
     } catch (loadError) {
       const message =
@@ -793,9 +830,35 @@ export function App() {
             action === "grant" ? JSON.stringify({ scope: "once" }) : undefined,
         },
       );
+      if (action === "grant" && activeSessionId) {
+        const detail = await apiRequest<RunSessionDetail>(
+          `/api/sessions/${encodeURIComponent(activeSessionId)}/resume`,
+          { method: "POST" },
+        ).catch(() => null);
+        if (detail) {
+          setSessionDetail(detail);
+          setRunStatus("running");
+        }
+      }
       await loadOverview();
     } finally {
       setMutatingApproval("");
+    }
+  }
+
+  async function resolveMemory(
+    proposalID: string,
+    action: "approve" | "reject" | "delete",
+  ) {
+    setMutatingMemory(`${proposalID}:${action}`);
+    try {
+      await apiRequest<MemoryProposal>(
+        `/api/memory/proposals/${encodeURIComponent(proposalID)}/${action}`,
+        { method: "POST" },
+      );
+      await loadOverview();
+    } finally {
+      setMutatingMemory("");
     }
   }
 
@@ -1067,7 +1130,9 @@ export function App() {
               tasks={workspaceTasks}
               uploads={workspaceUploads}
               artifacts={workspaceArtifacts}
+              toolCalls={workspaceToolCalls}
               approvals={overview.pending_approvals}
+              memoryProposals={memoryProposals}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
               setPlanRevision={setPlanRevision}
@@ -1076,12 +1141,16 @@ export function App() {
               workspaceError={workspaceError}
               workspaceMutation={workspaceMutation}
               mutatingApproval={mutatingApproval}
+              mutatingMemory={mutatingMemory}
               onApprovePlan={() => void approvePlan()}
               onRevisePlan={() => void revisePlan()}
               onUpload={() => void uploadInput()}
               onCancel={() => void cancelSession()}
               onResolveApproval={(approvalID, action) =>
                 void resolveApproval(approvalID, action)
+              }
+              onResolveMemory={(proposalID, action) =>
+                void resolveMemory(proposalID, action)
               }
             />
           </section>
@@ -1098,7 +1167,9 @@ export function App() {
               tasks={workspaceTasks}
               uploads={workspaceUploads}
               artifacts={workspaceArtifacts}
+              toolCalls={workspaceToolCalls}
               approvals={overview.pending_approvals}
+              memoryProposals={memoryProposals}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
               setPlanRevision={setPlanRevision}
@@ -1107,12 +1178,16 @@ export function App() {
               workspaceError={workspaceError}
               workspaceMutation={workspaceMutation}
               mutatingApproval={mutatingApproval}
+              mutatingMemory={mutatingMemory}
               onApprovePlan={() => void approvePlan()}
               onRevisePlan={() => void revisePlan()}
               onUpload={() => void uploadInput()}
               onCancel={() => void cancelSession()}
               onResolveApproval={(approvalID, action) =>
                 void resolveApproval(approvalID, action)
+              }
+              onResolveMemory={(proposalID, action) =>
+                void resolveMemory(proposalID, action)
               }
             />
             <section className="panel" aria-label="Recent sessions">
@@ -1242,7 +1317,9 @@ function WorkspacePanel({
   tasks,
   uploads,
   artifacts,
+  toolCalls,
   approvals,
+  memoryProposals,
   planArtifact,
   planRevision,
   setPlanRevision,
@@ -1251,11 +1328,13 @@ function WorkspacePanel({
   workspaceError,
   workspaceMutation,
   mutatingApproval,
+  mutatingMemory,
   onApprovePlan,
   onRevisePlan,
   onUpload,
   onCancel,
   onResolveApproval,
+  onResolveMemory,
 }: {
   activeRunId: string;
   runStatus: string;
@@ -1265,7 +1344,9 @@ function WorkspacePanel({
   tasks: RunTask[];
   uploads: UploadRecord[];
   artifacts: ArtifactRecord[];
+  toolCalls: ToolCallRecord[];
   approvals: Approval[];
+  memoryProposals: MemoryProposal[];
   planArtifact?: ArtifactRecord;
   planRevision: string;
   setPlanRevision: (value: string) => void;
@@ -1274,11 +1355,16 @@ function WorkspacePanel({
   workspaceError: string;
   workspaceMutation: string;
   mutatingApproval: string;
+  mutatingMemory: string;
   onApprovePlan: () => void;
   onRevisePlan: () => void;
   onUpload: () => void;
   onCancel: () => void;
   onResolveApproval: (approvalID: string, action: "grant" | "deny") => void;
+  onResolveMemory: (
+    proposalID: string,
+    action: "approve" | "reject" | "delete",
+  ) => void;
 }) {
   const latestOutput = humanOutput(traceEvents);
   const decision =
@@ -1317,6 +1403,14 @@ function WorkspacePanel({
             <strong>{decision.recommended_agent_id || "auto"}</strong>
             <span>Plan review</span>
             <strong>{decision.needs_plan_review ? "required" : "auto"}</strong>
+            <span>Risk</span>
+            <strong>{decision.risk || "medium"}</strong>
+            <span>Confidence</span>
+            <strong>
+              {decision.confidence
+                ? `${Math.round(decision.confidence * 100)}%`
+                : "heuristic"}
+            </strong>
           </div>
           {decision.rationale ? <p>{decision.rationale}</p> : null}
           {decision.required_tools?.length ? (
@@ -1327,6 +1421,18 @@ function WorkspacePanel({
                 </span>
               ))}
             </div>
+          ) : null}
+          {decision.required_skills?.length ? (
+            <div className="chip-row">
+              {decision.required_skills.map((skill) => (
+                <span className="chip" key={skill}>
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {decision.missing_inputs?.length ? (
+            <p>Missing: {decision.missing_inputs.join(", ")}</p>
           ) : null}
         </div>
       ) : null}
@@ -1485,6 +1591,24 @@ function WorkspacePanel({
         </div>
         <div>
           <div className="mini-heading">
+            <strong>Tool calls</strong>
+            <span>{toolCalls.length}</span>
+          </div>
+          {toolCalls.slice(0, 5).map((call) => (
+            <div className="event-row passive-row" key={call.tool_call_id}>
+              <span>{call.tool_id}</span>
+              <strong>
+                {call.status}
+                {call.approval_id ? ` / ${call.approval_id}` : ""}
+              </strong>
+              {call.output_preview || call.error ? (
+                <small>{call.output_preview || call.error}</small>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        <div>
+          <div className="mini-heading">
             <strong>Approvals</strong>
             <span>{approvals.length}</span>
           </div>
@@ -1512,6 +1636,41 @@ function WorkspacePanel({
                   }
                 >
                   Deny
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div className="mini-heading">
+            <strong>Memory</strong>
+            <span>{memoryProposals.length}</span>
+          </div>
+          {memoryProposals.slice(0, 3).map((proposal) => (
+            <div className="approval-card" key={proposal.proposal_id}>
+              <strong>{proposal.title}</strong>
+              <span>{proposal.status}</span>
+              <p>{proposal.body}</p>
+              <div>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={mutatingMemory !== ""}
+                  onClick={() =>
+                    onResolveMemory(proposal.proposal_id, "approve")
+                  }
+                >
+                  Approve
+                </button>
+                <button
+                  className="button button-danger"
+                  type="button"
+                  disabled={mutatingMemory !== ""}
+                  onClick={() =>
+                    onResolveMemory(proposal.proposal_id, "reject")
+                  }
+                >
+                  Reject
                 </button>
               </div>
             </div>

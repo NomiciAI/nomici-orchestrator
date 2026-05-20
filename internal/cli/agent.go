@@ -28,6 +28,7 @@ func newAgentCommand() *cobra.Command {
 	command.AddCommand(newAgentCreateCommand(&configPath, &dbPath))
 	command.AddCommand(newAgentUpdateCommand(&configPath, &dbPath))
 	command.AddCommand(newAgentDeleteCommand(&configPath, &dbPath))
+	command.AddCommand(newAgentValidateCommand(&configPath))
 	command.AddCommand(newAgentRunCommand(&configPath, &dbPath, &gatewayURL))
 	return command
 }
@@ -131,6 +132,25 @@ func newAgentDeleteCommand(configPath *string, dbPath *string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(command.OutOrStdout(), "Agent deleted: %s\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newAgentValidateCommand(configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate <agent_id>",
+		Short: "Validate an agent definition",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			agent, err := projectconfig.GetAgent(*configPath, args[0])
+			if err != nil {
+				return err
+			}
+			if err := projectconfig.ValidateAgent(*agent); err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Agent valid: %s\n", args[0])
 			return nil
 		},
 	}

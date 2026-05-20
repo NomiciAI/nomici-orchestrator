@@ -157,7 +157,7 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	var snapshotRoute *orchestration.RouteDecision
 	if services.Graph != nil {
 		if snapshot, err := services.Graph.Latest(request.Context()); err == nil {
-			decision := orchestration.Route(content, manualAgentID, snapshot)
+			decision := routeChatIntent(request.Context(), services, content, manualAgentID, snapshot)
 			snapshotRoute = &decision
 		}
 	}

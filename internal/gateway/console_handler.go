@@ -323,7 +323,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		Unavailable: []consoleUnavailableAPI{
 			{Name: "Canvas editing", Status: "deferred", Reason: "Gate 8 is read-only."},
 			{Name: "Console provider setup", Status: "deferred", Reason: "Use `nomici setup` for bootstrap."},
-			{Name: "Mediated tool execution", Status: "deferred", Reason: "Web tools are configured as read-only contracts."},
+			{Name: "Parallel execution", Status: "deferred", Reason: "Sequential role execution remains the safe default."},
 			{Name: "Runtime lifecycle controls", Status: "deferred", Reason: "Runtime reconciler is not implemented yet."},
 		},
 	}, warnings, nil
@@ -382,7 +382,7 @@ func loadConsoleTools(configPath string) ([]consoleToolStatus, []string, error) 
 			Mode:      toolString(config, "mode", "unknown"),
 			Status:    toolString(config, "status", "configured"),
 			Auth:      toolString(config, "auth", "none"),
-			Execution: toolString(config, "execution", "configured_not_executed"),
+			Execution: toolString(config, "execution", "mediated"),
 		})
 	}
 	return tools, nil, nil

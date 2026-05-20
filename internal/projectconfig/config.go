@@ -110,6 +110,10 @@ func UpsertAgent(ctx context.Context, configPath string, dbPath string, record A
 	return compileAndSave(ctx, configPath, dbPath)
 }
 
+func ValidateAgent(record AgentRecord) error {
+	return validateAgentRecord(record)
+}
+
 func DeleteAgent(ctx context.Context, configPath string, dbPath string, id string) (*graph.Snapshot, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, fmt.Errorf("agent id is required")
