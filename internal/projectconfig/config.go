@@ -12,6 +12,7 @@ import (
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/skills"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"gopkg.in/yaml.v3"
 )
@@ -146,6 +147,54 @@ func DeleteAgent(ctx context.Context, configPath string, dbPath string, id strin
 		return nil, err
 	}
 	return compileAndSave(ctx, configPath, dbPath)
+}
+
+func UpsertSkill(configPath string, definition skills.Definition) error {
+	if !validID.MatchString(strings.TrimSpace(definition.ID)) {
+		return fmt.Errorf("skill id must start with a letter and contain only letters, numbers, underscores, or dashes")
+	}
+	spec, err := loadOrCreate(configPath)
+	if err != nil {
+		return err
+	}
+	byID := extensionSkillMap(spec)
+	id := strings.TrimSpace(definition.ID)
+	definition.ID = id
+	definition.Name = strings.TrimSpace(definition.Name)
+	definition.Description = strings.TrimSpace(definition.Description)
+	definition.Risk = strings.TrimSpace(definition.Risk)
+	definition.Compatibility = strings.TrimSpace(definition.Compatibility)
+	definition.Briefing = strings.TrimSpace(definition.Briefing)
+	definition.Triggers = cleanList(definition.Triggers)
+	definition.Files = cleanList(definition.Files)
+	definition.RequiredTools = cleanList(definition.RequiredTools)
+	definition.Source = ""
+	definition.Enabled = false
+	byID[id] = definition
+	writeExtensionSkills(spec, byID)
+	return save(configPath, spec)
+}
+
+func SetSkillEnabled(configPath string, id string, enabled bool) error {
+	id = strings.TrimSpace(id)
+	if !validID.MatchString(id) {
+		return fmt.Errorf("skill id must start with a letter and contain only letters, numbers, underscores, or dashes")
+	}
+	current, err := skills.Get(configPath, id)
+	if err != nil {
+		return err
+	}
+	spec, err := loadOrCreate(configPath)
+	if err != nil {
+		return err
+	}
+	byID := extensionSkillMap(spec)
+	current.Disabled = !enabled
+	current.Enabled = false
+	current.Source = ""
+	byID[id] = current
+	writeExtensionSkills(spec, byID)
+	return save(configPath, spec)
 }
 
 func GetOrchestration(configPath string) (OrchestrationConfig, error) {
@@ -284,6 +333,63 @@ func orchestrationConfig(spec *agentspec.Spec) OrchestrationConfig {
 	var config OrchestrationConfig
 	_ = yaml.Unmarshal(payload, &config)
 	return config
+}
+
+func extensionSkillMap(spec *agentspec.Spec) map[string]skills.Definition {
+	result := map[string]skills.Definition{}
+	if spec == nil || spec.Extensions == nil {
+		return result
+	}
+	raw, ok := spec.Extensions["skills"]
+	if !ok {
+		return result
+	}
+	payload, err := yaml.Marshal(raw)
+	if err != nil {
+		return result
+	}
+	var list []skills.Definition
+	if err := yaml.Unmarshal(payload, &list); err == nil && len(list) > 0 {
+		for _, definition := range list {
+			if strings.TrimSpace(definition.ID) != "" {
+				result[strings.TrimSpace(definition.ID)] = definition
+			}
+		}
+		return result
+	}
+	var byID map[string]skills.Definition
+	if err := yaml.Unmarshal(payload, &byID); err != nil {
+		return result
+	}
+	for id, definition := range byID {
+		if definition.ID == "" {
+			definition.ID = id
+		}
+		if strings.TrimSpace(definition.ID) != "" {
+			result[strings.TrimSpace(definition.ID)] = definition
+		}
+	}
+	return result
+}
+
+func writeExtensionSkills(spec *agentspec.Spec, byID map[string]skills.Definition) {
+	if spec.Extensions == nil {
+		spec.Extensions = map[string]any{}
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	definitions := make([]skills.Definition, 0, len(ids))
+	for _, id := range ids {
+		definition := byID[id]
+		definition.ID = id
+		definition.Enabled = false
+		definition.Source = ""
+		definitions = append(definitions, definition)
+	}
+	spec.Extensions["skills"] = definitions
 }
 
 func normalizeOrchestration(config OrchestrationConfig) OrchestrationConfig {

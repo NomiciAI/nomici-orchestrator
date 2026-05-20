@@ -26,6 +26,7 @@ import {
   type TimelineItem,
   type TodoItem,
   type ToolDefinition,
+  type TokenUsage,
   type TraceEvent,
   type UploadRecord,
   type View,
@@ -112,6 +113,17 @@ export function useConsoleState() {
     tags: [],
     triggers: [],
   });
+  const [skillDraft, setSkillDraft] = useState<SkillDefinition>({
+    id: "",
+    name: "",
+    description: "",
+    triggers: [],
+    required_tools: [],
+    risk: "low",
+    compatibility: "local",
+    briefing: "",
+    enabled: true,
+  });
   const [settingsMutation, setSettingsMutation] = useState("");
   const [agentValidation, setAgentValidation] = useState("");
 
@@ -122,6 +134,19 @@ export function useConsoleState() {
   );
   const selectedAgent = agentOptions.find((agent) => agent.id === runAgentId);
   const traceEvents = runEvents.length > 0 ? runEvents : overview.latest_trace;
+  const tokenUsage = useMemo(
+    () => aggregateTokenUsage(traceEvents),
+    [traceEvents],
+  );
+  const enabledSkillIds = useMemo(
+    () =>
+      new Set(
+        skillCatalog
+          .filter((skill) => skill.enabled !== false)
+          .map((skill) => skill.id),
+      ),
+    [skillCatalog],
+  );
   const workspaceTasks = sessionDetail?.tasks ?? [];
   const workspaceUploads = sessionDetail?.uploads ?? [];
   const workspaceArtifacts = sessionDetail?.artifacts ?? [];
@@ -332,7 +357,9 @@ export function useConsoleState() {
         method: "POST",
         body: JSON.stringify({
           agent_id: runAgentId === "auto" ? "" : selectedAgent?.id,
-          selected_skills: selectedSkillIds,
+          selected_skills: selectedSkillIds.filter((id) =>
+            enabledSkillIds.has(id),
+          ),
           prompt: content,
           content,
         }),
@@ -745,6 +772,78 @@ export function useConsoleState() {
     setView("agents");
   }
 
+  function resetAgentDraft() {
+    setAgentDraft({
+      id: "",
+      kind: "model_agent",
+      model: overview.models[0]?.id ?? "",
+      role: "",
+      instructions: "",
+      tools: [],
+      skills: [],
+      tags: [],
+      triggers: [],
+    });
+    setAgentValidation("");
+    setAgentTestResult(null);
+    setView("agents");
+  }
+
+  function draftAgentFromChat() {
+    const messages = chatDetail?.messages ?? [];
+    const lastUser = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+    const seed = lastUser?.content || messageText || "Custom workspace agent";
+    const words = seed
+      .toLowerCase()
+      .replace(/[^a-z0-9\s_-]/g, "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 4);
+    const id = (words.join("_") || "custom_agent").replace(
+      /^([0-9])/,
+      "agent_$1",
+    );
+    setAgentDraft({
+      id,
+      name: titleCase(words.join(" ") || "Custom Agent"),
+      description: seed.slice(0, 160),
+      kind: "model_agent",
+      model: overview.models[0]?.id ?? "",
+      role: "Handle this recurring workspace workflow.",
+      instructions: `Use this agent when the user asks for work similar to:\n${seed}`,
+      tools: [],
+      skills: selectedSkillIds,
+      tags: ["custom"],
+      triggers: words,
+    });
+    setAgentValidation("");
+    setAgentTestResult(null);
+    setView("agents");
+  }
+
+  function exportChat() {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      chat: chatDetail,
+      run_id: activeRunId,
+      session: sessionDetail,
+      token_usage: tokenUsage,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${chatDetail?.thread.title || "nomici-chat"}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function testAgentDraft() {
     if (agentDraft.id.trim() === "") {
       setAgentValidation("Agent id is required.");
@@ -812,6 +911,77 @@ export function useConsoleState() {
         saveError instanceof Error
           ? saveError.message
           : "Agent could not be saved",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function saveSkillDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (skillDraft.id.trim() === "") {
+      setRunError("Skill id is required.");
+      return;
+    }
+    setSettingsMutation("skill");
+    setRunError("");
+    try {
+      await request<SkillDefinition>("/api/skills", {
+        method: "POST",
+        body: JSON.stringify({
+          ...skillDraft,
+          triggers: splitCSV(skillDraft.triggers?.join(",") ?? ""),
+          required_tools: splitCSV(skillDraft.required_tools?.join(",") ?? ""),
+          files: splitCSV(skillDraft.files?.join(",") ?? ""),
+          enabled: skillDraft.enabled !== false,
+        }),
+      });
+      setSkillDraft({
+        id: "",
+        name: "",
+        description: "",
+        triggers: [],
+        required_tools: [],
+        risk: "low",
+        compatibility: "local",
+        briefing: "",
+        enabled: true,
+      });
+      await loadOverview();
+    } catch (saveError) {
+      setRunError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Skill could not be saved",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function toggleSkillEnabled(skill: SkillDefinition) {
+    setSettingsMutation(`skill:${skill.id}`);
+    setRunError("");
+    try {
+      const enabled = skill.enabled === false;
+      await request<SkillDefinition>(
+        `/api/skills/${encodeURIComponent(skill.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        },
+      );
+      await loadOverview();
+      if (!enabled) {
+        setSelectedSkillIds((current) =>
+          current.filter((id) => id !== skill.id),
+        );
+      }
+    } catch (toggleError) {
+      setRunError(
+        toggleError instanceof Error
+          ? toggleError.message
+          : "Skill status could not be updated",
       );
     } finally {
       setSettingsMutation("");
@@ -907,6 +1077,7 @@ export function useConsoleState() {
     providerCatalog,
     toolCatalog,
     skillCatalog,
+    enabledSkillIds,
     agents,
     agentTemplates,
     agentTestResult,
@@ -956,11 +1127,14 @@ export function useConsoleState() {
     artifactMutation,
     agentDraft,
     setAgentDraft,
+    skillDraft,
+    setSkillDraft,
     settingsMutation,
     agentValidation,
     agentOptions,
     selectedAgent,
     traceEvents,
+    tokenUsage,
     workspaceTasks,
     workspaceUploads,
     workspaceArtifacts,
@@ -989,8 +1163,13 @@ export function useConsoleState() {
     submitClarification,
     validateAgentDraft,
     applyAgentTemplate,
+    resetAgentDraft,
+    draftAgentFromChat,
+    exportChat,
     testAgentDraft,
     saveAgent,
+    saveSkillDraft,
+    toggleSkillEnabled,
     saveOrchestration,
     previewOrchestration,
     testOrchestration,
@@ -998,3 +1177,39 @@ export function useConsoleState() {
 }
 
 export type ConsoleState = ReturnType<typeof useConsoleState>;
+
+function aggregateTokenUsage(events: TraceEvent[]): TokenUsage {
+  return events.reduce(
+    (usage, event) => {
+      const raw = event.payload?.usage;
+      if (!raw || typeof raw !== "object") {
+        return usage;
+      }
+      const record = raw as Record<string, unknown>;
+      const input =
+        numberValue(record.prompt_tokens) || numberValue(record.input_tokens);
+      const output =
+        numberValue(record.completion_tokens) ||
+        numberValue(record.output_tokens);
+      const total = numberValue(record.total_tokens) || input + output;
+      return {
+        input: usage.input + input,
+        output: usage.output + output,
+        total: usage.total + total,
+      };
+    },
+    { input: 0, output: 0, total: 0 },
+  );
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}

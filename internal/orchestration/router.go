@@ -107,7 +107,7 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		decision.Mode = ModeClarify
 		decision.Complexity = ComplexitySimple
 		decision.Clarification = "What would you like me to help with?"
-		decision.MissingInputs = []string{"target_outcome", "constraints"}
+		decision.MissingInputs = []string{"goal"}
 		decision.Confidence = 0.8
 		decision.Risk = "low"
 		decision.Rationale = "The request is too short to choose a safe execution plan."

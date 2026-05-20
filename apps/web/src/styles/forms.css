@@ -354,6 +354,18 @@
     grid-template-columns: 1fr;
   }
 
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .settings-nav > div {
+    grid-column: 1 / -1;
+  }
+
   .graph-panel {
     grid-row: auto;
   }
@@ -445,6 +457,14 @@
 
   .workspace {
     padding: 12px;
+  }
+
+  .settings-layout {
+    padding: 12px;
+  }
+
+  .settings-nav {
+    grid-template-columns: 1fr;
   }
 
   .auth-banner {

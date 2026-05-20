@@ -1,74 +1,46 @@
+import { useState } from "react";
 import type { ConsoleState } from "../../hooks/useChatWorkspace";
+import { SettingsMemoryPanel } from "./SettingsMemoryPanel";
+import { SettingsModelPanel } from "./SettingsModelPanel";
+import { SettingsSkillsPanel } from "./SettingsSkillsPanel";
+import { SettingsToolsPanel } from "./SettingsToolsPanel";
+
+type SettingsSection = "models" | "tools" | "skills" | "memory";
+
+const sections: Array<{ id: SettingsSection; label: string; hint: string }> = [
+  { id: "models", label: "Models", hint: "Providers and profiles" },
+  { id: "tools", label: "Tools", hint: "Broker contracts" },
+  { id: "skills", label: "Skills", hint: "Reusable instructions" },
+  { id: "memory", label: "Memory", hint: "Reusable context" },
+];
 
 export function SettingsPage({ state }: { state: ConsoleState }) {
+  const [section, setSection] = useState<SettingsSection>("skills");
   return (
-    <section className="workspace diagnostics-workspace">
-      <section className="panel" aria-label="Providers">
-        <div className="panel-heading">
-          <h2>Provider catalog</h2>
-          <span className="tag">{state.providerCatalog.length}</span>
+    <section className="settings-layout" aria-label="Settings">
+      <aside className="settings-nav">
+        <div>
+          <h2>Settings</h2>
+          <p>Configure the harness without editing project files by hand.</p>
         </div>
-        <div className="table">
-          <div className="table-row table-head">
-            <span>Provider</span>
-            <span>Adapter</span>
-            <span>Models</span>
-            <span>Ready</span>
-          </div>
-          {state.providerCatalog.map((provider) => (
-            <div className="table-row" key={provider.id}>
-              <span>
-                <strong>{provider.name}</strong>
-                <small>{provider.availability_message || provider.description}</small>
-              </span>
-              <span>{provider.adapter_kind}</span>
-              <span>{provider.catalog_mode}</span>
-              <span>{provider.available ? "ready" : "not ready"}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel" aria-label="Model profiles">
-        <div className="panel-heading">
-          <h2>Configured models</h2>
-          <span className="tag">{state.overview.models.length}</span>
-        </div>
-        <div className="table">
-          <div className="table-row table-head">
-            <span>Name</span>
-            <span>Kind</span>
-            <span>Model</span>
-            <span>Secret</span>
-          </div>
-          {state.overview.models.map((model) => (
-            <div className="table-row" key={model.id}>
-              <span>{model.name}</span>
-              <span>{model.kind}</span>
-              <span>{model.model}</span>
-              <span>{model.api_key_env || "-"}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel" aria-label="Tool contracts">
-        <div className="panel-heading">
-          <h2>Tools</h2>
-          <span className="tag">{state.overview.tools.length}</span>
-        </div>
-        <div className="stack">
-          {state.overview.tools.map((tool) => (
-            <div className="list-item" key={tool.id}>
-              <div>
-                <strong>{tool.id}</strong>
-                <span>
-                  {tool.provider} / {tool.mode} / {tool.execution}
-                </span>
-              </div>
-              <span className="pill pill-green">{tool.status}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+        {sections.map((item) => (
+          <button
+            className={section === item.id ? "settings-tab-active" : ""}
+            key={item.id}
+            type="button"
+            onClick={() => setSection(item.id)}
+          >
+            <strong>{item.label}</strong>
+            <span>{item.hint}</span>
+          </button>
+        ))}
+      </aside>
+      <div className="settings-content">
+        {section === "models" ? <SettingsModelPanel state={state} /> : null}
+        {section === "tools" ? <SettingsToolsPanel state={state} /> : null}
+        {section === "skills" ? <SettingsSkillsPanel state={state} /> : null}
+        {section === "memory" ? <SettingsMemoryPanel state={state} /> : null}
+      </div>
     </section>
   );
 }

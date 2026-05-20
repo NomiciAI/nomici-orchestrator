@@ -22,6 +22,8 @@ type Definition struct {
 	Risk          string   `json:"risk,omitempty" yaml:"risk,omitempty"`
 	Compatibility string   `json:"compatibility,omitempty" yaml:"compatibility,omitempty"`
 	Briefing      string   `json:"briefing,omitempty" yaml:"briefing,omitempty"`
+	Disabled      bool     `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+	Enabled       bool     `json:"enabled" yaml:"-"`
 	Source        string   `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
@@ -67,6 +69,9 @@ func Briefings(configPath string, ids []string) []string {
 		seen[id] = true
 		definition, err := Get(configPath, id)
 		if err != nil {
+			continue
+		}
+		if !definition.Enabled {
 			continue
 		}
 		parts := []string{}
@@ -135,6 +140,7 @@ func Builtins() []Definition {
 			Risk:          "low",
 			Compatibility: "local",
 			Briefing:      "Produce an executable plan with scope, order, risks, and acceptance criteria. Surface missing inputs before execution.",
+			Enabled:       true,
 			Source:        "builtin",
 		},
 		{
@@ -146,6 +152,7 @@ func Builtins() []Definition {
 			Risk:          "medium",
 			Compatibility: "local",
 			Briefing:      "Separate verified facts from assumptions. Include source context, confidence, contradictions, and follow-up checks.",
+			Enabled:       true,
 			Source:        "builtin",
 		},
 		{
@@ -157,6 +164,7 @@ func Builtins() []Definition {
 			Risk:          "high",
 			Compatibility: "local",
 			Briefing:      "Use mediated tools for files and commands. Keep edits scoped, verify behavior, and report changed surfaces and residual risk.",
+			Enabled:       true,
 			Source:        "builtin",
 		},
 		{
@@ -167,6 +175,7 @@ func Builtins() []Definition {
 			Risk:          "low",
 			Compatibility: "local",
 			Briefing:      "Summarize what changed, what was verified, artifacts produced, and remaining risks without claiming unexecuted work.",
+			Enabled:       true,
 			Source:        "builtin",
 		},
 	}
@@ -224,6 +233,7 @@ func normalize(definition Definition) Definition {
 	if definition.Source == "" {
 		definition.Source = "project"
 	}
+	definition.Enabled = !definition.Disabled
 	return definition
 }
 

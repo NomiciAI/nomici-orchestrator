@@ -10,7 +10,23 @@ export function AgentsPage({ state }: { state: ConsoleState }) {
             <h2>Agent Studio</h2>
             <p>Create, test, and save reusable project agents</p>
           </div>
-          <span className="tag">{state.agents.length}</span>
+          <div className="panel-actions">
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={state.draftAgentFromChat}
+            >
+              From chat
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={state.resetAgentDraft}
+            >
+              New agent
+            </button>
+            <span className="tag">{state.agents.length}</span>
+          </div>
         </div>
         <div className="template-grid">
           {state.agentTemplates.map((template) => (

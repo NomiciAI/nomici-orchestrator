@@ -113,7 +113,15 @@ export type SkillDefinition = {
   risk?: string;
   compatibility?: string;
   briefing?: string;
+  disabled?: boolean;
+  enabled?: boolean;
   source?: string;
+};
+
+export type TokenUsage = {
+  input: number;
+  output: number;
+  total: number;
 };
 
 export type RunSession = {
