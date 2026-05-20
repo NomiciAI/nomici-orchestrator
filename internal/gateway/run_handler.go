@@ -50,6 +50,12 @@ type traceEventResponse struct {
 	Metadata   json.RawMessage `json:"metadata,omitempty"`
 }
 
+type runSessionDetailResponse struct {
+	Session *runpkg.Session `json:"session"`
+	Tasks   []*runpkg.Task  `json:"tasks"`
+	Sandbox *sandbox.Record `json:"sandbox,omitempty"`
+}
+
 var detectSandboxAvailability = sandbox.Detect
 
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
@@ -148,17 +154,212 @@ func runDetailHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "run_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		sandboxRecord, err := services.Sandboxes.GetByRun(request.Context(), detail.Session.RunID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		payload, err := sessionDetailPayload(request.Context(), services, detail)
+		if err != nil {
 			writeError(response, http.StatusInternalServerError, requestID, "sandbox_load_failed", "Sandbox record could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		writeSuccess(response, requestID, struct {
-			Session *runpkg.Session `json:"session"`
-			Tasks   []*runpkg.Task  `json:"tasks"`
-			Sandbox *sandbox.Record `json:"sandbox,omitempty"`
-		}{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord}, nil)
+		writeSuccess(response, requestID, payload, nil)
 	}
+}
+
+func sessionListHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "sessions_unavailable", "Run session store is not initialized.", "Restart Gateway.")
+			return
+		}
+		limit := consoleRunLimit
+		if raw := request.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 100 {
+				writeError(response, http.StatusBadRequest, requestID, "invalid_request", "limit must be between 1 and 100.", "Use a positive integer limit.")
+				return
+			}
+			limit = parsed
+		}
+		sessions, err := services.Runs.ListSessions(request.Context(), limit)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "sessions_list_failed", "Run sessions could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, sessions, nil)
+	}
+}
+
+func sessionDetailHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Sandboxes == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "sessions_unavailable", "Run session store is not initialized.", "Restart Gateway.")
+			return
+		}
+		detail, err := services.Runs.GetBySession(request.Context(), chi.URLParam(request, "session_id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(response, http.StatusNotFound, requestID, "session_not_found", "Run session was not found.", "Refresh recent sessions.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		payload, err := sessionDetailPayload(request.Context(), services, detail)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "sandbox_load_failed", "Sandbox record could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, payload, nil)
+	}
+}
+
+func sessionTasksHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "sessions_unavailable", "Run session store is not initialized.", "Restart Gateway.")
+			return
+		}
+		tasks, err := services.Runs.ListTasksBySession(request.Context(), chi.URLParam(request, "session_id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(response, http.StatusNotFound, requestID, "session_not_found", "Run session was not found.", "Refresh recent sessions.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "session_tasks_failed", "Run session tasks could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, tasks, nil)
+	}
+}
+
+func sessionCancelHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Trace == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "sessions_unavailable", "Run session services are not initialized.", "Restart Gateway.")
+			return
+		}
+		sessionID := chi.URLParam(request, "session_id")
+		detail, err := services.Runs.GetBySession(request.Context(), sessionID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(response, http.StatusNotFound, requestID, "session_not_found", "Run session was not found.", "Refresh recent sessions.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		if err := services.Runs.CancelSession(request.Context(), sessionID); err != nil {
+			writeError(response, http.StatusConflict, requestID, "session_not_cancellable", err.Error(), "Only running sessions can be cancelled.")
+			return
+		}
+		if err := services.Runs.CancelTasks(request.Context(), detail.Session.RunID); err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "session_cancel_failed", "Run session tasks could not be cancelled.", "Check Gateway logs.")
+			return
+		}
+		if err := appendRunLedgerTrace(request.Context(), services.Trace, detail.Session.RunID, trace.EventRunSessionCompleted, "", map[string]any{
+			"session_id": sessionID,
+			"status":     runpkg.SessionStatusCancelled,
+		}); err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "session_cancel_trace_failed", "Run session cancellation could not be traced.", "Check Gateway logs.")
+			return
+		}
+		updated, err := services.Runs.GetBySession(request.Context(), sessionID)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		payload, err := sessionDetailPayload(request.Context(), services, updated)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "sandbox_load_failed", "Sandbox record could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, payload, nil)
+	}
+}
+
+func sessionEventsHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Trace == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "sessions_unavailable", "Run session services are not initialized.", "Restart Gateway.")
+			return
+		}
+		detail, err := services.Runs.GetBySession(request.Context(), chi.URLParam(request, "session_id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(response, http.StatusNotFound, requestID, "session_not_found", "Run session was not found.", "Refresh recent sessions.")
+				return
+			}
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		afterSequence := 0
+		if raw := request.URL.Query().Get("after_sequence"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 0 {
+				writeError(response, http.StatusBadRequest, requestID, "invalid_request", "after_sequence must be a non-negative integer.", "Use the last received event sequence.")
+				return
+			}
+			afterSequence = parsed
+		}
+		response.Header().Set("Content-Type", "text/event-stream")
+		response.Header().Set("Cache-Control", "no-cache")
+		response.Header().Set("Connection", "keep-alive")
+		flusher, _ := response.(http.Flusher)
+		deadline := time.NewTimer(30 * time.Second)
+		defer deadline.Stop()
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			events, err := services.Trace.ListByRunAfter(request.Context(), detail.Session.RunID, afterSequence)
+			if err != nil {
+				payload, _ := json.Marshal(map[string]any{"message": "events could not be loaded"})
+				fmt.Fprintf(response, "event: error\ndata: %s\n\n", payload)
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			for _, event := range traceEventsResponse(events) {
+				payload, err := json.Marshal(event)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(response, "event: trace\ndata: %s\n\n", payload)
+				if event.Sequence > afterSequence {
+					afterSequence = event.Sequence
+				}
+			}
+			if len(events) > 0 && flusher != nil {
+				flusher.Flush()
+			}
+			select {
+			case <-request.Context().Done():
+				return
+			case <-deadline.C:
+				fmt.Fprint(response, "event: heartbeat\ndata: {}\n\n")
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			case <-ticker.C:
+			}
+		}
+	}
+}
+
+func sessionDetailPayload(ctx context.Context, services Services, detail *runpkg.SessionDetail) (*runSessionDetailResponse, error) {
+	var sandboxRecord *sandbox.Record
+	if services.Sandboxes != nil {
+		record, err := services.Sandboxes.GetByRun(ctx, detail.Session.RunID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		sandboxRecord = record
+	}
+	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord}, nil
 }
 
 func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string) (*runpkg.Session, *sandbox.Record, []string, error) {

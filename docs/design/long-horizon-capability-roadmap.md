@@ -305,12 +305,12 @@ Every implementation PR in this roadmap must include:
 
 ## Immediate Next PR
 
-The next implementation PR after this planning update should be PR A: Run Sessions And Task Ledger APIs.
+After the Workspace Core APIs slice lands, the next implementation PR should be PR B: Role Pack Metadata And Sequential Role Handoff.
 
 Recommended first slice:
 
-- Add `GET /api/sessions` and `GET /api/sessions/{id}/tasks`.
-- Add CLI read commands for sessions and tasks.
-- Update Console to render durable task records.
-- Backfill current one-step runs into a session plus root task.
-- Add tests for refresh, failed state, approval-waiting state, and handoff task creation.
+- Add role metadata to pack manifests.
+- Update the starter team pack to expose planner, researcher, coder, and reporter roles as pack data.
+- Create ordered task records from pack role metadata instead of only following raw graph handoff edges.
+- Keep execution sequential until workspace locks and budget controls exist.
+- Add tests for role metadata validation and visible task ownership.

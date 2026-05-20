@@ -98,6 +98,52 @@ type RunSummary = {
   last_type: string;
 };
 
+type RunSession = {
+  session_id: string;
+  run_id: string;
+  project_id: string;
+  graph_snapshot_id: string;
+  title: string;
+  source_channel: string;
+  status: string;
+  started_at: string;
+  updated_at: string;
+  completed_at?: string;
+};
+
+type RunTask = {
+  task_id: string;
+  run_id: string;
+  parent_task_id?: string;
+  agent_id: string;
+  runtime_id?: string;
+  status: string;
+  context_snapshot_id?: string;
+  artifact_refs?: string[];
+  approval_refs?: string[];
+  started_at: string;
+  updated_at: string;
+  completed_at?: string;
+};
+
+type SandboxRecord = {
+  sandbox_id: string;
+  run_id: string;
+  task_id?: string;
+  provider: string;
+  mode: string;
+  status: string;
+  workspace_root?: string;
+  artifact_root?: string;
+  cleanup_status: string;
+};
+
+type RunSessionDetail = {
+  session: RunSession;
+  tasks: RunTask[];
+  sandbox?: SandboxRecord;
+};
+
 type TraceEvent = {
   event_id: string;
   run_id: string;
@@ -140,6 +186,7 @@ type Overview = {
   graph_snapshot?: GraphSnapshot;
   runtimes: RuntimeStatus[];
   recent_runs: RunSummary[];
+  recent_sessions: RunSession[];
   latest_trace: TraceEvent[];
   pending_approvals: Approval[];
   unavailable: Array<{ name: string; status: string; reason: string }>;
@@ -159,6 +206,7 @@ const emptyOverview: Overview = {
   packs: [],
   runtimes: [],
   recent_runs: [],
+  recent_sessions: [],
   latest_trace: [],
   pending_approvals: [],
   unavailable: [],
@@ -180,6 +228,10 @@ export function App() {
   const [runPrompt, setRunPrompt] = useState("");
   const [runEvents, setRunEvents] = useState<TraceEvent[]>([]);
   const [activeRunId, setActiveRunId] = useState("");
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [sessionDetail, setSessionDetail] = useState<RunSessionDetail | null>(
+    null,
+  );
   const [runStatus, setRunStatus] = useState<
     "idle" | "starting" | "running" | "completed" | "failed"
   >("idle");
@@ -264,6 +316,7 @@ export function App() {
   const latestOutput = humanOutput(traceEvents);
   const runTitle = runPrompt.trim() || "No task started";
   const runStages = buildRunStages(runStatus, traceEvents);
+  const workspaceTasks = sessionDetail?.tasks ?? [];
 
   useEffect(() => {
     if (runAgentId === "" && agentOptions.length > 0) {
@@ -285,7 +338,7 @@ export function App() {
       state.cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeRunId, runEvents, runStatus]);
+  }, [activeRunId, activeSessionId, runEvents, runStatus]);
 
   async function apiRequest<T>(
     path: string,
@@ -331,12 +384,17 @@ export function App() {
         status: string;
         agent_id: string;
         graph_snapshot_id: string;
+        session_id?: string;
       }>("/api/runs", {
         method: "POST",
         body: JSON.stringify({ agent_id: selectedAgent.id, prompt: runPrompt }),
       });
       setActiveRunId(started.run_id);
+      setActiveSessionId(started.session_id ?? "");
       setRunStatus("running");
+      if (started.session_id) {
+        void loadSessionDetail(started.session_id);
+      }
       void loadOverview();
     } catch (startError) {
       setRunStatus("failed");
@@ -344,6 +402,35 @@ export function App() {
         startError instanceof Error
           ? startError.message
           : "Run could not be started",
+      );
+    }
+  }
+
+  async function loadSessionDetail(sessionId: string) {
+    if (!sessionId) {
+      return;
+    }
+    const detail = await apiRequest<RunSessionDetail>(
+      `/api/sessions/${encodeURIComponent(sessionId)}`,
+    );
+    setSessionDetail(detail);
+  }
+
+  async function cancelSession(sessionId: string) {
+    setRunError("");
+    try {
+      const detail = await apiRequest<RunSessionDetail>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/cancel`,
+        { method: "POST" },
+      );
+      setSessionDetail(detail);
+      setRunStatus("failed");
+      await loadOverview();
+    } catch (cancelError) {
+      setRunError(
+        cancelError instanceof Error
+          ? cancelError.message
+          : "Session could not be cancelled",
       );
     }
   }
@@ -361,6 +448,9 @@ export function App() {
         return;
       }
       setRunEvents((current) => mergeEvents(current, events));
+      if (activeSessionId) {
+        void loadSessionDetail(activeSessionId);
+      }
       const terminal = [...events]
         .reverse()
         .find(
@@ -372,6 +462,9 @@ export function App() {
           terminal.type === "run.completed" ? "completed" : "failed",
         );
         void loadOverview();
+        if (activeSessionId) {
+          void loadSessionDetail(activeSessionId);
+        }
       }
     } catch (pollError) {
       if (!state.cancelled) {
@@ -598,6 +691,46 @@ export function App() {
                     <strong>{stage.label}</strong>
                   </div>
                 ))}
+              </div>
+              <div className="task-ledger" aria-label="Task ledger">
+                <div className="mini-heading">
+                  <strong>Task ledger</strong>
+                  <span>{workspaceTasks.length}</span>
+                </div>
+                {workspaceTasks.length > 0 ? (
+                  workspaceTasks.map((task) => (
+                    <div className="ledger-row" key={task.task_id}>
+                      <div>
+                        <strong>{task.agent_id}</strong>
+                        <span>{task.runtime_id || "gateway"}</span>
+                      </div>
+                      <span className={`pill ${taskTone(task.status)}`}>
+                        {task.status}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty compact-empty">
+                    Task records appear when a session starts.
+                  </p>
+                )}
+                {sessionDetail?.sandbox ? (
+                  <div className="workspace-roots">
+                    <span>Workspace</span>
+                    <code>{sessionDetail.sandbox.workspace_root || "-"}</code>
+                    <span>Artifacts</span>
+                    <code>{sessionDetail.sandbox.artifact_root || "-"}</code>
+                  </div>
+                ) : null}
+                {activeSessionId && sessionDetail?.session.status === "running" ? (
+                  <button
+                    className="button button-danger"
+                    type="button"
+                    onClick={() => void cancelSession(activeSessionId)}
+                  >
+                    Cancel session
+                  </button>
+                ) : null}
               </div>
               <div className="workspace-output">
                 <span>Latest output</span>
@@ -869,24 +1002,33 @@ export function App() {
 
               <section className="panel" aria-label="Recent runs">
                 <div className="panel-heading">
-                  <h2>Runs</h2>
-                  <span className="tag">{overview.recent_runs.length}</span>
+                  <h2>Sessions</h2>
+                  <span className="tag">{overview.recent_sessions.length}</span>
                 </div>
                 <div className="stack">
-                  {overview.recent_runs.map((run) => (
-                    <div className="list-item" key={run.run_id}>
+                  {overview.recent_sessions.map((session) => (
+                    <button
+                      className="list-item list-button"
+                      key={session.session_id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSessionId(session.session_id);
+                        setActiveRunId(session.run_id);
+                        void loadSessionDetail(session.session_id);
+                      }}
+                    >
                       <div>
-                        <strong>{run.run_id}</strong>
-                        <span>{run.last_type}</span>
+                        <strong>{session.title || session.session_id}</strong>
+                        <span>{session.run_id}</span>
                       </div>
                       <div className="list-meta">
-                        <span>{run.event_count} events</span>
-                        <span>{formatTime(run.last_time)}</span>
+                        <span>{session.status}</span>
+                        <span>{formatTime(session.updated_at)}</span>
                       </div>
-                    </div>
+                    </button>
                   ))}
-                  {overview.recent_runs.length === 0 ? (
-                    <p className="empty">No runs traced</p>
+                  {overview.recent_sessions.length === 0 ? (
+                    <p className="empty">No sessions recorded</p>
                   ) : null}
                 </div>
               </section>
@@ -1181,10 +1323,27 @@ function normalizeOverview(next: Overview): Overview {
     packs: next.packs ?? [],
     runtimes: next.runtimes ?? [],
     recent_runs: next.recent_runs ?? [],
+    recent_sessions: next.recent_sessions ?? [],
     latest_trace: next.latest_trace ?? [],
     pending_approvals: next.pending_approvals ?? [],
     unavailable: next.unavailable ?? [],
   };
+}
+
+function taskTone(status: string): string {
+  switch (status) {
+    case "completed":
+      return "pill-green";
+    case "failed":
+    case "cancelled":
+      return "pill-red";
+    case "running":
+    case "waiting_for_approval":
+    case "plan_review":
+      return "pill-amber";
+    default:
+      return "";
+  }
 }
 
 function mergeEvents(current: TraceEvent[], next: TraceEvent[]): TraceEvent[] {
