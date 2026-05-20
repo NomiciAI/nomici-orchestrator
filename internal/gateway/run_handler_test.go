@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -157,6 +158,83 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if !strings.Contains(detailResponse.Body.String(), `"sandbox_id":"sandbox_`) || !strings.Contains(detailResponse.Body.String(), `"cleanup_status":"released"`) {
 		t.Fatalf("expected sandbox detail, got %s", detailResponse.Body.String())
 	}
+	var detailEnvelope struct {
+		Data struct {
+			Sandbox *sandbox.Record `json:"sandbox"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(strings.NewReader(detailResponse.Body.String())).Decode(&detailEnvelope); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if detailEnvelope.Data.Sandbox == nil || !filepath.IsAbs(detailEnvelope.Data.Sandbox.WorkspaceRoot) || !strings.Contains(detailEnvelope.Data.Sandbox.WorkspaceRoot, filepath.Join(".nomici", "runs")) {
+		t.Fatalf("expected absolute sandbox root anchored at config directory, got %+v", detailEnvelope.Data.Sandbox)
+	}
+}
+
+func TestRunCreateFailsOnInvalidSandboxConfig(t *testing.T) {
+	db, router := newRunTestRouterWithConfig(t, `version: "0.1"
+project:
+  name: test
+deployment:
+  sandbox: invalid
+`)
+	saveRunTestGraph(t, graph.NewStore(db), "http://127.0.0.1:1", []graph.Edge{})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"hello"}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "sandbox_config_invalid") {
+		t.Fatalf("expected sandbox config error, got %s", response.Body.String())
+	}
+	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no partial run ledger, got %+v", sessions)
+	}
+}
+
+func TestRunCreateFailsWhenSandboxUnavailable(t *testing.T) {
+	previousDetect := detectSandboxAvailability
+	detectSandboxAvailability = func(mode string) sandbox.Availability {
+		return sandbox.Availability{
+			Provider: sandbox.ProviderContainerRuntime,
+			Mode:     sandbox.ModeContainer,
+			Status:   sandbox.StatusUnavailable,
+			Message:  "container runtime missing",
+		}
+	}
+	t.Cleanup(func() { detectSandboxAvailability = previousDetect })
+
+	db, router := newRunTestRouterWithConfig(t, `version: "0.1"
+project:
+  name: test
+deployment:
+  sandbox:
+    mode: container
+`)
+	saveRunTestGraph(t, graph.NewStore(db), "http://127.0.0.1:1", []graph.Edge{})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"hello"}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "sandbox_unavailable") {
+		t.Fatalf("expected sandbox unavailable error, got %s", response.Body.String())
+	}
+	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no partial run ledger, got %+v", sessions)
+	}
 }
 
 func TestApprovalMutationEndpoints(t *testing.T) {
@@ -225,7 +303,23 @@ func TestApprovalMutationEndpoints(t *testing.T) {
 
 func newRunTestRouter(t *testing.T) (*sql.DB, http.Handler) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	return newRunTestRouterWithConfig(t, `version: "0.1"
+project:
+  name: test
+deployment:
+  sandbox:
+    mode: local
+`)
+}
+
+func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Handler) {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nomici.yaml")
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+	db, err := store.Open(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -235,7 +329,7 @@ func newRunTestRouter(t *testing.T) (*sql.DB, http.Handler) {
 	}
 	providerStore := providers.NewStore(db)
 	traceStore := trace.NewStore(db)
-	return db, NewRouter(Options{Version: "test", ConfigPath: "nomici.yaml"}, Services{
+	return db, NewRouter(Options{Version: "test", ConfigPath: configPath}, Services{
 		Providers: providerStore,
 		Trace:     traceStore,
 		Secrets:   secrets.NewResolver(),

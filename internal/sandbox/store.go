@@ -21,24 +21,28 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 	if request.RunID == "" {
 		return nil, fmt.Errorf("create sandbox record: run_id is required")
 	}
-	workspaceRoot := request.WorkspaceRoot
-	if workspaceRoot == "" {
-		workspaceRoot = DefaultWorkspaceRoot(request.RunID)
-	}
-	artifactRoot := request.ArtifactRoot
-	if artifactRoot == "" {
-		artifactRoot = DefaultArtifactRoot(request.RunID)
-	}
-	if err := os.MkdirAll(workspaceRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("create sandbox workspace: %w", err)
-	}
-	if err := os.MkdirAll(artifactRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("create sandbox artifact root: %w", err)
-	}
-
 	intent := request.Intent
 	intent.Mode = NormalizeMode(intent.Mode)
 	availability := Detect(intent.Mode)
+	workspaceRoot := request.WorkspaceRoot
+	artifactRoot := request.ArtifactRoot
+	cleanupStatus := CleanupActive
+	if intent.Mode == ModeNone {
+		cleanupStatus = CleanupDisabled
+	} else {
+		if workspaceRoot == "" {
+			workspaceRoot = DefaultWorkspaceRoot(request.BaseDir, request.RunID)
+		}
+		if artifactRoot == "" {
+			artifactRoot = DefaultArtifactRoot(request.BaseDir, request.RunID)
+		}
+		if err := os.MkdirAll(workspaceRoot, 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox workspace: %w", err)
+		}
+		if err := os.MkdirAll(artifactRoot, 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox artifact root: %w", err)
+		}
+	}
 	metadata := request.Metadata
 	if len(metadata) == 0 {
 		var err error
@@ -48,6 +52,7 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 			"file_write_enabled":  intent.FileWriteEnabled,
 			"workspace_mount":     "/workspace",
 			"artifact_mount":      "/artifacts",
+			"base_dir":            request.BaseDir,
 			"deerflow_reference":  "SandboxProvider acquire/get/release lifecycle with per-run workspace mounts.",
 			"allocation_strategy": "deterministic_run_id",
 		})
@@ -67,7 +72,7 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 		WorkspaceRoot: workspaceRoot,
 		ArtifactRoot:  artifactRoot,
 		RuntimeBinary: availability.RuntimeBinary,
-		CleanupStatus: CleanupActive,
+		CleanupStatus: cleanupStatus,
 		Message:       availability.Message,
 		CreatedAt:     now,
 		UpdatedAt:     now,

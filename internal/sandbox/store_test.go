@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -59,6 +60,61 @@ func TestStoreCreatesAndReleasesSandboxRecord(t *testing.T) {
 	}
 }
 
+func TestStoreAnchorsDefaultRootsToBaseDir(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	baseDir := t.TempDir()
+	record, err := NewStore(db).CreateForRun(context.Background(), CreateRecordRequest{
+		RunID:     "run_root",
+		ProjectID: "project",
+		Intent:    Intent{Mode: ModeLocal},
+		BaseDir:   baseDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedWorkspace := filepath.Join(baseDir, ".nomici", "runs", "run_root", "workspace")
+	if record.WorkspaceRoot != expectedWorkspace {
+		t.Fatalf("expected workspace %q, got %q", expectedWorkspace, record.WorkspaceRoot)
+	}
+	if _, err := os.Stat(expectedWorkspace); err != nil {
+		t.Fatalf("expected workspace directory: %v", err)
+	}
+}
+
+func TestStoreDoesNotCreateWorkspaceForDisabledSandbox(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	baseDir := t.TempDir()
+	record, err := NewStore(db).CreateForRun(context.Background(), CreateRecordRequest{
+		RunID:     "run_none",
+		ProjectID: "project",
+		Intent:    Intent{Mode: ModeNone},
+		BaseDir:   baseDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.CleanupStatus != CleanupDisabled || record.WorkspaceRoot != "" || record.ArtifactRoot != "" {
+		t.Fatalf("expected disabled sandbox without roots, got %+v", record)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, ".nomici")); !os.IsNotExist(err) {
+		t.Fatalf("expected no sandbox directories, stat err=%v", err)
+	}
+}
+
 func TestIntentFromDeploymentDefaultsInvalidShapeToLocal(t *testing.T) {
 	intent := IntentFromDeployment(map[string]any{"sandbox": "container"})
 	if intent.Mode != ModeLocal {
@@ -72,5 +128,17 @@ func TestIntentFromDeploymentDefaultsInvalidShapeToLocal(t *testing.T) {
 	}})
 	if intent.Mode != ModeContainer || !intent.BashEnabled || !intent.FileWriteEnabled {
 		t.Fatalf("unexpected intent: %+v", intent)
+	}
+}
+
+func TestParseIntentRejectsInvalidSandboxConfig(t *testing.T) {
+	if _, err := ParseIntent(map[string]any{"sandbox": "container"}); err == nil {
+		t.Fatal("expected invalid sandbox shape to fail")
+	}
+	if _, err := ParseIntent(map[string]any{"sandbox": map[string]any{"mode": "vm"}}); err == nil {
+		t.Fatal("expected invalid sandbox mode to fail")
+	}
+	if _, err := ParseIntent(map[string]any{"sandbox": map[string]any{}}); err == nil {
+		t.Fatal("expected missing sandbox mode to fail")
 	}
 }

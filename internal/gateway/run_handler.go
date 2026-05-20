@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -48,6 +50,8 @@ type traceEventResponse struct {
 	Metadata   json.RawMessage `json:"metadata,omitempty"`
 }
 
+var detectSandboxAvailability = sandbox.Detect
+
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
@@ -77,7 +81,22 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 			writeError(response, http.StatusBadRequest, requestID, "run_not_supported", err.Error(), "Choose a supported graph entrypoint.")
 			return
 		}
-		session, sandboxRecord, taskIDs, err := createRunLedger(request.Context(), options, services, snapshot, runRequest, agent.ID)
+		intent, err := sandboxIntentFromConfig(options.ConfigPath)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "sandbox_config_invalid", err.Error(), "Run `nomici setup` or fix deployment.sandbox in nomici.yaml.")
+			return
+		}
+		availability := detectSandboxAvailability(intent.Mode)
+		if availability.Status == sandbox.StatusUnavailable {
+			writeError(response, http.StatusConflict, requestID, "sandbox_unavailable", availability.Message, "Install Docker, Podman, or Apple container, or run `nomici setup --sandbox local`.")
+			return
+		}
+		baseDir, err := sandboxBaseDir(options.ConfigPath)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "sandbox_config_invalid", err.Error(), "Use a valid AgentSpec config path.")
+			return
+		}
+		session, sandboxRecord, taskIDs, err := createRunLedger(request.Context(), services, snapshot, runRequest, agent.ID, intent, baseDir)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, requestID, "run_session_failed", "Run session could not be created.", "Check Gateway logs.")
 			return
@@ -142,7 +161,7 @@ func runDetailHandler(services Services) http.HandlerFunc {
 	}
 }
 
-func createRunLedger(ctx context.Context, options Options, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string) (*runpkg.Session, *sandbox.Record, []string, error) {
+func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string) (*runpkg.Session, *sandbox.Record, []string, error) {
 	session, err := services.Runs.CreateSession(ctx, runpkg.CreateSessionRequest{
 		RunID:           request.RunID,
 		ProjectID:       snapshot.ProjectID,
@@ -198,7 +217,8 @@ func createRunLedger(ctx context.Context, options Options, services Services, sn
 		RunID:     request.RunID,
 		TaskID:    taskID,
 		ProjectID: snapshot.ProjectID,
-		Intent:    sandboxIntentFromConfig(options.ConfigPath),
+		Intent:    intent,
+		BaseDir:   baseDir,
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -254,15 +274,29 @@ func completeRunLedger(ctx context.Context, services Services, runID string, ses
 	})
 }
 
-func sandboxIntentFromConfig(configPath string) sandbox.Intent {
+func sandboxIntentFromConfig(configPath string) (sandbox.Intent, error) {
 	if configPath == "" {
 		configPath = "nomici.yaml"
 	}
 	loaded, err := agentspec.LoadFile(configPath)
-	if err != nil || loaded.Spec == nil {
-		return sandbox.DefaultIntent()
+	if err != nil {
+		return sandbox.Intent{}, err
 	}
-	return sandbox.IntentFromDeployment(loaded.Spec.Deployment)
+	if loaded.Spec == nil {
+		return sandbox.Intent{}, fmt.Errorf("AgentSpec is empty")
+	}
+	return sandbox.ParseIntent(loaded.Spec.Deployment)
+}
+
+func sandboxBaseDir(configPath string) (string, error) {
+	if configPath == "" {
+		configPath = "nomici.yaml"
+	}
+	absolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(absolute), nil
 }
 
 type ledgerTaskPlan struct {
