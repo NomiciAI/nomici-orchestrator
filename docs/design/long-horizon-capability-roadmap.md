@@ -18,6 +18,7 @@ Nomici already has several foundations for long-horizon work:
 - Gateway, CLI, read-only Console, token auth, and SQLite-backed state.
 - Provider profiles, OpenAI-compatible model test, and secret references.
 - Pack installation and a `developer-team` starter pack.
+- Pack-defined role metadata for coordinator, planner, researcher, coder, and reporter task ownership.
 - AgentSpec and AgentGraph validation with clear unsupported-edge failures.
 - Single-node model-backed graph execution, `cli_agent` execution, and one-step handoff.
 - Shared Context items and handoff snapshots.
@@ -32,7 +33,7 @@ The missing work is not to add a hidden agent framework inside Gateway. The miss
 | Capability area | Nomici status | Required Nomici improvement | Target phase |
 | --- | --- | --- | --- |
 | Long-horizon tasks | Run sessions and tasks exist in storage; execution is still narrow | Make sessions/tasks authoritative across CLI, Console, channels, and adapters; add durable status transitions, resume/read APIs, budgets, cancellation, and checkpoint references | Phase 1 |
-| Coordinator / planner / researcher / coder / reporter roles | `developer-team` pack exists; graph execution is mostly single-node or linear handoff | Promote role metadata into pack manifests, represent planner/worker/reporter ownership in tasks, support bounded sequential chains before parallel fan-out | Phase 2 |
+| Coordinator / planner / researcher / coder / reporter roles | `developer-team` exposes role metadata and task ledger planning can use installed pack roles; execution is still mostly single-node or linear handoff | Complete sequential role execution, bounded context snapshots, and task status transitions before parallel fan-out | Phase 2 |
 | Parallel subagents | Parallel edges validate but do not execute | Add fan-out/fan-in only after task ledger, budget caps, workspace locks, and result merge contracts exist | Phase 5 |
 | Sandbox and filesystem | Sandbox policy metadata and sandbox records exist; execution support is adapter-specific | Define provider interface and workspace lifecycle records; map uploads, workspace, outputs, artifact roots, cleanup, and provider readiness | Phase 3 |
 | File operations | Policy and approvals exist; tool mediation is incomplete | Route mediated file tools through Tool Broker with sandbox constraints, approvals, redaction, and artifact registration | Phase 3 |

@@ -55,6 +55,25 @@ permissions:
 agents:
   entrypoints:
     - product_pm
+  includes:
+    - product_pm
+    - planner
+    - researcher
+    - coder
+    - reporter
+roles:
+  - id: product_pm
+    purpose: Coordinate the run, keep the user goal explicit, and decide the ordered handoff path.
+    required_skills:
+      - planning
+    model_preference: default
+    handoff_mode: sequential
+    output_contract:
+      kind: coordination_brief
+      required:
+        - goal
+        - role_sequence
+        - risks
 graph:
   fragment: graph.yaml
 tests:
@@ -84,11 +103,14 @@ Optional:
 - `providers`
 - `tools`
 - `agents`
+- `roles`
 - `graph`
 - `examples`
 - `tests`
 - `trust`
 - `docs`
+
+`roles` is declarative ownership metadata. Gateway may use it to create ordered task ledger records and display role purpose, expected tools, selected skills, handoff mode, model/runtime preference, and output contract. Gateway must not hardcode bundled role names; packs own those details.
 
 ## v0.1 Trust Root
 
@@ -96,6 +118,7 @@ Private bootstrap implementation note:
 
 - `developer-team` is the first bundled official pack.
 - The default install path writes a model-backed `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents into `nomici.yaml`.
+- The bundled manifest exposes role metadata, and pack install records that role metadata under `extensions.packs`.
 - The installer chooses an existing model provider profile, or a user-selected profile via `--model`.
 - Optional CLI implementer/reviewer/test-runner roles stay as manifest metadata until pack install can safely prompt for concrete local runtime commands.
 - The installed pack is recorded in `extensions.packs`.

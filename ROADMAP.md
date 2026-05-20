@@ -55,7 +55,7 @@ See `docs/development-plan.md`.
 Planned:
 
 - Run sessions and durable task ledger
-- Graph-native subagent roles
+- Pack-defined role metadata and graph-native subagent roles
 - Sandbox provider interface
 - Skill registry and progressive loading
 - Tool registry and default research/fetch tools

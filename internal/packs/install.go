@@ -115,6 +115,7 @@ func InstallDeveloperTeam(ctx context.Context, options InstallOptions) (*Install
 		"trust":        "official",
 		"installed_at": installedAt.Format(time.RFC3339Nano),
 		"entrypoints":  manifest.Agents.Entrypoints,
+		"roles":        manifest.Roles,
 	}
 	spec.Extensions["packs"] = packs
 

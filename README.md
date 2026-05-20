@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, durable run session and task-ledger APIs, session inspection CLI commands, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install with role metadata, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, durable run session and task-ledger APIs, session inspection CLI commands, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and read-only Console overview are implemented. General multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -84,7 +84,7 @@ The setup command writes sandbox intent under `deployment.sandbox` in `nomici.ya
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
-The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
+The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. Its manifest also exposes role purpose, tool and skill expectations, handoff mode, model/runtime preference, and output contract metadata so run task ledgers can show role ownership without hardcoding those roles in Gateway. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
 The current Console is read-only and is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent run sessions, task ledger records, workspace roots, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
@@ -219,15 +219,6 @@ make fmt
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Acknowledgments
-
-Some early architecture thinking in Nomici was informed by the open-source
-[DeerFlow](https://github.com/bytedance/deer-flow) project, especially around
-long-horizon agent orchestration, sub-agents, sandboxed execution, memory, and
-skill-oriented extensibility. Nomici Orchestrator is an independent
-implementation and does not include DeerFlow source code unless explicitly
-noted.
 
 ## License
 

@@ -124,6 +124,12 @@ type RunTask = {
   started_at: string;
   updated_at: string;
   completed_at?: string;
+  metadata?: {
+    role_id?: string;
+    purpose?: string;
+    handoff_mode?: string;
+    plan_source?: string;
+  };
 };
 
 type SandboxRecord = {
@@ -701,8 +707,8 @@ export function App() {
                   workspaceTasks.map((task) => (
                     <div className="ledger-row" key={task.task_id}>
                       <div>
-                        <strong>{task.agent_id}</strong>
-                        <span>{task.runtime_id || "gateway"}</span>
+                        <strong>{taskRoleLabel(task)}</strong>
+                        <span>{task.metadata?.purpose || task.runtime_id || "gateway"}</span>
                       </div>
                       <span className={`pill ${taskTone(task.status)}`}>
                         {task.status}
@@ -1344,6 +1350,13 @@ function taskTone(status: string): string {
     default:
       return "";
   }
+}
+
+function taskRoleLabel(task: RunTask): string {
+  if (task.metadata?.role_id && task.metadata.role_id !== task.agent_id) {
+    return `${task.metadata.role_id} / ${task.agent_id}`;
+  }
+  return task.metadata?.role_id || task.agent_id;
 }
 
 function mergeEvents(current: TraceEvent[], next: TraceEvent[]): TraceEvent[] {
