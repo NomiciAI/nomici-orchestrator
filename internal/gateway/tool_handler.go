@@ -84,6 +84,7 @@ func newToolBroker(options Options, services Services) *toolbroker.Broker {
 		Runs:       services.Runs,
 		Sandboxes:  services.Sandboxes,
 		Artifacts:  services.Artifacts,
+		Locks:      services.Locks,
 		ConfigPath: options.ConfigPath,
 	}
 }

@@ -215,6 +215,97 @@ func sessionBlockedActionsHandler(services Services) http.HandlerFunc {
 	}
 }
 
+func sessionBlockedActionResolveHandler(options Options, services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Blocked == nil || services.Trace == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "blocked_actions_unavailable", "Blocked action services are not initialized.", "Restart Gateway.")
+			return
+		}
+		sessionID := chi.URLParam(request, "session_id")
+		actionID := chi.URLParam(request, "blocked_action_id")
+		var body struct {
+			Decision string `json:"decision"`
+			Note     string `json:"note"`
+			Resume   *bool  `json:"resume"`
+		}
+		if request.Body != nil {
+			_ = json.NewDecoder(request.Body).Decode(&body)
+		}
+		detail, err := services.Runs.GetBySession(request.Context(), sessionID)
+		if err != nil {
+			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		metadata := rawJSON(map[string]string{
+			"decision": strings.TrimSpace(body.Decision),
+			"note":     strings.TrimSpace(body.Note),
+		})
+		var action *blockedpkg.Action
+		if strings.EqualFold(body.Decision, "reject") || strings.EqualFold(body.Decision, "stop") {
+			action, err = services.Blocked.Reject(request.Context(), actionID, metadata)
+		} else {
+			action, err = services.Blocked.Resolve(request.Context(), actionID, metadata)
+		}
+		if err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "blocked_action_resolve_failed", err.Error(), "Refresh the workspace and retry.")
+			return
+		}
+		if err := appendRunLedgerTrace(request.Context(), services.Trace, detail.Session.RunID, trace.EventTaskBlocked, "", map[string]any{
+			"session_id":        sessionID,
+			"blocked_action_id": action.BlockedActionID,
+			"kind":              action.Kind,
+			"reason":            "blocked_action_resolved",
+			"decision":          body.Decision,
+		}); err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "blocked_action_trace_failed", "Blocked action trace event could not be written.", "Check Gateway logs.")
+			return
+		}
+		switch strings.ToLower(strings.TrimSpace(body.Decision)) {
+		case "skip":
+			if action.ResumeTargetTaskID != "" {
+				for _, task := range detail.Tasks {
+					if task.TaskID == action.ResumeTargetTaskID {
+						_ = updateTaskMetadata(request.Context(), services.Runs, task, map[string]any{
+							"summary": "Skipped after user resolved blocked action.",
+						})
+						break
+					}
+				}
+				_ = services.Runs.UpdateTaskStatus(request.Context(), action.ResumeTargetTaskID, runpkg.TaskStatusCompleted)
+			}
+		case "stop":
+			_ = services.Runs.CancelSession(request.Context(), sessionID)
+			_ = services.Runs.CancelTasks(request.Context(), detail.Session.RunID)
+			updated, lookupErr := services.Runs.GetBySession(request.Context(), sessionID)
+			if lookupErr == nil {
+				detail = updated
+			}
+		}
+		shouldResume := action.Status == blockedpkg.StatusResolved
+		if body.Resume != nil {
+			shouldResume = *body.Resume && shouldResume
+		}
+		if shouldResume {
+			if err := services.Runs.ResumeSession(request.Context(), sessionID); err == nil {
+				if updated, lookupErr := services.Runs.GetBySession(request.Context(), sessionID); lookupErr == nil {
+					detail = updated
+					if startErr := resumeWorkspaceWorker(request.Context(), options, services, updated); startErr != nil {
+						writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
+						return
+					}
+				}
+			}
+		}
+		payload, err := sessionDetailPayload(request.Context(), services, detail)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "session_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, payload, nil)
+	}
+}
+
 func sessionClarificationHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
@@ -429,6 +520,112 @@ func artifactDetailHandler(services Services) http.HandlerFunc {
 		}
 		writeSuccess(response, requestID, artifact, nil)
 	}
+}
+
+func artifactContentHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Artifacts == nil || services.Sandboxes == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "artifacts_unavailable", "Artifact services are not initialized.", "Restart Gateway.")
+			return
+		}
+		artifact, err := services.Artifacts.Get(request.Context(), chi.URLParam(request, "artifact_id"))
+		if err != nil {
+			writeArtifactLookupError(response, requestID, err)
+			return
+		}
+		path, err := readableArtifactPath(request.Context(), services, artifact)
+		if err != nil {
+			writeError(response, http.StatusConflict, requestID, "artifact_content_unavailable", err.Error(), "Use artifact preview or regenerate the artifact.")
+			return
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			writeError(response, http.StatusNotFound, requestID, "artifact_file_not_found", "Artifact file was not found on disk.", "Refresh artifacts or inspect the run workspace.")
+			return
+		}
+		defer file.Close()
+		payload, err := io.ReadAll(io.LimitReader(file, 1<<20))
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "artifact_read_failed", "Artifact file could not be read.", "Check Gateway logs.")
+			return
+		}
+		truncated := false
+		if stat, statErr := file.Stat(); statErr == nil && stat.Size() > int64(len(payload)) {
+			truncated = true
+		}
+		writeSuccess(response, requestID, map[string]any{
+			"artifact_id": artifact.ArtifactID,
+			"path":        artifact.Path,
+			"content":     string(payload),
+			"truncated":   truncated,
+		}, nil)
+	}
+}
+
+func artifactDownloadHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Artifacts == nil || services.Sandboxes == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "artifacts_unavailable", "Artifact services are not initialized.", "Restart Gateway.")
+			return
+		}
+		artifact, err := services.Artifacts.Get(request.Context(), chi.URLParam(request, "artifact_id"))
+		if err != nil {
+			writeArtifactLookupError(response, requestID, err)
+			return
+		}
+		path, err := readableArtifactPath(request.Context(), services, artifact)
+		if err != nil {
+			writeError(response, http.StatusConflict, requestID, "artifact_download_unavailable", err.Error(), "Use artifact preview or regenerate the artifact.")
+			return
+		}
+		filename := filepath.Base(path)
+		if filename == "." || filename == string(filepath.Separator) || filename == "" {
+			filename = artifact.ArtifactID + ".txt"
+		}
+		response.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filename))
+		http.ServeFile(response, request, path)
+	}
+}
+
+func writeArtifactLookupError(response http.ResponseWriter, requestID string, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(response, http.StatusNotFound, requestID, "artifact_not_found", "Artifact was not found.", "Refresh artifacts.")
+		return
+	}
+	writeError(response, http.StatusInternalServerError, requestID, "artifact_load_failed", "Artifact could not be loaded.", "Check Gateway logs.")
+}
+
+func readableArtifactPath(ctx context.Context, services Services, artifact *artifactpkg.Artifact) (string, error) {
+	if artifact == nil || strings.TrimSpace(artifact.Path) == "" {
+		return "", fmt.Errorf("artifact has no file path")
+	}
+	if !filepath.IsAbs(artifact.Path) {
+		return "", fmt.Errorf("artifact path is not absolute")
+	}
+	sandboxRecord, err := services.Sandboxes.GetByRun(ctx, artifact.RunID)
+	if err != nil {
+		return "", fmt.Errorf("workspace is not available for this artifact")
+	}
+	path, err := filepath.Abs(artifact.Path)
+	if err != nil {
+		return "", err
+	}
+	roots := []string{sandboxRecord.WorkspaceRoot, sandboxRecord.ArtifactRoot}
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		absRoot, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		if path == absRoot || strings.HasPrefix(path, absRoot+string(filepath.Separator)) {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("artifact path is outside the session workspace")
 }
 
 func latestPlanArtifactID(ctx context.Context, services Services, sessionID string) (string, error) {

@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	KindPlanReview    = "plan_review"
-	KindToolApproval  = "tool_approval"
-	KindClarification = "clarification"
+	KindPlanReview     = "plan_review"
+	KindToolApproval   = "tool_approval"
+	KindClarification  = "clarification"
+	KindToolRiskReview = "tool_risk_review"
+	KindRetryDecision  = "retry_decision"
 
 	StatusOpen     = "open"
 	StatusResolved = "resolved"
@@ -179,6 +181,13 @@ func (store *Store) Resolve(ctx context.Context, actionID string, metadata json.
 		metadata = json.RawMessage("{}")
 	}
 	return store.setStatus(ctx, "blocked_action_id = ?", actionID, StatusResolved, metadata)
+}
+
+func (store *Store) Reject(ctx context.Context, actionID string, metadata json.RawMessage) (*Action, error) {
+	if len(metadata) == 0 {
+		metadata = json.RawMessage("{}")
+	}
+	return store.setStatus(ctx, "blocked_action_id = ?", actionID, StatusRejected, metadata)
 }
 
 func (store *Store) ResolveByApproval(ctx context.Context, approvalID string, status string) error {

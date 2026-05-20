@@ -94,6 +94,31 @@ type ToolStatus = {
   execution: string;
 };
 
+type ToolDefinition = {
+  id: string;
+  description: string;
+  auth: string;
+  network_risk: string;
+  filesystem_risk: string;
+  mutation_risk: string;
+  allowed_scopes: string[];
+  redaction_rules: string[];
+  execution: string;
+};
+
+type SkillDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  triggers?: string[];
+  files?: string[];
+  required_tools?: string[];
+  risk?: string;
+  compatibility?: string;
+  briefing?: string;
+  source?: string;
+};
+
 type RunSession = {
   session_id: string;
   run_id: string;
@@ -178,6 +203,13 @@ type ArtifactRecord = {
   updated_at: string;
 };
 
+type ArtifactContent = {
+  artifact_id: string;
+  path: string;
+  content: string;
+  truncated: boolean;
+};
+
 type ToolCallRecord = {
   tool_call_id: string;
   task_id?: string;
@@ -248,6 +280,15 @@ type MemoryProposal = {
   body: string;
   status: string;
   context_id?: string;
+  updated_at: string;
+};
+
+type MemoryItem = {
+  context_id: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  artifact_refs?: string[];
   updated_at: string;
 };
 
@@ -375,6 +416,8 @@ export function App() {
   const [providerCatalog, setProviderCatalog] = useState<ProviderDefinition[]>(
     [],
   );
+  const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
+  const [skillCatalog, setSkillCatalog] = useState<SkillDefinition[]>([]);
   const [agents, setAgents] = useState<AgentRecord[]>([]);
   const [orchestration, setOrchestration] = useState<OrchestrationConfig>({});
   const [chats, setChats] = useState<ChatThread[]>([]);
@@ -405,7 +448,11 @@ export function App() {
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [mutatingApproval, setMutatingApproval] = useState("");
   const [memoryProposals, setMemoryProposals] = useState<MemoryProposal[]>([]);
+  const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [mutatingMemory, setMutatingMemory] = useState("");
+  const [artifactContent, setArtifactContent] =
+    useState<ArtifactContent | null>(null);
+  const [artifactMutation, setArtifactMutation] = useState("");
   const [agentDraft, setAgentDraft] = useState<AgentRecord>({
     id: "",
     kind: "model_agent",
@@ -418,6 +465,7 @@ export function App() {
     triggers: [],
   });
   const [settingsMutation, setSettingsMutation] = useState("");
+  const [agentValidation, setAgentValidation] = useState("");
 
   const isAuthenticated = status !== "auth";
   const agentOptions = useMemo(
@@ -485,13 +533,27 @@ export function App() {
         nextToken,
       );
       setOverview(normalizeOverview(nextOverview));
-      const [nextChats, catalog, nextAgents, nextOrchestration, nextMemory] =
-        await Promise.all([
+      const [
+        nextChats,
+        catalog,
+        nextTools,
+        nextSkills,
+        nextAgents,
+        nextOrchestration,
+        nextMemory,
+        nextMemoryItems,
+      ] = await Promise.all([
           apiRequest<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
           apiRequest<ProviderDefinition[]>(
             "/api/provider-catalog",
             {},
             nextToken,
+          ),
+          apiRequest<ToolDefinition[]>("/api/tools", {}, nextToken).catch(
+            () => [],
+          ),
+          apiRequest<SkillDefinition[]>("/api/skills", {}, nextToken).catch(
+            () => [],
           ),
           apiRequest<AgentRecord[]>("/api/agents", {}, nextToken).catch(
             () => [],
@@ -506,12 +568,18 @@ export function App() {
             {},
             nextToken,
           ).catch(() => []),
+          apiRequest<MemoryItem[]>("/api/memory/items", {}, nextToken).catch(
+            () => [],
+          ),
         ]);
       setChats(nextChats ?? []);
       setProviderCatalog(catalog ?? []);
+      setToolCatalog(nextTools ?? []);
+      setSkillCatalog(nextSkills ?? []);
       setAgents(nextAgents ?? []);
       setOrchestration(nextOrchestration ?? {});
       setMemoryProposals(nextMemory ?? []);
+      setMemoryItems(nextMemoryItems ?? []);
       setStatus("ready");
     } catch (loadError) {
       const message =
@@ -898,6 +966,112 @@ export function App() {
     }
   }
 
+  async function deleteMemoryItem(contextID: string) {
+    setMutatingMemory(`delete-item:${contextID}`);
+    try {
+      await apiRequest<{ status: string }>(
+        `/api/memory/items/${encodeURIComponent(contextID)}`,
+        { method: "DELETE" },
+      );
+      await loadOverview();
+    } finally {
+      setMutatingMemory("");
+    }
+  }
+
+  async function resolveBlockedAction(
+    blockedActionID: string,
+    decision: "retry" | "skip" | "stop",
+  ) {
+    if (!activeSessionId) {
+      return;
+    }
+    setWorkspaceError("");
+    setWorkspaceMutation(`blocked:${blockedActionID}:${decision}`);
+    try {
+      const detail = await apiRequest<RunSessionDetail>(
+        `/api/sessions/${encodeURIComponent(activeSessionId)}/blocked-actions/${encodeURIComponent(blockedActionID)}/resolve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            note:
+              decision === "retry"
+                ? "User requested retry from blocked action."
+                : "User resolved blocked action from Console.",
+            resume: decision !== "stop",
+          }),
+        },
+      );
+      setSessionDetail(detail);
+      if (decision !== "stop") {
+        setRunStatus("running");
+      }
+    } catch (blockedError) {
+      setWorkspaceError(
+        blockedError instanceof Error
+          ? blockedError.message
+          : "Blocked action could not be resolved",
+      );
+    } finally {
+      setWorkspaceMutation("");
+    }
+  }
+
+  async function inspectArtifact(artifactID: string) {
+    setArtifactMutation(`inspect:${artifactID}`);
+    setWorkspaceError("");
+    try {
+      const content = await apiRequest<ArtifactContent>(
+        `/api/artifacts/${encodeURIComponent(artifactID)}/content`,
+      );
+      setArtifactContent(content);
+    } catch (artifactError) {
+      setWorkspaceError(
+        artifactError instanceof Error
+          ? artifactError.message
+          : "Artifact content could not be loaded",
+      );
+    } finally {
+      setArtifactMutation("");
+    }
+  }
+
+  async function downloadArtifact(artifact: ArtifactRecord) {
+    setArtifactMutation(`download:${artifact.artifact_id}`);
+    setWorkspaceError("");
+    try {
+      const headers: Record<string, string> = {};
+      if (gatewayToken.trim() !== "") {
+        headers.Authorization = `Bearer ${gatewayToken.trim()}`;
+      }
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(artifact.artifact_id)}/download`,
+        { headers },
+      );
+      if (!response.ok) {
+        throw new Error(`Artifact download returned ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = artifact.title || artifact.artifact_id;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (artifactError) {
+      setWorkspaceError(
+        artifactError instanceof Error
+          ? artifactError.message
+          : "Artifact could not be downloaded",
+      );
+    } finally {
+      setArtifactMutation("");
+    }
+  }
+
   async function submitClarification(blockedActionID: string) {
     if (!activeSessionId || clarificationAnswer.trim() === "") {
       return;
@@ -929,6 +1103,29 @@ export function App() {
     }
   }
 
+  async function validateAgentDraft() {
+    setAgentValidation("");
+    setSettingsMutation("agent-validate");
+    try {
+      await apiRequest<{ status: string }>(
+        `/api/agents/${encodeURIComponent(agentDraft.id || "draft")}/validate`,
+        {
+          method: "POST",
+          body: JSON.stringify(agentDraft),
+        },
+      );
+      setAgentValidation("valid");
+    } catch (validationError) {
+      setAgentValidation(
+        validationError instanceof Error
+          ? validationError.message
+          : "Agent validation failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   async function saveAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (agentDraft.id.trim() === "") {
@@ -937,6 +1134,7 @@ export function App() {
     }
     setSettingsMutation("agent");
     setRunError("");
+    setAgentValidation("");
     try {
       await apiRequest<AgentRecord>("/api/agents", {
         method: "POST",
@@ -1205,6 +1403,9 @@ export function App() {
               toolCalls={workspaceToolCalls}
               approvals={overview.pending_approvals}
               memoryProposals={memoryProposals}
+              memoryItems={memoryItems}
+              artifactContent={artifactContent}
+              artifactMutation={artifactMutation}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
               setPlanRevision={setPlanRevision}
@@ -1226,9 +1427,15 @@ export function App() {
               onResolveMemory={(proposalID, action) =>
                 void resolveMemory(proposalID, action)
               }
+              onDeleteMemoryItem={(contextID) => void deleteMemoryItem(contextID)}
               onSubmitClarification={(blockedActionID) =>
                 void submitClarification(blockedActionID)
               }
+              onResolveBlockedAction={(blockedActionID, decision) =>
+                void resolveBlockedAction(blockedActionID, decision)
+              }
+              onInspectArtifact={(artifactID) => void inspectArtifact(artifactID)}
+              onDownloadArtifact={(artifact) => void downloadArtifact(artifact)}
             />
           </section>
         ) : null}
@@ -1247,6 +1454,9 @@ export function App() {
               toolCalls={workspaceToolCalls}
               approvals={overview.pending_approvals}
               memoryProposals={memoryProposals}
+              memoryItems={memoryItems}
+              artifactContent={artifactContent}
+              artifactMutation={artifactMutation}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
               setPlanRevision={setPlanRevision}
@@ -1268,9 +1478,15 @@ export function App() {
               onResolveMemory={(proposalID, action) =>
                 void resolveMemory(proposalID, action)
               }
+              onDeleteMemoryItem={(contextID) => void deleteMemoryItem(contextID)}
               onSubmitClarification={(blockedActionID) =>
                 void submitClarification(blockedActionID)
               }
+              onResolveBlockedAction={(blockedActionID, decision) =>
+                void resolveBlockedAction(blockedActionID, decision)
+              }
+              onInspectArtifact={(artifactID) => void inspectArtifact(artifactID)}
+              onDownloadArtifact={(artifact) => void downloadArtifact(artifact)}
             />
             <section className="panel" aria-label="Recent sessions">
               <div className="panel-heading">
@@ -1378,9 +1594,16 @@ export function App() {
             </section>
             <AgentBuilder
               agents={agents}
+              models={overview.models}
+              graphSnapshot={overview.graph_snapshot}
+              toolCatalog={toolCatalog}
+              skillCatalog={skillCatalog}
               draft={agentDraft}
               setDraft={setAgentDraft}
               saving={settingsMutation === "agent"}
+              validating={settingsMutation === "agent-validate"}
+              validation={agentValidation}
+              onValidate={() => void validateAgentDraft()}
               onSave={(event) => void saveAgent(event)}
             />
           </section>
@@ -1402,6 +1625,9 @@ function WorkspacePanel({
   toolCalls,
   approvals,
   memoryProposals,
+  memoryItems,
+  artifactContent,
+  artifactMutation,
   planArtifact,
   planRevision,
   setPlanRevision,
@@ -1419,7 +1645,11 @@ function WorkspacePanel({
   onCancel,
   onResolveApproval,
   onResolveMemory,
+  onDeleteMemoryItem,
   onSubmitClarification,
+  onResolveBlockedAction,
+  onInspectArtifact,
+  onDownloadArtifact,
 }: {
   activeRunId: string;
   runStatus: string;
@@ -1432,6 +1662,9 @@ function WorkspacePanel({
   toolCalls: ToolCallRecord[];
   approvals: Approval[];
   memoryProposals: MemoryProposal[];
+  memoryItems: MemoryItem[];
+  artifactContent: ArtifactContent | null;
+  artifactMutation: string;
   planArtifact?: ArtifactRecord;
   planRevision: string;
   setPlanRevision: (value: string) => void;
@@ -1452,7 +1685,14 @@ function WorkspacePanel({
     proposalID: string,
     action: "approve" | "reject" | "delete",
   ) => void;
+  onDeleteMemoryItem: (contextID: string) => void;
   onSubmitClarification: (blockedActionID: string) => void;
+  onResolveBlockedAction: (
+    blockedActionID: string,
+    decision: "retry" | "skip" | "stop",
+  ) => void;
+  onInspectArtifact: (artifactID: string) => void;
+  onDownloadArtifact: (artifact: ArtifactRecord) => void;
 }) {
   const latestOutput = humanOutput(traceEvents);
   const decision =
@@ -1566,6 +1806,40 @@ function WorkspacePanel({
                     }
                   >
                     Submit
+                  </button>
+                </div>
+              ) : action.kind === "retry_decision" ||
+                action.kind === "tool_risk_review" ? (
+                <div className="blocked-actions">
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    disabled={workspaceMutation !== ""}
+                    onClick={() =>
+                      onResolveBlockedAction(action.blocked_action_id, "retry")
+                    }
+                  >
+                    Retry
+                  </button>
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    disabled={workspaceMutation !== ""}
+                    onClick={() =>
+                      onResolveBlockedAction(action.blocked_action_id, "skip")
+                    }
+                  >
+                    Skip
+                  </button>
+                  <button
+                    className="button button-danger"
+                    type="button"
+                    disabled={workspaceMutation !== ""}
+                    onClick={() =>
+                      onResolveBlockedAction(action.blocked_action_id, "stop")
+                    }
+                  >
+                    Stop
                   </button>
                 </div>
               ) : null}
@@ -1708,11 +1982,45 @@ function WorkspacePanel({
             <span>{artifacts.length}</span>
           </div>
           {artifacts.slice(0, 5).map((artifact) => (
-            <div className="event-row passive-row" key={artifact.artifact_id}>
-              <span>{artifact.type}</span>
-              <strong>{artifact.title}</strong>
+            <div className="artifact-row" key={artifact.artifact_id}>
+              <div>
+                <span>
+                  {artifact.type} / {artifact.review_state} / r
+                  {artifact.revision}
+                </span>
+                <strong>{artifact.title}</strong>
+                {artifact.task_id ? <small>{artifact.task_id}</small> : null}
+              </div>
+              <div>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={artifactMutation !== ""}
+                  onClick={() => onInspectArtifact(artifact.artifact_id)}
+                >
+                  Preview
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={artifactMutation !== "" || !artifact.path}
+                  onClick={() => onDownloadArtifact(artifact)}
+                >
+                  Download
+                </button>
+              </div>
             </div>
           ))}
+          {artifactContent ? (
+            <div className="artifact-detail">
+              <div className="mini-heading no-border">
+                <strong>{artifactContent.artifact_id}</strong>
+                <span>{artifactContent.truncated ? "truncated" : "full"}</span>
+              </div>
+              <code>{artifactContent.path}</code>
+              <pre>{artifactContent.content}</pre>
+            </div>
+          ) : null}
         </div>
         <div>
           <div className="mini-heading">
@@ -1781,7 +2089,7 @@ function WorkspacePanel({
         <div>
           <div className="mini-heading">
             <strong>Memory</strong>
-            <span>{memoryProposals.length}</span>
+            <span>{memoryProposals.length + memoryItems.length}</span>
           </div>
           {memoryProposals.slice(0, 3).map((proposal) => (
             <div className="approval-card" key={proposal.proposal_id}>
@@ -1808,6 +2116,23 @@ function WorkspacePanel({
                   }
                 >
                   Reject
+                </button>
+              </div>
+            </div>
+          ))}
+          {memoryItems.slice(0, 3).map((item) => (
+            <div className="approval-card" key={item.context_id}>
+              <strong>{item.title}</strong>
+              <span>approved</span>
+              <p>{item.body}</p>
+              <div>
+                <button
+                  className="button button-danger"
+                  type="button"
+                  disabled={mutatingMemory !== ""}
+                  onClick={() => onDeleteMemoryItem(item.context_id)}
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -1862,6 +2187,7 @@ function OrchestrateBuilder({
   const modelAgents = agents.filter((agent) => agent.kind !== "tool_agent");
   const [draft, setDraft] = useState<OrchestrationConfig>(orchestration);
   const [selectedRole, setSelectedRole] = useState("");
+  const [draggingRole, setDraggingRole] = useState("");
   useEffect(() => {
     setDraft(orchestration);
   }, [orchestration]);
@@ -1892,6 +2218,20 @@ function OrchestrateBuilder({
     [next[index], next[target]] = [next[target], next[index]];
     setDraft({ ...draft, role_order: next });
   };
+  const dropRole = (targetRoleID: string) => {
+    if (!draggingRole || draggingRole === targetRoleID) {
+      setDraggingRole("");
+      return;
+    }
+    const next = roleOrder.filter((roleID) => roleID !== draggingRole);
+    const targetIndex = next.indexOf(targetRoleID);
+    next.splice(targetIndex < 0 ? next.length : targetIndex, 0, draggingRole);
+    setDraft({ ...draft, role_order: next });
+    setDraggingRole("");
+  };
+  const normalizedDraft = { ...draft, role_order: roleOrder };
+  const hasDiff =
+    JSON.stringify(normalizedDraft) !== JSON.stringify(orchestration ?? {});
   return (
     <section className="panel" aria-label="Role flow builder">
       <div className="panel-heading">
@@ -1944,6 +2284,10 @@ function OrchestrateBuilder({
               currentRole === roleID ? "role-selected" : ""
             }`}
             key={roleID}
+            draggable
+            onDragStart={() => setDraggingRole(roleID)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => dropRole(roleID)}
           >
             <button
               type="button"
@@ -2037,6 +2381,16 @@ function OrchestrateBuilder({
       ) : null}
       <div className="config-preview">
         <div className="mini-heading">
+          <strong>Graph preview</strong>
+          <span>{hasDiff ? "changed" : "saved"}</span>
+        </div>
+        <div className="graph-preview">
+          {roleOrder
+            .filter((roleID) => !disabled.has(roleID))
+            .map((roleID) => draft.roles?.[roleID]?.purpose || roleID)
+            .join(" -> ") || "No enabled roles"}
+        </div>
+        <div className="mini-heading">
           <strong>Pending config</strong>
           <span>{saving ? "saving" : "local draft"}</span>
         </div>
@@ -2056,17 +2410,48 @@ function OrchestrateBuilder({
 
 function AgentBuilder({
   agents,
+  models,
+  graphSnapshot,
+  toolCatalog,
+  skillCatalog,
   draft,
   setDraft,
   saving,
+  validating,
+  validation,
+  onValidate,
   onSave,
 }: {
   agents: AgentRecord[];
+  models: ProviderProfile[];
+  graphSnapshot?: GraphSnapshot;
+  toolCatalog: ToolDefinition[];
+  skillCatalog: SkillDefinition[];
   draft: AgentRecord;
   setDraft: (next: AgentRecord) => void;
   saving: boolean;
+  validating: boolean;
+  validation: string;
+  onValidate: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const graphModelOptions = graphSnapshot
+    ? Object.entries(graphSnapshot.ir.models).map(([id, model]) => ({
+        id,
+        label: `${id} / ${model.model}`,
+      }))
+    : [];
+  const modelOptions = graphModelOptions.length
+    ? graphModelOptions
+    : models.map((model) => ({
+        id: model.id,
+        label: `${model.name || model.id} / ${model.model}`,
+      }));
+  const agentIsInvalid =
+    draft.id.trim() === "" ||
+    ((draft.kind === "model_agent" || draft.kind === "gateway_agent") &&
+      (draft.model ?? "").trim() === "") ||
+    (draft.kind === "external_agent" && (draft.runtime ?? "").trim() === "");
   return (
     <section className="panel" aria-label="Agent builder">
       <div className="panel-heading">
@@ -2113,13 +2498,19 @@ function AgentBuilder({
           </label>
           <label>
             <span>Model</span>
-            <input
+            <select
               value={draft.model ?? ""}
               onChange={(event) =>
                 setDraft({ ...draft, model: event.target.value })
               }
-              placeholder="default"
-            />
+            >
+              <option value="">Select model profile</option>
+              {modelOptions.map((model) => (
+                <option value={model.id} key={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             <span>Runtime</span>
@@ -2165,26 +2556,6 @@ function AgentBuilder({
         </label>
         <div className="builder-grid">
           <label>
-            <span>Tools</span>
-            <input
-              value={draft.tools?.join(", ") ?? ""}
-              onChange={(event) =>
-                setDraft({ ...draft, tools: splitCSV(event.target.value) })
-              }
-              placeholder="read_project, write_project, run_checks"
-            />
-          </label>
-          <label>
-            <span>Skills</span>
-            <input
-              value={draft.skills?.join(", ") ?? ""}
-              onChange={(event) =>
-                setDraft({ ...draft, skills: splitCSV(event.target.value) })
-              }
-              placeholder="research, coding"
-            />
-          </label>
-          <label>
             <span>Triggers</span>
             <input
               value={draft.triggers?.join(", ") ?? ""}
@@ -2205,10 +2576,75 @@ function AgentBuilder({
             />
           </label>
         </div>
+        <div className="selection-panel">
+          <div className="mini-heading no-border">
+            <strong>Tools</strong>
+            <span>{draft.tools?.length ?? 0} selected</span>
+          </div>
+          <div className="checkbox-grid">
+            {toolCatalog.map((tool) => (
+              <label key={tool.id}>
+                <input
+                  type="checkbox"
+                  checked={draft.tools?.includes(tool.id) ?? false}
+                  onChange={() =>
+                    setDraft({
+                      ...draft,
+                      tools: toggleListValue(draft.tools ?? [], tool.id),
+                    })
+                  }
+                />
+                <span>{tool.id}</span>
+                <small>{tool.mutation_risk}</small>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="selection-panel">
+          <div className="mini-heading no-border">
+            <strong>Skills</strong>
+            <span>{draft.skills?.length ?? 0} selected</span>
+          </div>
+          <div className="checkbox-grid">
+            {skillCatalog.map((skill) => (
+              <label key={skill.id}>
+                <input
+                  type="checkbox"
+                  checked={draft.skills?.includes(skill.id) ?? false}
+                  onChange={() =>
+                    setDraft({
+                      ...draft,
+                      skills: toggleListValue(draft.skills ?? [], skill.id),
+                    })
+                  }
+                />
+                <span>{skill.name || skill.id}</span>
+                <small>{skill.risk || "low"}</small>
+              </label>
+            ))}
+          </div>
+        </div>
+        {validation ? (
+          <div
+            className={
+              validation === "valid" ? "inline-success" : "inline-error"
+            }
+          >
+            {validation === "valid" ? "Agent config is valid." : validation}
+          </div>
+        ) : null}
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={validating || agentIsInvalid}
+          onClick={onValidate}
+        >
+          {validating ? "Validating" : "Validate"}
+        </button>
         <button
           className="button"
           type="submit"
-          disabled={saving || draft.id.trim() === ""}
+          disabled={saving || agentIsInvalid}
         >
           {saving ? "Saving" : "Save agent"}
         </button>
@@ -2356,6 +2792,12 @@ function splitCSV(value: string): string[] {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function toggleListValue(values: string[], value: string): string[] {
+  return values.includes(value)
+    ? values.filter((current) => current !== value)
+    : [...values, value];
 }
 
 function taskTone(status: string): string {

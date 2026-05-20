@@ -1031,6 +1031,12 @@ h2 {
   gap: 8px;
 }
 
+.blocked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .clarification-form textarea {
   min-height: 70px;
   resize: vertical;
@@ -1081,6 +1087,75 @@ h2 {
   background: transparent;
   cursor: pointer;
   text-align: left;
+}
+
+.artifact-row {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.artifact-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.artifact-row > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.artifact-row span,
+.artifact-row strong,
+.artifact-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-row span,
+.artifact-row small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.artifact-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.artifact-detail {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.artifact-detail code {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-detail pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .event-row:hover {
@@ -1359,6 +1434,15 @@ h2 {
   font-size: 12px;
 }
 
+.inline-success {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--success) 48%, transparent);
+  border-radius: 8px;
+  color: var(--success);
+  background: var(--success-bg);
+  font-size: 12px;
+}
+
 .panel-inline {
   margin: 12px 15px 0;
 }
@@ -1566,9 +1650,64 @@ h2 {
   background: var(--surface-muted);
 }
 
+.selection-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.checkbox-grid label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.checkbox-grid input {
+  width: auto;
+  min-height: auto;
+}
+
+.checkbox-grid span,
+.checkbox-grid small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkbox-grid small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .config-preview {
   display: grid;
   border-bottom: 1px solid var(--border);
+}
+
+.graph-preview {
+  overflow: hidden;
+  padding: 12px 15px;
+  color: var(--text);
+  background: var(--surface-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .config-preview pre {

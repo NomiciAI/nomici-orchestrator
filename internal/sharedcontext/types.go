@@ -10,7 +10,8 @@ const (
 	KindRunSummary      = "run_summary"
 	KindHandoffBriefing = "handoff_briefing"
 
-	StatusActive = "active"
+	StatusActive  = "active"
+	StatusDeleted = "deleted"
 
 	ConfidenceGenerated = "generated"
 

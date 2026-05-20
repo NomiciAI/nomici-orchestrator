@@ -27,6 +27,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
+	"github.com/NomiciAI/nomici-orchestrator/internal/worklocks"
 )
 
 type Broker struct {
@@ -36,6 +37,7 @@ type Broker struct {
 	Runs       *runpkg.Store
 	Sandboxes  *sandbox.Store
 	Artifacts  *artifactpkg.Store
+	Locks      *worklocks.Store
 	ConfigPath string
 	HTTPClient *http.Client
 }
@@ -55,13 +57,17 @@ func (broker *Broker) Execute(ctx context.Context, request ExecuteRequest) (*Cal
 	request.SessionID = session.SessionID
 	request.RunID = session.RunID
 	inputPreview := previewJSON(request.Input)
+	risk := definition.MutationRisk
+	if definition.ID == ToolBash {
+		risk = ClassifyBashRisk(stringInput(request.Input, "command", "")).Level
+	}
 	record, err := broker.Store.Create(ctx, CreateCallRequest{
 		SessionID:    request.SessionID,
 		RunID:        request.RunID,
 		TaskID:       request.TaskID,
 		ToolID:       definition.ID,
 		Status:       StatusPending,
-		Risk:         definition.MutationRisk,
+		Risk:         risk,
 		InputPreview: inputPreview,
 		Metadata:     jsonPayload(map[string]any{"definition": definition}),
 	})
@@ -74,12 +80,26 @@ func (broker *Broker) Execute(ctx context.Context, request ExecuteRequest) (*Cal
 		"task_id":       request.TaskID,
 		"input_preview": sharedcontext.RedactText(inputPreview),
 	})
+	if definition.ID == ToolBash && risk == RiskCritical {
+		message := "command blocked by safety policy: " + ClassifyBashRisk(stringInput(request.Input, "command", "")).Reason
+		updated, _ := broker.Store.MarkFailed(ctx, record.ToolCallID, "risk: critical", message, []string{"stdout_stderr_preview"})
+		_ = broker.appendTrace(ctx, request.RunID, trace.EventPolicyBlocked, request.AgentID, map[string]any{
+			"tool_call_id": record.ToolCallID,
+			"tool_id":      definition.ID,
+			"risk":         risk,
+			"reason":       message,
+		})
+		return updated, errors.New(message)
+	}
 
 	if RequiresApproval(definition.ID) {
 		decision, err := broker.checkPolicy(ctx, session, request, definition, record)
 		if err != nil {
 			updated, _ := broker.Store.MarkFailed(ctx, record.ToolCallID, "", err.Error(), nil)
 			return updated, err
+		}
+		if risk == RiskCritical {
+			decision.Risk = RiskCritical
 		}
 		_ = broker.appendTrace(ctx, request.RunID, trace.EventPolicyChecked, request.AgentID, map[string]any{
 			"tool_call_id": record.ToolCallID,
@@ -118,7 +138,7 @@ func (broker *Broker) Execute(ctx context.Context, request ExecuteRequest) (*Cal
 	if _, err := broker.Store.MarkRunning(ctx, record.ToolCallID, record.Risk); err != nil {
 		return nil, err
 	}
-	output, artifactRefs, redactions, execErr := broker.executeAllowed(ctx, session, request, definition)
+	output, artifactRefs, redactions, execErr := broker.executeAllowed(ctx, session, request, definition, record.ToolCallID)
 	if execErr != nil {
 		updated, _ := broker.Store.MarkFailed(ctx, record.ToolCallID, output, execErr.Error(), redactions)
 		_ = broker.appendTrace(ctx, request.RunID, "tool.call.failed", request.AgentID, map[string]any{
@@ -193,7 +213,7 @@ func (broker *Broker) checkPolicy(ctx context.Context, session *runpkg.Session, 
 	return broker.Policy.Check(ctx, action)
 }
 
-func (broker *Broker) executeAllowed(ctx context.Context, session *runpkg.Session, request ExecuteRequest, definition Definition) (string, []string, []string, error) {
+func (broker *Broker) executeAllowed(ctx context.Context, session *runpkg.Session, request ExecuteRequest, definition Definition, toolCallID string) (string, []string, []string, error) {
 	switch definition.ID {
 	case ToolListFiles:
 		return broker.listFiles(ctx, session.RunID, request.Input)
@@ -203,22 +223,22 @@ func (broker *Broker) executeAllowed(ctx context.Context, session *runpkg.Sessio
 		if err := broker.requireSandboxPermission(ctx, session.RunID, "file_write_enabled"); err != nil {
 			return "", nil, nil, err
 		}
-		return broker.writeFile(ctx, session.RunID, request.Input)
+		return broker.writeFile(ctx, session.RunID, request.TaskID, toolCallID, request.Input)
 	case ToolReplaceFile:
 		if err := broker.requireSandboxPermission(ctx, session.RunID, "file_write_enabled"); err != nil {
 			return "", nil, nil, err
 		}
-		return broker.replaceFile(ctx, session.RunID, request.Input)
+		return broker.replaceFile(ctx, session.RunID, request.TaskID, toolCallID, request.Input)
 	case ToolPresentArtifact:
 		if err := broker.requireSandboxPermission(ctx, session.RunID, "file_write_enabled"); err != nil {
 			return "", nil, nil, err
 		}
-		return broker.presentArtifact(ctx, session, request, request.Input)
+		return broker.presentArtifact(ctx, session, request, toolCallID, request.Input)
 	case ToolBash:
 		if err := broker.requireSandboxPermission(ctx, session.RunID, "bash_enabled"); err != nil {
 			return "", nil, nil, err
 		}
-		return broker.runBash(ctx, session.RunID, request.Input)
+		return broker.runBash(ctx, session.RunID, request.TaskID, toolCallID, request.Input)
 	case ToolSearch:
 		return broker.search(ctx, request.Input)
 	case ToolFetch:
@@ -298,7 +318,7 @@ func (broker *Broker) readFile(ctx context.Context, runID string, input map[stri
 	return output, nil, []string{"content_preview"}, nil
 }
 
-func (broker *Broker) writeFile(ctx context.Context, runID string, input map[string]any) (string, []string, []string, error) {
+func (broker *Broker) writeFile(ctx context.Context, runID string, taskID string, toolCallID string, input map[string]any) (string, []string, []string, error) {
 	path, err := broker.workspacePath(ctx, runID, stringInput(input, "path", ""))
 	if err != nil {
 		return "", nil, nil, err
@@ -307,16 +327,24 @@ func (broker *Broker) writeFile(ctx context.Context, runID string, input map[str
 	if !ok {
 		return "", nil, nil, fmt.Errorf("content is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	var output string
+	err = broker.withWorkspaceLock(ctx, runID, taskID, toolCallID, "file:"+path, func() error {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			return err
+		}
+		output = "wrote " + relativeDisplay(path)
+		return nil
+	})
+	if err != nil {
 		return "", nil, nil, err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		return "", nil, nil, err
-	}
-	return "wrote " + relativeDisplay(path), nil, []string{"content_preview"}, nil
+	return output, nil, []string{"content_preview"}, nil
 }
 
-func (broker *Broker) replaceFile(ctx context.Context, runID string, input map[string]any) (string, []string, []string, error) {
+func (broker *Broker) replaceFile(ctx context.Context, runID string, taskID string, toolCallID string, input map[string]any) (string, []string, []string, error) {
 	path, err := broker.workspacePath(ctx, runID, stringInput(input, "path", ""))
 	if err != nil {
 		return "", nil, nil, err
@@ -326,29 +354,37 @@ func (broker *Broker) replaceFile(ctx context.Context, runID string, input map[s
 	if oldText == "" {
 		return "", nil, nil, fmt.Errorf("old text is required")
 	}
-	payload, err := os.ReadFile(path)
+	var output string
+	err = broker.withWorkspaceLock(ctx, runID, taskID, toolCallID, "file:"+path, func() error {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		content := string(payload)
+		count := strings.Count(content, oldText)
+		if count == 0 {
+			return fmt.Errorf("old text was not found")
+		}
+		replaceAll, _ := input["all"].(bool)
+		if replaceAll {
+			content = strings.ReplaceAll(content, oldText, newText)
+		} else {
+			content = strings.Replace(content, oldText, newText, 1)
+			count = 1
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			return err
+		}
+		output = fmt.Sprintf("replaced %d occurrence(s) in %s", count, relativeDisplay(path))
+		return nil
+	})
 	if err != nil {
 		return "", nil, nil, err
 	}
-	content := string(payload)
-	count := strings.Count(content, oldText)
-	if count == 0 {
-		return "", nil, nil, fmt.Errorf("old text was not found")
-	}
-	replaceAll, _ := input["all"].(bool)
-	if replaceAll {
-		content = strings.ReplaceAll(content, oldText, newText)
-	} else {
-		content = strings.Replace(content, oldText, newText, 1)
-		count = 1
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		return "", nil, nil, err
-	}
-	return fmt.Sprintf("replaced %d occurrence(s) in %s", count, relativeDisplay(path)), nil, []string{"content_preview"}, nil
+	return output, nil, []string{"content_preview"}, nil
 }
 
-func (broker *Broker) presentArtifact(ctx context.Context, session *runpkg.Session, request ExecuteRequest, input map[string]any) (string, []string, []string, error) {
+func (broker *Broker) presentArtifact(ctx context.Context, session *runpkg.Session, request ExecuteRequest, toolCallID string, input map[string]any) (string, []string, []string, error) {
 	if broker.Artifacts == nil {
 		return "", nil, nil, fmt.Errorf("artifact store is not initialized")
 	}
@@ -367,16 +403,24 @@ func (broker *Broker) presentArtifact(ctx context.Context, session *runpkg.Sessi
 			preview = trimPreview(string(payload), 4000)
 		}
 	}
-	artifact, err := broker.Artifacts.Create(ctx, artifactpkg.CreateRequest{
-		SessionID:   session.SessionID,
-		RunID:       session.RunID,
-		TaskID:      request.TaskID,
-		Type:        artifactType,
-		Title:       title,
-		Path:        path,
-		ReviewState: artifactpkg.ReviewApproved,
-		Preview:     preview,
-		Metadata:    jsonPayload(map[string]any{"source": "tool_call", "tool_id": ToolPresentArtifact}),
+	var artifact *artifactpkg.Artifact
+	err := broker.withWorkspaceLock(ctx, session.RunID, request.TaskID, toolCallID, "artifacts", func() error {
+		created, err := broker.Artifacts.Create(ctx, artifactpkg.CreateRequest{
+			SessionID:   session.SessionID,
+			RunID:       session.RunID,
+			TaskID:      request.TaskID,
+			Type:        artifactType,
+			Title:       title,
+			Path:        path,
+			ReviewState: artifactpkg.ReviewApproved,
+			Preview:     preview,
+			Metadata:    jsonPayload(map[string]any{"source": "tool_call", "tool_id": ToolPresentArtifact}),
+		})
+		if err != nil {
+			return err
+		}
+		artifact = created
+		return nil
 	})
 	if err != nil {
 		return "", nil, nil, err
@@ -387,10 +431,14 @@ func (broker *Broker) presentArtifact(ctx context.Context, session *runpkg.Sessi
 	return "artifact created: " + artifact.ArtifactID, []string{artifact.ArtifactID}, []string{"content_preview"}, nil
 }
 
-func (broker *Broker) runBash(ctx context.Context, runID string, input map[string]any) (string, []string, []string, error) {
+func (broker *Broker) runBash(ctx context.Context, runID string, taskID string, toolCallID string, input map[string]any) (string, []string, []string, error) {
 	command := strings.TrimSpace(stringInput(input, "command", ""))
 	if command == "" {
 		return "", nil, nil, fmt.Errorf("command is required")
+	}
+	classification := ClassifyBashRisk(command)
+	if classification.Level == "critical" {
+		return "risk: critical\nreason: " + classification.Reason, nil, []string{"stdout_stderr_preview"}, fmt.Errorf("command blocked by safety policy: %s", classification.Reason)
 	}
 	cwd, err := broker.workspacePath(ctx, runID, stringInput(input, "cwd", "."))
 	if err != nil {
@@ -400,10 +448,29 @@ func (broker *Broker) runBash(ctx context.Context, runID string, input map[strin
 	if timeout <= 0 || timeout > 300 {
 		timeout = 60
 	}
+	var output string
+	err = broker.withWorkspaceLock(ctx, runID, taskID, toolCallID, "workspace", func() error {
+		var err error
+		output, err = broker.runShellCommand(ctx, runID, cwd, command, timeout, classification)
+		return err
+	})
+	if err != nil {
+		return output, nil, []string{"stdout_stderr_preview"}, err
+	}
+	return output, nil, []string{"stdout_stderr_preview"}, nil
+}
+
+func (broker *Broker) runShellCommand(ctx context.Context, runID string, cwd string, command string, timeout int, classification BashRisk) (string, error) {
+	sandboxRecord, err := broker.sandbox(ctx, runID)
+	if err != nil {
+		return "", err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", command)
-	cmd.Dir = cwd
+	cmd, err := broker.shellCommand(runCtx, sandboxRecord, cwd, command)
+	if err != nil {
+		return "", err
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -417,14 +484,172 @@ func (broker *Broker) runBash(ctx context.Context, runID string, input map[strin
 			exitCode = exitErr.ExitCode()
 		}
 	}
-	output := fmt.Sprintf("exit_code: %d\nstdout:\n%s\nstderr:\n%s", exitCode, trimPreview(stdout.String(), 4000), trimPreview(stderr.String(), 4000))
+	output := fmt.Sprintf("risk: %s\nrisk_reason: %s\nexit_code: %d\nstdout:\n%s\nstderr:\n%s", classification.Level, classification.Reason, exitCode, trimPreview(stdout.String(), 4000), trimPreview(stderr.String(), 4000))
 	if runCtx.Err() == context.DeadlineExceeded {
-		return output, nil, []string{"stdout_stderr_preview"}, fmt.Errorf("command timed out after %d seconds", timeout)
+		return output, fmt.Errorf("command timed out after %d seconds", timeout)
 	}
 	if err != nil {
-		return output, nil, []string{"stdout_stderr_preview"}, fmt.Errorf("command exited with %d", exitCode)
+		return output, fmt.Errorf("command exited with %d", exitCode)
 	}
-	return output, nil, []string{"stdout_stderr_preview"}, nil
+	return output, nil
+}
+
+func (broker *Broker) shellCommand(ctx context.Context, record *sandbox.Record, cwd string, command string) (*exec.Cmd, error) {
+	if record != nil && record.Mode == sandbox.ModeContainer {
+		return containerShellCommand(ctx, record, cwd, command)
+	}
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Dir = cwd
+	return cmd, nil
+}
+
+func containerShellCommand(ctx context.Context, record *sandbox.Record, cwd string, command string) (*exec.Cmd, error) {
+	if record == nil {
+		return nil, fmt.Errorf("sandbox record is required")
+	}
+	binary := strings.TrimSpace(record.RuntimeBinary)
+	if binary == "" {
+		return nil, fmt.Errorf("container sandbox runtime is not configured")
+	}
+	name := filepath.Base(binary)
+	if name != "docker" && name != "podman" {
+		return nil, fmt.Errorf("container bash adapter supports docker or podman, got %s", name)
+	}
+	root := strings.TrimSpace(record.WorkspaceRoot)
+	if root == "" {
+		return nil, fmt.Errorf("container sandbox workspace root is not configured")
+	}
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil {
+		return nil, err
+	}
+	if rel == "." {
+		rel = ""
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("cwd escapes the workspace")
+	}
+	image := containerImage(record)
+	workspaceCWD := "/workspace"
+	if rel != "" {
+		workspaceCWD = "/workspace/" + filepath.ToSlash(rel)
+	}
+	args := []string{
+		"run",
+		"--rm",
+		"-v", root + ":/workspace",
+		"-w", workspaceCWD,
+		image,
+		"/bin/sh",
+		"-c",
+		command,
+	}
+	return exec.CommandContext(ctx, binary, args...), nil
+}
+
+func containerImage(record *sandbox.Record) string {
+	if record == nil || len(record.Metadata) == 0 {
+		return "ubuntu:24.04"
+	}
+	metadata := map[string]any{}
+	if err := json.Unmarshal(record.Metadata, &metadata); err != nil {
+		return "ubuntu:24.04"
+	}
+	if image, _ := metadata["container_image"].(string); strings.TrimSpace(image) != "" {
+		return strings.TrimSpace(image)
+	}
+	return "ubuntu:24.04"
+}
+
+type BashRisk struct {
+	Level  string
+	Reason string
+}
+
+func ClassifyBashRisk(command string) BashRisk {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	switch {
+	case lower == "":
+		return BashRisk{Level: "low", Reason: "empty command"}
+	case containsDangerousCommand(lower):
+		return BashRisk{Level: "critical", Reason: "command contains destructive host or credential access patterns"}
+	case strings.Contains(lower, "sudo ") ||
+		strings.Contains(lower, "curl ") && strings.Contains(lower, "| sh") ||
+		strings.Contains(lower, "wget ") && strings.Contains(lower, "| sh") ||
+		strings.Contains(lower, "chmod -r 777") ||
+		strings.Contains(lower, "mkfs."):
+		return BashRisk{Level: "critical", Reason: "command can mutate system state outside the workspace"}
+	case strings.Contains(lower, "rm ") ||
+		strings.Contains(lower, "git push") ||
+		strings.Contains(lower, "npm publish") ||
+		strings.Contains(lower, "deploy") ||
+		strings.Contains(lower, "docker run") ||
+		strings.Contains(lower, "podman run"):
+		return BashRisk{Level: "high", Reason: "command may mutate files, remote state, or external processes"}
+	case strings.Contains(lower, "make test") ||
+		strings.Contains(lower, "go test") ||
+		strings.Contains(lower, "pnpm test") ||
+		strings.Contains(lower, "npm test"):
+		return BashRisk{Level: "medium", Reason: "command executes project code for verification"}
+	default:
+		return BashRisk{Level: "medium", Reason: "shell command execution requires workspace mediation"}
+	}
+}
+
+func containsDangerousCommand(lower string) bool {
+	patterns := []string{
+		"rm -rf /",
+		"rm -fr /",
+		"rm -rf ~",
+		"rm -fr ~",
+		":(){",
+		"dd if=",
+		"diskutil erase",
+		"security find-generic-password",
+		"cat ~/.ssh",
+		"cat ~/.aws",
+		"cat ~/.config",
+		"chmod -r 777 /",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func (broker *Broker) withWorkspaceLock(ctx context.Context, runID string, taskID string, toolCallID string, resource string, fn func() error) error {
+	if broker.Locks == nil {
+		return fn()
+	}
+	lock, err := broker.Locks.Acquire(ctx, worklocks.AcquireRequest{
+		RunID:      runID,
+		TaskID:     taskID,
+		ToolCallID: toolCallID,
+		Resource:   resource,
+		Owner:      "toolbroker",
+		Metadata:   jsonPayload(map[string]any{"tool_call_id": toolCallID}),
+	})
+	if err != nil {
+		return err
+	}
+	_ = broker.appendTrace(ctx, runID, "workspace.lock.acquired", "", map[string]any{
+		"lock_id":      lock.LockID,
+		"resource":     lock.Resource,
+		"task_id":      taskID,
+		"tool_call_id": toolCallID,
+	})
+	defer func() {
+		_ = broker.Locks.Release(ctx, lock.LockID)
+		_ = broker.appendTrace(ctx, runID, "workspace.lock.released", "", map[string]any{
+			"lock_id":      lock.LockID,
+			"resource":     lock.Resource,
+			"task_id":      taskID,
+			"tool_call_id": toolCallID,
+		})
+	}()
+	return fn()
 }
 
 func (broker *Broker) search(ctx context.Context, input map[string]any) (string, []string, []string, error) {

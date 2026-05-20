@@ -14,10 +14,16 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 )
 
+const semanticRouteMinConfidence = 0.6
+
 func routeChatIntent(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot) orchestration.RouteDecision {
 	fallback := orchestration.Route(prompt, manualAgentID, snapshot)
 	semantic, err := semanticRoute(ctx, services, prompt, manualAgentID, snapshot, fallback)
 	if err != nil {
+		return fallback
+	}
+	if !semanticRouteAccepted(semantic, fallback) {
+		fallback.Rationale = "Semantic route confidence was below the execution threshold; " + fallback.Rationale
 		return fallback
 	}
 	mergeRouteDefaults(&semantic, fallback)
@@ -196,6 +202,22 @@ func mergeRouteDefaults(decision *orchestration.RouteDecision, fallback orchestr
 	if fallback.NeedsPlanReview {
 		decision.NeedsPlanReview = true
 	}
+}
+
+func semanticRouteAccepted(decision orchestration.RouteDecision, fallback orchestration.RouteDecision) bool {
+	if decision.Confidence == 0 {
+		return true
+	}
+	if decision.Confidence >= semanticRouteMinConfidence {
+		return true
+	}
+	if decision.Mode == orchestration.ModeClarify && len(decision.MissingInputs) > 0 && strings.TrimSpace(decision.Clarification) != "" {
+		return true
+	}
+	if fallback.Mode == orchestration.ModeWorkspaceRun && decision.Mode == orchestration.ModeDirectReply {
+		return false
+	}
+	return false
 }
 
 func validRouteMode(mode string) bool {
