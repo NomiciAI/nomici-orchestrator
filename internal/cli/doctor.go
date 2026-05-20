@@ -152,14 +152,18 @@ func checkProviders(command *cobra.Command, dbPath string) doctorResult {
 			return doctorResult{Name: "models", Status: "failed", Message: profile.ID + ": " + err.Error()}
 		}
 		switch providers.NormalizeKind(profile.Kind) {
-		case providers.KindOpenAICompatible:
-			if profile.APIKeyEnv != "" {
+		case providers.KindOpenAICompatible, providers.KindAnthropic, providers.KindGemini:
+			if profile.RequiresAPIKey() && profile.APIKeyEnv != "" {
 				if _, ok := os.LookupEnv(profile.APIKeyEnv); !ok {
 					warnings = append(warnings, profile.ID+" missing "+profile.APIKeyEnv)
 				}
 			}
 		case providers.KindCodexCLI:
 			if availability := providers.DetectCodexCLI(); !availability.Available {
+				warnings = append(warnings, profile.ID+" "+availability.Message)
+			}
+		case providers.KindClaudeCode:
+			if availability := providers.DetectClaudeCode(); !availability.Available {
 				warnings = append(warnings, profile.ID+" "+availability.Message)
 			}
 		}

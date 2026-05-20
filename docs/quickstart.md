@@ -37,7 +37,7 @@ nomici run product_pm "Plan the first useful task."
 
 `nomici setup` guides you through:
 
-- choosing an LLM provider profile
+- choosing an LLM provider and a provider-specific model from the live catalog when available
 - choosing basic Web Search and Web Fetch providers
 - installing the `developer-team` starter pack
 - writing sandbox policy intent to `deployment.sandbox`
@@ -47,7 +47,7 @@ The same flow is scriptable for automation:
 
 ```bash
 nomici setup \
-  --provider openai-compatible \
+  --provider openai \
   --name gpt \
   --model <model> \
   --api-key-env OPENAI_API_KEY \
@@ -88,6 +88,17 @@ nomici setup \
   --yes
 ```
 
+You can inspect the full provider/model catalog outside the wizard:
+
+```bash
+nomici provider list
+nomici provider models openai --search gpt
+nomici provider models openrouter --search claude
+nomici provider doctor openai
+```
+
+Provider catalogs are fetched from provider model APIs when available. Local CLI providers and custom endpoints still allow an explicit model id when a model list cannot be discovered.
+
 Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. Web Search and Web Fetch setup writes read-only provider contracts; full mediated tool execution is a later workflow. `nomici doctor` checks that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
 
 ## Optional: Run A Local Agent Without An API Key
@@ -114,7 +125,7 @@ nomici gateway token show
 
 Paste the token into Nomici Console when prompted. Run `nomici gateway token show` from the same project directory where `nomici dev` started Gateway. Each `.nomici` state directory has its own Gateway token.
 
-`nomici dev` starts Gateway, validates the graph, starts configured local processes, and opens Console. `nomici up` remains available for scripts that only need the lower-level background start behavior.
+`nomici dev` starts Gateway, validates the graph, starts configured local processes, and opens Console. Console defaults to Chat; a message can start a workspace run, and Orchestrate shows the task ledger, plan review, uploads, artifacts, trace events, and approvals for the active session. Settings shows provider/model catalog status, configured model profiles, and tool contracts. `nomici up` remains available for scripts that only need the lower-level background start behavior.
 
 When finished:
 
@@ -158,7 +169,7 @@ nomici trace show <run_id>
 ## Current Limits
 
 - The hosted `curl` installer and release artifacts are not live yet.
-- Console editing and provider setup are not implemented yet.
+- Console setup editing is not implemented yet; use `nomici setup` and `nomici provider` commands for bootstrap changes.
 - Linear `handoff` chains across `cli_agent`-backed `external_agent` nodes are executable. Branching, parallel, A2A, and tool-edge graph execution is not implemented yet.
 - Web Search and Web Fetch are configured as read-only provider contracts; mediated runtime tool execution is deferred.
 - MCP, A2A, broader tool policy, and deep external runtime adapters are deferred.

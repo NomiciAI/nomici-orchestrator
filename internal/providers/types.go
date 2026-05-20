@@ -10,8 +10,11 @@ import (
 
 const (
 	KindOpenAICompatible = "openai_compatible"
+	KindAnthropic        = "anthropic"
+	KindGemini           = "gemini"
 	KindOllama           = "ollama"
 	KindCodexCLI         = "codex_cli"
+	KindClaudeCode       = "claude_code"
 )
 
 type Profile struct {
@@ -48,15 +51,39 @@ func (profile *Profile) Validate() error {
 	if strings.TrimSpace(profile.BaseURL) == "" {
 		return fmt.Errorf("provider base_url is required")
 	}
-	if profile.Kind == KindOpenAICompatible && strings.TrimSpace(profile.APIKeyEnv) == "" {
-		return fmt.Errorf("api_key_env is required for openai_compatible providers")
+	if profile.RequiresAPIKey() && strings.TrimSpace(profile.APIKeyEnv) == "" {
+		return fmt.Errorf("api_key_env is required for %s providers", NormalizeKind(profile.Kind))
 	}
 	return nil
 }
 
+func (profile *Profile) RequiresAPIKey() bool {
+	if profile == nil {
+		return false
+	}
+	kind := NormalizeKind(profile.Kind)
+	switch kind {
+	case KindAnthropic, KindGemini:
+		return true
+	case KindOpenAICompatible:
+		if profile.Capabilities != nil {
+			if profile.Capabilities["auth_mode"] == AuthModeNone {
+				return false
+			}
+			switch profile.Capabilities["provider_id"] {
+			case ProviderVLLM, ProviderOllama:
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 func KnownKind(kind string) bool {
 	switch NormalizeKind(kind) {
-	case KindOpenAICompatible, KindOllama, KindCodexCLI:
+	case KindOpenAICompatible, KindAnthropic, KindGemini, KindOllama, KindCodexCLI, KindClaudeCode:
 		return true
 	default:
 		return false
@@ -66,10 +93,14 @@ func KnownKind(kind string) bool {
 func NormalizeKind(kind string) string {
 	kind = strings.TrimSpace(strings.ToLower(kind))
 	switch kind {
-	case "openai-compatible", "openai", "openai_compatible":
+	case "openai-compatible", "openai", "openai_compatible", "deepseek", "openrouter", "vllm", "other_openai_compatible":
 		return KindOpenAICompatible
 	case "codex-cli", "codex", "codex_cli":
 		return KindCodexCLI
+	case "claude-code", "claude_code", "claude":
+		return KindClaudeCode
+	case "google-gemini", "google_gemini", "gemini":
+		return KindGemini
 	default:
 		return kind
 	}
@@ -81,10 +112,25 @@ func DefaultBaseURL(kind string) string {
 		return "http://127.0.0.1:11434/v1"
 	case KindCodexCLI:
 		return "local://codex-cli"
+	case KindClaudeCode:
+		return "local://claude-code"
+	case KindAnthropic:
+		return "https://api.anthropic.com"
+	case KindGemini:
+		return "https://generativelanguage.googleapis.com/v1beta"
 	case KindOpenAICompatible:
 		return "https://api.openai.com/v1"
 	default:
 		return ""
+	}
+}
+
+func ProviderRequiresAPIKey(kind string) bool {
+	switch NormalizeKind(kind) {
+	case KindOpenAICompatible, KindAnthropic, KindGemini:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -118,4 +164,18 @@ func CodexAuthPath() string {
 		return filepath.Join(home, ".codex", "auth.json")
 	}
 	return filepath.Join(".codex", "auth.json")
+}
+
+type ClaudeCodeAvailability struct {
+	Available  bool
+	Executable string
+	Message    string
+}
+
+func DetectClaudeCode() ClaudeCodeAvailability {
+	executable, err := exec.LookPath("claude")
+	if err != nil {
+		return ClaudeCodeAvailability{Available: false, Message: "claude executable was not found on PATH"}
+	}
+	return ClaudeCodeAvailability{Available: true, Executable: executable, Message: "Claude Code executable available; local auth is validated by the CLI"}
 }

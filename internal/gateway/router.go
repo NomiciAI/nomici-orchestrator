@@ -3,6 +3,7 @@ package gateway
 import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway/web"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
@@ -30,6 +31,7 @@ type Services struct {
 	Sandboxes *sandbox.Store
 	Artifacts *artifacts.Store
 	Uploads   *uploads.Store
+	Chats     *chats.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -41,6 +43,13 @@ func NewRouter(options Options, services Services) *chi.Mux {
 			api.Use(bearerAuthMiddleware(options.AuthToken))
 		}
 		api.Get("/api/console/overview", consoleOverviewHandler(options, services))
+		api.Get("/api/provider-catalog", providerCatalogHandler())
+		api.Get("/api/provider-catalog/{provider_id}/models", providerCatalogModelsHandler())
+		api.Post("/api/provider-catalog/{provider_id}/doctor", providerCatalogDoctorHandler())
+		api.Get("/api/chats", chatListHandler(services))
+		api.Post("/api/chats", chatCreateHandler(options, services))
+		api.Get("/api/chats/{chat_id}", chatDetailHandler(services))
+		api.Post("/api/chats/{chat_id}/messages", chatMessageHandler(options, services))
 		api.Get("/api/models", modelListHandler(services))
 		api.Get("/api/packs", packListHandler(services))
 		api.Get("/api/graphs/latest", latestGraphHandler(services))

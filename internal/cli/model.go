@@ -97,15 +97,28 @@ func newModelSetupCommand(dbPath *string) *cobra.Command {
 		Use:   "setup",
 		Short: "Create or update a model provider profile",
 		RunE: func(command *cobra.Command, args []string) error {
+			var providerDefinition *providers.ProviderDefinition
 			if provider != "" && kind == "" {
-				kind = provider
+				normalizedProvider := providers.NormalizeProviderID(provider)
+				if definition, ok := providers.GetProviderDefinition(normalizedProvider); ok {
+					providerDefinition = &definition
+					kind = definition.AdapterKind
+				} else {
+					kind = provider
+				}
 			}
 			kind = providers.NormalizeKind(kind)
 			if kind == "" {
 				kind = providers.KindOpenAICompatible
 			}
+			if baseURL == "" && providerDefinition != nil {
+				baseURL = providerDefinition.DefaultBaseURL
+			}
 			if baseURL == "" {
 				baseURL = providers.DefaultBaseURL(kind)
+			}
+			if apiKeyEnv == "" && providerDefinition != nil && providerDefinition.AuthMode == providers.AuthModeAPIKeyEnv {
+				apiKeyEnv = providerDefinition.DefaultAPIKeyEnv
 			}
 			if name == "" {
 				name = model
@@ -131,6 +144,12 @@ func newModelSetupCommand(dbPath *string) *cobra.Command {
 					"reasoning":         "unknown",
 				},
 			}
+			if providerDefinition != nil {
+				profile.Capabilities["provider_id"] = providerDefinition.ID
+				profile.Capabilities["provider_name"] = providerDefinition.Name
+				profile.Capabilities["auth_mode"] = providerDefinition.AuthMode
+				profile.Capabilities["model_catalog"] = providerDefinition.CatalogMode
+			}
 			if kind == providers.KindOllama {
 				profile.Capabilities["local"] = "true"
 			}
@@ -155,8 +174,8 @@ func newModelSetupCommand(dbPath *string) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&provider, "provider", "", "Provider kind alias (openai-compatible, ollama, or codex-cli)")
-	command.Flags().StringVar(&kind, "kind", "", "Provider kind (openai_compatible, ollama, or codex_cli)")
+	command.Flags().StringVar(&provider, "provider", "", "Provider catalog id or kind alias")
+	command.Flags().StringVar(&kind, "kind", "", "Provider adapter kind (openai_compatible, anthropic, gemini, ollama, codex_cli, or claude_code)")
 	command.Flags().StringVar(&name, "name", "", "Provider profile name")
 	command.Flags().StringVar(&baseURL, "base-url", "", "Provider base URL")
 	command.Flags().StringVar(&model, "model", "", "Model name")

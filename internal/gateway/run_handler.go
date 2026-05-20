@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,68 +69,85 @@ var detectSandboxAvailability = sandbox.Detect
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil || services.Artifacts == nil {
-			writeError(response, http.StatusServiceUnavailable, requestID, "runs_unavailable", "Run services are not initialized.", "Restart Gateway.")
-			return
-		}
 		var body runCreateRequest
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send agent_id and prompt as JSON.")
 			return
 		}
-		snapshot, err := services.Graph.Latest(request.Context())
-		if err != nil {
-			writeError(response, http.StatusNotFound, requestID, "graph_not_found", "No compiled graph snapshot was found.", "Run `nomici graph validate` or install a pack.")
+		started, startErr := startWorkspaceRun(request.Context(), options, services, body.AgentID, body.Prompt, "console", nil)
+		if startErr != nil {
+			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
 			return
 		}
-		executor := runExecutor(options, services)
-		runRequest := runpkg.Request{
-			Snapshot: snapshot,
-			AgentID:  body.AgentID,
-			Prompt:   body.Prompt,
-			RunID:    ids.New("run"),
-		}
-		agent, _, err := executor.Validate(runRequest)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, requestID, "run_not_supported", err.Error(), "Choose a supported graph entrypoint.")
-			return
-		}
-		intent, err := sandboxIntentFromConfig(options.ConfigPath)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, requestID, "sandbox_config_invalid", err.Error(), "Run `nomici setup` or fix deployment.sandbox in nomici.yaml.")
-			return
-		}
-		availability := detectSandboxAvailability(intent.Mode)
-		if availability.Status == sandbox.StatusUnavailable {
-			writeError(response, http.StatusConflict, requestID, "sandbox_unavailable", availability.Message, "Install Docker, Podman, or Apple container, or run `nomici setup --sandbox local`.")
-			return
-		}
-		baseDir, err := sandboxBaseDir(options.ConfigPath)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, requestID, "sandbox_config_invalid", err.Error(), "Use a valid AgentSpec config path.")
-			return
-		}
-		session, sandboxRecord, tasks, err := createRunLedger(request.Context(), services, snapshot, runRequest, agent.ID, intent, baseDir)
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, requestID, "run_session_failed", "Run session could not be created.", "Check Gateway logs.")
-			return
-		}
+		writeSuccess(response, requestID, started.Response, nil)
+	}
+}
 
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			defer cancel()
-			if err := executeWorkspaceSession(ctx, services, executor, runRequest, session, tasks); err != nil {
-				if current, lookupErr := services.Runs.GetBySession(ctx, session.SessionID); lookupErr == nil && current.Session.Status == runpkg.SessionStatusCancelled {
-					log.Printf("Console run %s cancelled", runRequest.RunID)
-					return
-				}
-				_ = completeRunLedger(ctx, services, runRequest.RunID, runpkg.SessionStatusFailed, runpkg.TaskStatusFailed, taskIDs(tasks))
-				log.Printf("Console run %s failed: %v", runRequest.RunID, err)
+type startRunResult struct {
+	Response runCreateResponse
+	Session  *runpkg.Session
+}
+
+type startRunError struct {
+	Status      int
+	Code        string
+	Message     string
+	Remediation string
+}
+
+func startWorkspaceRun(ctx context.Context, options Options, services Services, agentID string, prompt string, sourceChannel string, metadata map[string]any) (*startRunResult, *startRunError) {
+	if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil || services.Artifacts == nil {
+		return nil, &startRunError{Status: http.StatusServiceUnavailable, Code: "runs_unavailable", Message: "Run services are not initialized.", Remediation: "Restart Gateway."}
+	}
+	snapshot, err := services.Graph.Latest(ctx)
+	if err != nil {
+		return nil, &startRunError{Status: http.StatusNotFound, Code: "graph_not_found", Message: "No compiled graph snapshot was found.", Remediation: "Run `nomici graph validate` or install a pack."}
+	}
+	if strings.TrimSpace(agentID) == "" {
+		agentID = defaultRunAgent(snapshot)
+	}
+	executor := runExecutor(options, services)
+	runRequest := runpkg.Request{
+		Snapshot: snapshot,
+		AgentID:  agentID,
+		Prompt:   prompt,
+		RunID:    ids.New("run"),
+	}
+	agent, _, err := executor.Validate(runRequest)
+	if err != nil {
+		return nil, &startRunError{Status: http.StatusBadRequest, Code: "run_not_supported", Message: err.Error(), Remediation: "Choose a supported graph entrypoint."}
+	}
+	intent, err := sandboxIntentFromConfig(options.ConfigPath)
+	if err != nil {
+		return nil, &startRunError{Status: http.StatusBadRequest, Code: "sandbox_config_invalid", Message: err.Error(), Remediation: "Run `nomici setup` or fix deployment.sandbox in nomici.yaml."}
+	}
+	availability := detectSandboxAvailability(intent.Mode)
+	if availability.Status == sandbox.StatusUnavailable {
+		return nil, &startRunError{Status: http.StatusConflict, Code: "sandbox_unavailable", Message: availability.Message, Remediation: "Install Docker, Podman, or Apple container, or run `nomici setup --sandbox local`."}
+	}
+	baseDir, err := sandboxBaseDir(options.ConfigPath)
+	if err != nil {
+		return nil, &startRunError{Status: http.StatusBadRequest, Code: "sandbox_config_invalid", Message: err.Error(), Remediation: "Use a valid AgentSpec config path."}
+	}
+	session, sandboxRecord, tasks, err := createRunLedger(ctx, services, snapshot, runRequest, agent.ID, intent, baseDir, sourceChannel, metadata)
+	if err != nil {
+		return nil, &startRunError{Status: http.StatusInternalServerError, Code: "run_session_failed", Message: "Run session could not be created.", Remediation: "Check Gateway logs."}
+	}
+	go func() {
+		runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		if err := executeWorkspaceSession(runCtx, services, executor, runRequest, session, tasks); err != nil {
+			if current, lookupErr := services.Runs.GetBySession(runCtx, session.SessionID); lookupErr == nil && current.Session.Status == runpkg.SessionStatusCancelled {
+				log.Printf("Console run %s cancelled", runRequest.RunID)
 				return
 			}
-		}()
-
-		writeSuccess(response, requestID, runCreateResponse{
+			_ = completeRunLedger(runCtx, services, runRequest.RunID, runpkg.SessionStatusFailed, runpkg.TaskStatusFailed, taskIDs(tasks))
+			log.Printf("Console run %s failed: %v", runRequest.RunID, err)
+			return
+		}
+	}()
+	return &startRunResult{
+		Response: runCreateResponse{
 			RunID:           runRequest.RunID,
 			Status:          "started",
 			AgentID:         agent.ID,
@@ -137,8 +155,27 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 			SessionID:       session.SessionID,
 			SandboxID:       sandboxRecord.SandboxID,
 			SandboxStatus:   sandboxRecord.Status,
-		}, nil)
+		},
+		Session: session,
+	}, nil
+}
+
+func defaultRunAgent(snapshot *graph.Snapshot) string {
+	if snapshot == nil {
+		return ""
 	}
+	if _, ok := snapshot.IR.Agents["product_pm"]; ok {
+		return "product_pm"
+	}
+	var ids []string
+	for id := range snapshot.IR.Agents {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return ""
+	}
+	return ids[0]
 }
 
 func runDetailHandler(services Services) http.HandlerFunc {
@@ -381,14 +418,26 @@ func sessionDetailPayload(ctx context.Context, services Services, detail *runpkg
 	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts}, nil
 }
 
-func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string) (*runpkg.Session, *sandbox.Record, []*runpkg.Task, error) {
+func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string, sourceChannel string, metadata map[string]any) (*runpkg.Session, *sandbox.Record, []*runpkg.Task, error) {
+	if sourceChannel == "" {
+		sourceChannel = "console"
+	}
+	metadataPayload := json.RawMessage("{}")
+	if len(metadata) > 0 {
+		payload, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		metadataPayload = payload
+	}
 	session, err := services.Runs.CreateSession(ctx, runpkg.CreateSessionRequest{
 		RunID:           request.RunID,
 		ProjectID:       snapshot.ProjectID,
 		GraphSnapshotID: snapshot.SnapshotID,
 		Title:           request.Prompt,
-		SourceChannel:   "console",
+		SourceChannel:   sourceChannel,
 		Status:          runpkg.SessionStatusRunning,
+		Metadata:        metadataPayload,
 	})
 	if err != nil {
 		return nil, nil, nil, err

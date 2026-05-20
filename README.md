@@ -4,7 +4,7 @@ Open-source control plane and designer for local and remote AI agents.
 
 Nomici Orchestrator is a local-first agent control plane for configuring LLM providers, installing useful agent packs, running and observing agent runtimes, mediating tools, and governing traces, approvals, artifacts, and policies.
 
-> Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, provider profile setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install with role metadata, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, durable run session and task-ledger APIs, session inspection CLI commands, sequential role task execution with plan review, local workspace uploads, typed plan/report artifacts, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and Console workspace panels are implemented. General parallel multi-agent graph execution, broader policy coverage, and Console editing/setup workflows are not implemented yet.
+> Project status: v0.1 alpha bootstrap. Architecture and APIs are still being refined. The minimal CLI/Gateway scaffold, default Gateway token auth, dynamic provider/model catalog, guided provider setup, Gateway-mediated model test, OpenAI-compatible `/v1/models` and `/v1/chat/completions`, bundled `developer-team` pack install with role metadata, minimal AgentSpec/AgentGraph validation, single-node model-backed graph execution, generic `cli_agent` external-agent execution, one-step `cli_agent` handoff with Shared Context snapshots, durable chat/session/task APIs, session inspection CLI commands, sequential role task execution with plan review, local workspace uploads, typed plan/report artifacts, mutable `cli_agent` approval gates, minimal `local_process` lifecycle commands, trace inspection commands, and chat-first Console workspace panels are implemented. General parallel multi-agent graph execution, broader policy coverage, and Console setup editing workflows are not implemented yet.
 
 ## Why Nomici
 
@@ -44,6 +44,9 @@ Lower-level and inspection commands remain available for scripts and advanced wo
 nomici model setup --kind openai_compatible --name gpt --model <model> --api-key-env OPENAI_API_KEY
 nomici model list
 nomici model doctor
+nomici provider list
+nomici provider models openai --search gpt
+nomici provider doctor openai
 nomici pack list
 nomici pack inspect developer-team
 nomici pack install developer-team --model gpt
@@ -84,16 +87,16 @@ nomici down
 `nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici pack install`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
 
 ```text
-LLM provider -> web search/fetch -> starter pack -> sandbox policy -> nomici.yaml -> nomici dev
+LLM provider -> live model catalog -> web search/fetch -> starter pack -> sandbox policy -> nomici.yaml -> nomici dev
 ```
 
-The setup command writes model, web search/fetch, starter pack, and sandbox intent into the local workspace. v0.1 treats the web tool entries as read-only provider contracts until mediated tool execution is enabled. `nomici doctor` reports whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
+The setup command writes model, web search/fetch, starter pack, and sandbox intent into the local workspace. Provider selection is two-level: choose a provider, then pick from that provider's live model catalog where the provider exposes one. Local CLI providers and custom OpenAI-compatible endpoints allow an explicit model id when the model list cannot be discovered. v0.1 treats the web tool entries as read-only provider contracts until mediated tool execution is enabled. `nomici doctor` reports whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
 
 Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
 
 The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. Its manifest also exposes role purpose, tool and skill expectations, handoff mode, model/runtime preference, and output contract metadata so run task ledgers can show role ownership without hardcoding those roles in Gateway. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
-`nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. The current Console is served by Gateway. It shows model profiles, bundled pack status, the latest graph snapshot, configured runtimes, recent run sessions, task ledger records, workspace roots, uploads, artifacts, plan review actions, the latest trace timeline, pending approvals, and unavailable Gate 8 actions. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
+`nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. The current Console is served by Gateway and defaults to Chat. Each chat can start a workspace run, while Orchestrate and Settings expose task ledger records, workspace roots, uploads, artifacts, plan review actions, trace events, approvals, provider/model catalog status, configured model profiles, and tool contracts. It does not read local files or receive raw secret values. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
 The current graph runner supports a single executable `gateway_agent` or `model_agent` node backed by an implemented model profile, a single `external_agent` backed by a configured `cli_agent` runtime, or a linear `handoff` chain across `cli_agent`-backed `external_agent` nodes. Branching handoffs, parallel, A2A, and tool edges validate structurally but fail clearly if executed.
 

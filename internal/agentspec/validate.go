@@ -43,15 +43,16 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 	for id, model := range spec.Models {
 		path := "models." + id
 		if strings.TrimSpace(model.Kind) == "" {
-			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set kind to openai_compatible, ollama, or codex_cli."))
+			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set kind to openai_compatible, anthropic, gemini, ollama, codex_cli, or claude_code."))
 		} else if !providers.KnownKind(model.Kind) {
-			errors = append(errors, validationError(loaded, "unsupported_model_kind", path+".kind", "model kind "+quote(model.Kind)+" is not implemented in v0.1", "Use openai_compatible, ollama, or codex_cli for the current proof slice."))
+			errors = append(errors, validationError(loaded, "unsupported_model_kind", path+".kind", "model kind "+quote(model.Kind)+" is not implemented", "Run `nomici provider list` and choose a supported adapter kind."))
 		}
 		if strings.TrimSpace(model.Model) == "" {
 			errors = append(errors, validationError(loaded, "missing_required", path+".model", "model name is required", "Set model to the provider model name."))
 		}
-		if providers.NormalizeKind(model.Kind) == providers.KindOpenAICompatible && strings.TrimSpace(model.APIKeyEnv) == "" {
-			errors = append(errors, validationError(loaded, "missing_required", path+".api_key_env", "api_key_env is required for openai_compatible models", "Set api_key_env to an environment variable name such as OPENAI_API_KEY."))
+		kind := providers.NormalizeKind(model.Kind)
+		if (kind == providers.KindAnthropic || kind == providers.KindGemini) && strings.TrimSpace(model.APIKeyEnv) == "" {
+			errors = append(errors, validationError(loaded, "missing_required", path+".api_key_env", "api_key_env is required for cloud models", "Set api_key_env to an environment variable name such as OPENAI_API_KEY."))
 		}
 	}
 

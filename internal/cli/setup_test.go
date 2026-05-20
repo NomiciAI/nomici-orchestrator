@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -159,6 +161,44 @@ func TestSetupYesRequiresModel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--model is required") {
 		t.Fatalf("expected model error, got %v", err)
+	}
+}
+
+func TestSetupRejectsRawSecretAsAPIKeyEnv(t *testing.T) {
+	dir := t.TempDir()
+	output, err := executeRootForTest(
+		"setup",
+		"--config", dir+"/nomici.yaml",
+		"--db-path", dir+"/state.db",
+		"--provider", "openai",
+		"--model", "gpt-4.1",
+		"--api-key-env", "sk-proj-secret",
+		"--yes",
+	)
+	if err == nil {
+		t.Fatalf("expected setup to reject raw secret, got output:\n%s", output)
+	}
+	if !strings.Contains(err.Error(), "not a raw secret") {
+		t.Fatalf("expected raw secret error, got %v", err)
+	}
+}
+
+func TestProviderModelsCommandUsesLiveCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"data":[{"id":"alpha-model","object":"model","owned_by":"test"}]}`))
+	}))
+	defer server.Close()
+
+	output, err := executeRootForTest(
+		"provider", "models", "openai",
+		"--base-url", server.URL,
+		"--search", "alpha",
+	)
+	if err != nil {
+		t.Fatalf("provider models failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "alpha-model") {
+		t.Fatalf("expected live model in output, got:\n%s", output)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
@@ -75,7 +76,7 @@ func newSetupCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&options.configPath, "config", options.configPath, "AgentSpec config path")
 	command.Flags().StringVar(&options.dbPath, "db-path", options.dbPath, "SQLite database path")
-	command.Flags().StringVar(&options.provider, "provider", "", "Provider to configure: openai-compatible, ollama, or codex-cli")
+	command.Flags().StringVar(&options.provider, "provider", "", "Provider to configure: openai, anthropic, gemini, deepseek, openrouter, vllm, ollama, codex-cli, claude-code, or other-openai-compatible")
 	command.Flags().StringVar(&options.profileName, "name", "", "Model profile name")
 	command.Flags().StringVar(&options.model, "model", "", "Provider model name")
 	command.Flags().StringVar(&options.baseURL, "base-url", "", "Provider base URL")
@@ -159,13 +160,7 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 
 func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptions, interactive bool) error {
 	fmt.Fprintln(out, "\nStep 1/4 - Choose your LLM provider")
-	providerChoices := []setupChoice{
-		{ID: providers.KindOpenAICompatible, Label: "OpenAI-compatible endpoint", Description: "OpenAI, OpenRouter, vLLM, LM Studio, SGLang, llama.cpp server"},
-		{ID: providers.KindOllama, Label: "Ollama", Description: "Local Ollama server using its OpenAI-compatible endpoint"},
-	}
-	if providers.DetectCodexCLI().Available {
-		providerChoices = append(providerChoices, setupChoice{ID: providers.KindCodexCLI, Label: "Codex CLI local auth", Description: "Uses local Codex CLI authentication"})
-	}
+	providerChoices := setupProviderChoices()
 	if strings.TrimSpace(options.provider) == "" {
 		if !interactive {
 			return fmt.Errorf("--provider is required when --yes is used")
@@ -176,21 +171,19 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 		}
 		options.provider = choice.ID
 	}
-	options.provider = providers.NormalizeKind(options.provider)
-	if !providers.KnownKind(options.provider) {
-		return fmt.Errorf("unsupported provider %q; use openai-compatible, ollama, or codex-cli", options.provider)
+	options.provider = providers.NormalizeProviderID(options.provider)
+	definition, ok := providers.GetProviderDefinition(options.provider)
+	if !ok {
+		return fmt.Errorf("unsupported provider %q; run `nomici provider list` to see available providers", options.provider)
 	}
-	if options.provider == providers.KindCodexCLI {
-		availability := providers.DetectCodexCLI()
-		if !availability.Available {
-			return fmt.Errorf("codex-cli provider is not ready: %s", availability.Message)
-		}
+	if definition.Local && !definition.Available {
+		return fmt.Errorf("%s provider is not ready: %s", definition.ID, definition.AvailabilityMessage)
 	}
 
 	if options.baseURL == "" {
-		options.baseURL = providers.DefaultBaseURL(options.provider)
+		options.baseURL = definition.DefaultBaseURL
 	}
-	if interactive && options.provider != providers.KindCodexCLI {
+	if interactive && definition.RequiresBaseURL {
 		value, err := promptString(in, out, "Base URL", options.baseURL, false)
 		if err != nil {
 			return err
@@ -198,34 +191,153 @@ func collectProviderOptions(in *bufio.Reader, out io.Writer, options *setupOptio
 		options.baseURL = value
 	}
 
+	if options.apiKeyEnv == "" && definition.AuthMode == providers.AuthModeAPIKeyEnv {
+		options.apiKeyEnv = definition.DefaultAPIKeyEnv
+	}
+	if interactive && definition.AuthMode == providers.AuthModeAPIKeyEnv {
+		value, err := promptAPIKeyEnv(in, out, "API key env var", options.apiKeyEnv)
+		if err != nil {
+			return err
+		}
+		options.apiKeyEnv = value
+	}
+	if definition.AuthMode == providers.AuthModeAPIKeyEnv {
+		if err := validateAPIKeyEnv(options.apiKeyEnv); err != nil {
+			return err
+		}
+	} else {
+		options.apiKeyEnv = ""
+	}
+
 	if strings.TrimSpace(options.model) == "" {
 		if !interactive {
 			return fmt.Errorf("--model is required when --yes is used")
 		}
-		value, err := promptString(in, out, "Model", "", true)
+		value, err := promptProviderModel(in, out, definition, options)
 		if err != nil {
 			return err
 		}
 		options.model = value
 	}
 
-	if options.apiKeyEnv == "" && options.provider == providers.KindOpenAICompatible {
-		options.apiKeyEnv = "OPENAI_API_KEY"
-	}
-	if interactive && options.provider == providers.KindOpenAICompatible {
-		value, err := promptString(in, out, "API key env var", options.apiKeyEnv, true)
-		if err != nil {
-			return err
-		}
-		options.apiKeyEnv = value
-	}
 	if options.profileName == "" {
-		options.profileName = options.model
+		options.profileName = definition.ID + " " + options.model
 	}
-	if options.provider == providers.KindCodexCLI && options.profileName == "" {
-		options.profileName = "codex_cli"
+	if definition.Local && options.profileName == "" {
+		options.profileName = definition.ID
 	}
 	return nil
+}
+
+func setupProviderChoices() []setupChoice {
+	var choices []setupChoice
+	for _, provider := range providers.ProviderCatalog() {
+		if provider.Local && !provider.Available {
+			continue
+		}
+		choices = append(choices, setupChoice{
+			ID:          provider.ID,
+			Label:       provider.Name,
+			Description: provider.Description,
+		})
+	}
+	return choices
+}
+
+func promptProviderModel(in *bufio.Reader, out io.Writer, definition providers.ProviderDefinition, options *setupOptions) (string, error) {
+	apiKey := ""
+	if options.apiKeyEnv != "" {
+		apiKey = os.Getenv(options.apiKeyEnv)
+	}
+	catalog, err := (providers.ModelCatalogClient{}).ListModels(context.Background(), providers.ModelCatalogRequest{
+		ProviderID: definition.ID,
+		BaseURL:    options.baseURL,
+		APIKey:     apiKey,
+	})
+	if err != nil {
+		fmt.Fprintf(out, "  ! Model catalog unavailable: %s\n", err)
+		if !definition.SupportsCustomModel {
+			return "", err
+		}
+		return promptString(in, out, "Custom model", "", true)
+	}
+	if catalog.Message != "" {
+		fmt.Fprintf(out, "  ! Using fallback model list: %s\n", catalog.Message)
+	}
+	fmt.Fprintf(out, "  → %s model catalog: %d model(s) from %s\n", definition.Name, len(catalog.Models), catalog.Source)
+	return promptModelFromCatalog(in, out, catalog.Models, definition.SupportsCustomModel)
+}
+
+func promptModelFromCatalog(in *bufio.Reader, out io.Writer, models []providers.ModelSummary, allowCustom bool) (string, error) {
+	filtered := models
+	for {
+		printModelChoices(out, filtered)
+		answer, err := promptString(in, out, "Select model or search", "", true)
+		if err != nil {
+			return "", err
+		}
+		if number, err := strconv.Atoi(answer); err == nil && number >= 1 && number <= minInt(len(filtered), 20) {
+			return filtered[number-1].ID, nil
+		}
+		normalized := strings.TrimSpace(strings.ToLower(answer))
+		for _, model := range models {
+			if normalized == strings.ToLower(model.ID) || normalized == strings.ToLower(model.Name) {
+				return model.ID, nil
+			}
+		}
+		next := filterSetupModels(models, answer)
+		if len(next) > 0 {
+			filtered = next
+			continue
+		}
+		if allowCustom {
+			confirm, err := promptBool(in, out, "Use custom model "+answer+"?", true)
+			if err != nil {
+				return "", err
+			}
+			if confirm {
+				return answer, nil
+			}
+		}
+		filtered = models
+	}
+}
+
+func printModelChoices(out io.Writer, models []providers.ModelSummary) {
+	limit := minInt(len(models), 20)
+	fmt.Fprintf(out, "Models showing %d of %d:\n", limit, len(models))
+	for index := 0; index < limit; index++ {
+		model := models[index]
+		label := model.ID
+		if model.Name != "" && model.Name != model.ID {
+			label += " - " + model.Name
+		}
+		if model.Recommended {
+			label += " (recommended)"
+		}
+		if model.ContextWindow > 0 {
+			label += fmt.Sprintf(" [%dk context]", model.ContextWindow/1000)
+		}
+		fmt.Fprintf(out, "  %d. %s\n", index+1, label)
+	}
+	if len(models) > limit {
+		fmt.Fprintln(out, "Type a search term to narrow the full catalog, or paste an exact model id.")
+	}
+}
+
+func filterSetupModels(models []providers.ModelSummary, query string) []providers.ModelSummary {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return models
+	}
+	var filtered []providers.ModelSummary
+	for _, model := range models {
+		value := strings.ToLower(model.ID + " " + model.Name + " " + model.OwnedBy)
+		if strings.Contains(value, query) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }
 
 func collectPackOptions(in *bufio.Reader, out io.Writer, options *setupOptions, interactive bool) error {
@@ -383,20 +495,30 @@ func collectSandboxOptions(in *bufio.Reader, out io.Writer, options *setupOption
 }
 
 func saveSetupProfile(ctx context.Context, options setupOptions) (*providers.Profile, error) {
+	providerID := providers.NormalizeProviderID(options.provider)
+	definition, ok := providers.GetProviderDefinition(providerID)
+	if !ok {
+		return nil, fmt.Errorf("unsupported provider %q", options.provider)
+	}
 	profile := &providers.Profile{
 		ID:            slug(options.profileName),
 		Name:          options.profileName,
-		Kind:          providers.NormalizeKind(options.provider),
+		Kind:          providers.NormalizeKind(definition.AdapterKind),
 		BaseURL:       options.baseURL,
 		Model:         options.model,
 		APIKeyEnv:     options.apiKeyEnv,
 		ContextWindow: 0,
 		Capabilities: map[string]string{
-			"streaming":         "unknown",
-			"tool_calling":      "unknown",
-			"structured_output": "unknown",
-			"vision":            "unknown",
-			"reasoning":         "unknown",
+			"streaming":          "unknown",
+			"tool_calling":       "unknown",
+			"structured_output":  "unknown",
+			"vision":             "unknown",
+			"reasoning":          "unknown",
+			"provider_id":        providerID,
+			"provider_name":      definition.Name,
+			"auth_mode":          definition.AuthMode,
+			"model_catalog":      definition.CatalogMode,
+			"catalog_checked_at": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 	if profile.Kind == providers.KindOllama {
@@ -407,6 +529,11 @@ func saveSetupProfile(ctx context.Context, options setupOptions) (*providers.Pro
 		profile.APIKeyEnv = ""
 		profile.Capabilities["local_auth"] = "true"
 		profile.Capabilities["execution"] = "codex_cli"
+	}
+	if profile.Kind == providers.KindClaudeCode {
+		profile.APIKeyEnv = ""
+		profile.Capabilities["local_auth"] = "true"
+		profile.Capabilities["execution"] = "claude_code"
 	}
 	if err := profile.Validate(); err != nil {
 		return nil, err
@@ -619,6 +746,28 @@ func promptString(in *bufio.Reader, out io.Writer, label string, defaultValue st
 	return value, nil
 }
 
+func promptAPIKeyEnv(in *bufio.Reader, out io.Writer, label string, defaultValue string) (string, error) {
+	value, err := promptString(in, out, label, defaultValue, true)
+	if err != nil {
+		return "", err
+	}
+	if err := validateAPIKeyEnv(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func validateAPIKeyEnv(value string) error {
+	value = strings.TrimSpace(value)
+	if providers.LooksLikeRawSecret(value) {
+		return fmt.Errorf("api key env var must be an environment variable name, not a raw secret")
+	}
+	if !providers.ValidEnvVarName(value) {
+		return fmt.Errorf("api key env var %q is invalid; use a name like OPENAI_API_KEY", value)
+	}
+	return nil
+}
+
 func promptBool(in *bufio.Reader, out io.Writer, label string, defaultValue bool) (bool, error) {
 	defaultText := "N"
 	if defaultValue {
@@ -645,6 +794,13 @@ func knownSandboxMode(mode string) bool {
 	default:
 		return false
 	}
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func defaultProjectName(configPath string) string {
