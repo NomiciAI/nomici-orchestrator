@@ -75,11 +75,18 @@ func Compile(loaded *agentspec.LoadedSpec) (*Snapshot, []agentspec.ValidationErr
 	for id, agent := range spec.Agents {
 		snapshot.IR.Agents[id] = Agent{
 			ID:           id,
+			Name:         agent.Name,
+			Description:  agent.Description,
 			Kind:         agent.Kind,
 			Model:        agent.Model,
 			Runtime:      agent.Runtime,
 			Role:         agent.Role,
 			Instructions: agent.Instructions,
+			Tools:        agent.Tools,
+			Skills:       agent.Skills,
+			Tags:         agent.Tags,
+			Triggers:     agent.Triggers,
+			Capabilities: agent.Capabilities,
 			Source:       loaded.Source("agents." + id),
 		}
 	}

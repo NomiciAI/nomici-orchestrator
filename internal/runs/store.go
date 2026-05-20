@@ -42,6 +42,7 @@ type Session struct {
 	Title           string          `json:"title"`
 	SourceChannel   string          `json:"source_channel"`
 	Status          string          `json:"status"`
+	ExecutionState  string          `json:"execution_state"`
 	StartedAt       time.Time       `json:"started_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
 	CompletedAt     *time.Time      `json:"completed_at,omitempty"`
@@ -49,19 +50,21 @@ type Session struct {
 }
 
 type Task struct {
-	TaskID            string          `json:"task_id"`
-	RunID             string          `json:"run_id"`
-	ParentTaskID      string          `json:"parent_task_id,omitempty"`
-	AgentID           string          `json:"agent_id"`
-	RuntimeID         string          `json:"runtime_id,omitempty"`
-	Status            string          `json:"status"`
-	ContextSnapshotID string          `json:"context_snapshot_id,omitempty"`
-	ArtifactRefs      []string        `json:"artifact_refs"`
-	ApprovalRefs      []string        `json:"approval_refs"`
-	StartedAt         time.Time       `json:"started_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
-	CompletedAt       *time.Time      `json:"completed_at,omitempty"`
-	Metadata          json.RawMessage `json:"metadata,omitempty"`
+	TaskID                    string          `json:"task_id"`
+	RunID                     string          `json:"run_id"`
+	ParentTaskID              string          `json:"parent_task_id,omitempty"`
+	AgentID                   string          `json:"agent_id"`
+	RuntimeID                 string          `json:"runtime_id,omitempty"`
+	Status                    string          `json:"status"`
+	ContextSnapshotID         string          `json:"context_snapshot_id,omitempty"`
+	BlockedReason             string          `json:"blocked_reason,omitempty"`
+	SelectedContextSnapshotID string          `json:"selected_context_snapshot_id,omitempty"`
+	ArtifactRefs              []string        `json:"artifact_refs"`
+	ApprovalRefs              []string        `json:"approval_refs"`
+	StartedAt                 time.Time       `json:"started_at"`
+	UpdatedAt                 time.Time       `json:"updated_at"`
+	CompletedAt               *time.Time      `json:"completed_at,omitempty"`
+	Metadata                  json.RawMessage `json:"metadata,omitempty"`
 }
 
 type CreateSessionRequest struct {
@@ -125,14 +128,15 @@ func (store *Store) CreateSession(ctx context.Context, request CreateSessionRequ
 	if session.Status == "" {
 		session.Status = SessionStatusRunning
 	}
+	session.ExecutionState = executionStateForStatus(session.Status)
 	if len(session.Metadata) == 0 {
 		session.Metadata = json.RawMessage("{}")
 	}
 	_, err := store.db.ExecContext(ctx, `
 INSERT INTO run_sessions (
 	session_id, run_id, project_id, graph_snapshot_id, title, source_channel,
-	status, started_at, updated_at, completed_at, metadata_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
+	status, execution_state, started_at, updated_at, completed_at, metadata_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
 		session.SessionID,
 		session.RunID,
 		session.ProjectID,
@@ -140,6 +144,7 @@ INSERT INTO run_sessions (
 		session.Title,
 		session.SourceChannel,
 		session.Status,
+		session.ExecutionState,
 		session.StartedAt.Format(time.RFC3339Nano),
 		session.UpdatedAt.Format(time.RFC3339Nano),
 		string(session.Metadata),
@@ -218,8 +223,8 @@ func (store *Store) CompleteSession(ctx context.Context, runID string, status st
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := store.db.ExecContext(ctx, `
 UPDATE run_sessions
-SET status = ?, updated_at = ?, completed_at = ?
-WHERE run_id = ?`, status, now, now, runID)
+SET status = ?, execution_state = ?, updated_at = ?, completed_at = ?
+WHERE run_id = ?`, status, executionStateForStatus(status), now, now, runID)
 	if err != nil {
 		return fmt.Errorf("complete run session: %w", err)
 	}
@@ -236,8 +241,8 @@ func (store *Store) UpdateSessionStatus(ctx context.Context, runID string, statu
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := store.db.ExecContext(ctx, `
 UPDATE run_sessions
-SET status = ?, updated_at = ?
-WHERE run_id = ?`, status, now, runID)
+SET status = ?, execution_state = ?, updated_at = ?
+WHERE run_id = ?`, status, executionStateForStatus(status), now, runID)
 	if err != nil {
 		return fmt.Errorf("update run session status: %w", err)
 	}
@@ -251,9 +256,10 @@ func (store *Store) ResumeSession(ctx context.Context, sessionID string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	result, err := store.db.ExecContext(ctx, `
 UPDATE run_sessions
-SET status = ?, updated_at = ?
+SET status = ?, execution_state = ?, updated_at = ?
 WHERE session_id = ? AND status IN (?, ?, ?)`,
 		SessionStatusRunning,
+		executionStateForStatus(SessionStatusRunning),
 		now,
 		sessionID,
 		SessionStatusPlanReview,
@@ -333,6 +339,39 @@ WHERE task_id = ?`, string(metadata), now, taskID)
 	return nil
 }
 
+func (store *Store) SetTaskBlocked(ctx context.Context, taskID string, status string, reason string) error {
+	if taskID == "" {
+		return fmt.Errorf("set run task blocked: task_id is required")
+	}
+	if status == "" {
+		status = TaskStatusBlocked
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET status = ?, blocked_reason = ?, updated_at = ?
+WHERE task_id = ?`, status, reason, now, taskID)
+	if err != nil {
+		return fmt.Errorf("set run task blocked: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) SetTaskSelectedContextSnapshot(ctx context.Context, taskID string, snapshotID string) error {
+	if taskID == "" {
+		return fmt.Errorf("set selected context snapshot: task_id is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := store.db.ExecContext(ctx, `
+UPDATE run_tasks
+SET selected_context_snapshot_id = ?, updated_at = ?
+WHERE task_id = ?`, snapshotID, now, taskID)
+	if err != nil {
+		return fmt.Errorf("set selected context snapshot: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) SetTaskContextSnapshot(ctx context.Context, taskID string, snapshotID string) error {
 	if taskID == "" {
 		return fmt.Errorf("set run task context snapshot: task_id is required")
@@ -392,9 +431,10 @@ func (store *Store) CancelSession(ctx context.Context, sessionID string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	result, err := store.db.ExecContext(ctx, `
 UPDATE run_sessions
-SET status = ?, updated_at = ?, completed_at = ?
+SET status = ?, execution_state = ?, updated_at = ?, completed_at = ?
 WHERE session_id = ? AND status IN (?, ?, ?, ?)`,
 		SessionStatusCancelled,
+		executionStateForStatus(SessionStatusCancelled),
 		now,
 		now,
 		sessionID,
@@ -451,7 +491,7 @@ func (store *Store) ListSessions(ctx context.Context, limit int) ([]*Session, er
 	}
 	rows, err := store.db.QueryContext(ctx, `
 SELECT session_id, run_id, project_id, graph_snapshot_id, title, source_channel,
-	status, started_at, updated_at, completed_at, metadata_json
+	status, execution_state, started_at, updated_at, completed_at, metadata_json
 FROM run_sessions
 ORDER BY updated_at DESC
 LIMIT ?`, limit)
@@ -476,7 +516,7 @@ LIMIT ?`, limit)
 func (store *Store) GetByRun(ctx context.Context, runID string) (*SessionDetail, error) {
 	row := store.db.QueryRowContext(ctx, `
 SELECT session_id, run_id, project_id, graph_snapshot_id, title, source_channel,
-	status, started_at, updated_at, completed_at, metadata_json
+	status, execution_state, started_at, updated_at, completed_at, metadata_json
 FROM run_sessions
 WHERE run_id = ?`, runID)
 	session, err := scanSession(row)
@@ -493,7 +533,7 @@ WHERE run_id = ?`, runID)
 func (store *Store) GetBySession(ctx context.Context, sessionID string) (*SessionDetail, error) {
 	row := store.db.QueryRowContext(ctx, `
 SELECT session_id, run_id, project_id, graph_snapshot_id, title, source_channel,
-	status, started_at, updated_at, completed_at, metadata_json
+	status, execution_state, started_at, updated_at, completed_at, metadata_json
 FROM run_sessions
 WHERE session_id = ?`, sessionID)
 	session, err := scanSession(row)
@@ -518,7 +558,7 @@ func (store *Store) ListTasksBySession(ctx context.Context, sessionID string) ([
 func (store *Store) ListTasks(ctx context.Context, runID string) ([]*Task, error) {
 	rows, err := store.db.QueryContext(ctx, `
 SELECT task_id, run_id, parent_task_id, agent_id, runtime_id, status,
-	context_snapshot_id, artifact_refs_json, approval_refs_json,
+	context_snapshot_id, blocked_reason, selected_context_snapshot_id, artifact_refs_json, approval_refs_json,
 	started_at, updated_at, completed_at, metadata_json
 FROM run_tasks
 WHERE run_id = ?
@@ -559,6 +599,7 @@ func scanSession(scanner sessionScanner) (*Session, error) {
 		&session.Title,
 		&session.SourceChannel,
 		&session.Status,
+		&session.ExecutionState,
 		&startedAt,
 		&updatedAt,
 		&completedAt,
@@ -583,6 +624,9 @@ func scanSession(scanner sessionScanner) (*Session, error) {
 		session.CompletedAt = &parsed
 	}
 	session.Metadata = json.RawMessage(metadataJSON)
+	if session.ExecutionState == "" {
+		session.ExecutionState = executionStateForStatus(session.Status)
+	}
 	return &session, nil
 }
 
@@ -602,6 +646,8 @@ func scanTask(scanner sessionScanner) (*Task, error) {
 		&task.RuntimeID,
 		&task.Status,
 		&task.ContextSnapshotID,
+		&task.BlockedReason,
+		&task.SelectedContextSnapshotID,
 		&artifactRefsJSON,
 		&approvalRefsJSON,
 		&startedAt,
@@ -635,4 +681,19 @@ func scanTask(scanner sessionScanner) (*Task, error) {
 	}
 	task.Metadata = json.RawMessage(metadataJSON)
 	return &task, nil
+}
+
+func executionStateForStatus(status string) string {
+	switch status {
+	case SessionStatusRunning:
+		return "running"
+	case SessionStatusPlanReview:
+		return "waiting_plan_review"
+	case SessionStatusBlocked, SessionStatusNeedsClarification:
+		return "blocked"
+	case SessionStatusCompleted, SessionStatusFailed, SessionStatusCancelled:
+		return "terminal"
+	default:
+		return "idle"
+	}
 }

@@ -49,10 +49,35 @@ type GraphSnapshot = {
     runtimes?: Record<string, { id: string; kind: string; workspace?: string }>;
     agents: Record<
       string,
-      { id: string; kind: string; model?: string; runtime?: string }
+      {
+        id: string;
+        name?: string;
+        description?: string;
+        kind: string;
+        model?: string;
+        runtime?: string;
+        role?: string;
+        instructions?: string;
+        tools?: string[];
+        skills?: string[];
+        tags?: string[];
+      }
     >;
     edges: Array<{ id: string; from: string; to: string; mode: string }>;
   };
+};
+
+type RouteDecision = {
+  mode: "workspace_run" | "clarify" | "direct_reply";
+  goal: string;
+  complexity: "simple" | "medium" | "long_horizon";
+  recommended_agent_id?: string;
+  selected_roles?: string[];
+  needs_plan_review?: boolean;
+  required_tools?: string[];
+  rationale?: string;
+  clarification?: string;
+  manual_agent_id?: string;
 };
 
 type ToolStatus = {
@@ -73,9 +98,17 @@ type RunSession = {
   title: string;
   source_channel: string;
   status: string;
+  execution_state?: string;
   started_at: string;
   updated_at: string;
   completed_at?: string;
+  metadata?: {
+    route_decision?: RouteDecision;
+    recommended_agent_id?: string;
+    needs_plan_review?: boolean;
+    chat_id?: string;
+    message_id?: string;
+  };
 };
 
 type RunTask = {
@@ -84,15 +117,29 @@ type RunTask = {
   agent_id: string;
   runtime_id?: string;
   status: string;
+  context_snapshot_id?: string;
+  blocked_reason?: string;
+  selected_context_snapshot_id?: string;
   artifact_refs?: string[];
   started_at: string;
   updated_at: string;
+  completed_at?: string;
   metadata?: {
     role_id?: string;
     purpose?: string;
     summary?: string;
     output_preview?: string;
     failure_reason?: string;
+    selection_reason?: string;
+    match_score?: number;
+    skipped_roles?: Array<{ role_id: string; reason: string }>;
+    required_tools?: string[];
+    match_required_tools?: string[];
+    output_contract?: {
+      kind?: string;
+      description?: string;
+      required?: string[];
+    };
   };
 };
 
@@ -172,6 +219,9 @@ type ChatMessage = {
   run_id?: string;
   session_id?: string;
   created_at: string;
+  metadata?: {
+    route_decision?: RouteDecision;
+  };
 };
 
 type ChatDetail = {
@@ -181,12 +231,37 @@ type ChatDetail = {
 
 type ChatMessageResponse = {
   message: ChatMessage;
+  assistant_message?: ChatMessage;
+  route_decision?: RouteDecision;
+  clarification?: string;
   run?: {
     run_id: string;
     status: string;
     agent_id: string;
     session_id?: string;
   };
+};
+
+type AgentRecord = {
+  id: string;
+  name?: string;
+  description?: string;
+  kind: string;
+  model?: string;
+  runtime?: string;
+  role?: string;
+  instructions?: string;
+  tools?: string[];
+  skills?: string[];
+  tags?: string[];
+  triggers?: string[];
+};
+
+type OrchestrationConfig = {
+  entrypoint?: string;
+  role_order?: string[];
+  disabled_roles?: string[];
+  plan_review_policy?: string;
 };
 
 type Overview = {
@@ -241,6 +316,8 @@ export function App() {
   const [providerCatalog, setProviderCatalog] = useState<ProviderDefinition[]>(
     [],
   );
+  const [agents, setAgents] = useState<AgentRecord[]>([]);
+  const [orchestration, setOrchestration] = useState<OrchestrationConfig>({});
   const [chats, setChats] = useState<ChatThread[]>([]);
   const [chatDetail, setChatDetail] = useState<ChatDetail | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -248,8 +325,10 @@ export function App() {
     "loading",
   );
   const [error, setError] = useState("");
-  const [runAgentId, setRunAgentId] = useState("");
+  const [runAgentId, setRunAgentId] = useState("auto");
   const [messageText, setMessageText] = useState("");
+  const [activeRouteDecision, setActiveRouteDecision] =
+    useState<RouteDecision | null>(null);
   const [activeRunId, setActiveRunId] = useState("");
   const [activeSessionId, setActiveSessionId] = useState("");
   const [sessionDetail, setSessionDetail] = useState<RunSessionDetail | null>(
@@ -265,6 +344,14 @@ export function App() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [workspaceMutation, setWorkspaceMutation] = useState("");
   const [mutatingApproval, setMutatingApproval] = useState("");
+  const [agentDraft, setAgentDraft] = useState<AgentRecord>({
+    id: "",
+    kind: "model_agent",
+    model: "",
+    role: "",
+    instructions: "",
+  });
+  const [settingsMutation, setSettingsMutation] = useState("");
 
   const isAuthenticated = status !== "auth";
   const agentOptions = useMemo(
@@ -292,9 +379,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (runAgentId === "" && agentOptions.length > 0) {
-      const firstRunnable = agentOptions.find((agent) => agent.supported);
-      setRunAgentId(firstRunnable?.id ?? agentOptions[0].id);
+    if (runAgentId !== "auto" && agentOptions.length > 0) {
+      const current = agentOptions.find((agent) => agent.id === runAgentId);
+      if (!current) {
+        setRunAgentId("auto");
+      }
     }
   }, [agentOptions, runAgentId]);
 
@@ -306,9 +395,12 @@ export function App() {
     if (activeSessionId) {
       void streamSessionEvents(activeSessionId, state);
     }
-    const timer = window.setInterval(() => {
-      void pollRunEvents(activeRunId, state);
-    }, activeSessionId ? 2500 : 1200);
+    const timer = window.setInterval(
+      () => {
+        void pollRunEvents(activeRunId, state);
+      },
+      activeSessionId ? 2500 : 1200,
+    );
     void pollRunEvents(activeRunId, state);
     return () => {
       state.cancelled = true;
@@ -326,12 +418,27 @@ export function App() {
         nextToken,
       );
       setOverview(normalizeOverview(nextOverview));
-      const [nextChats, catalog] = await Promise.all([
-        apiRequest<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
-        apiRequest<ProviderDefinition[]>("/api/provider-catalog", {}, nextToken),
-      ]);
+      const [nextChats, catalog, nextAgents, nextOrchestration] =
+        await Promise.all([
+          apiRequest<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
+          apiRequest<ProviderDefinition[]>(
+            "/api/provider-catalog",
+            {},
+            nextToken,
+          ),
+          apiRequest<AgentRecord[]>("/api/agents", {}, nextToken).catch(
+            () => [],
+          ),
+          apiRequest<OrchestrationConfig>(
+            "/api/orchestration",
+            {},
+            nextToken,
+          ).catch(() => ({})),
+        ]);
       setChats(nextChats ?? []);
       setProviderCatalog(catalog ?? []);
+      setAgents(nextAgents ?? []);
+      setOrchestration(nextOrchestration ?? {});
       setStatus("ready");
     } catch (loadError) {
       const message =
@@ -396,7 +503,9 @@ export function App() {
       `/api/chats/${encodeURIComponent(chatID)}`,
     );
     setChatDetail(detail);
-    const lastRun = [...detail.messages].reverse().find((message) => message.run_id);
+    const lastRun = [...detail.messages]
+      .reverse()
+      .find((message) => message.run_id);
     if (lastRun?.run_id) {
       setActiveRunId(lastRun.run_id);
       setActiveSessionId(lastRun.session_id ?? "");
@@ -405,12 +514,14 @@ export function App() {
       if (lastRun.session_id) {
         await loadSessionDetail(lastRun.session_id);
       }
+    } else {
+      setActiveRouteDecision(latestRouteDecision(detail.messages));
     }
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedAgent?.supported) {
+    if (runAgentId !== "auto" && !selectedAgent?.supported) {
       setRunError(selectedAgent?.reason ?? "Choose a supported entrypoint.");
       return;
     }
@@ -428,11 +539,12 @@ export function App() {
       const response = await apiRequest<ChatMessageResponse>(path, {
         method: "POST",
         body: JSON.stringify({
-          agent_id: selectedAgent.id,
+          agent_id: runAgentId === "auto" ? "" : selectedAgent?.id,
           prompt: content,
           content,
         }),
       });
+      setActiveRouteDecision(response.route_decision ?? null);
       setMessageText("");
       if (response.run) {
         setActiveRunId(response.run.run_id);
@@ -441,6 +553,8 @@ export function App() {
         if (response.run.session_id) {
           await loadSessionDetail(response.run.session_id);
         }
+      } else {
+        setRunStatus("idle");
       }
       await loadChatsAndActive(response.message.chat_id);
     } catch (startError) {
@@ -460,6 +574,7 @@ export function App() {
     ]);
     setChats(nextChats ?? []);
     setChatDetail(detail);
+    setActiveRouteDecision(latestRouteDecision(detail.messages));
   }
 
   async function loadSessionDetail(sessionId: string) {
@@ -470,6 +585,7 @@ export function App() {
       `/api/sessions/${encodeURIComponent(sessionId)}`,
     );
     setSessionDetail(detail);
+    setActiveRouteDecision(detail.session.metadata?.route_decision ?? null);
   }
 
   async function pollRunEvents(runId: string, state: { cancelled: boolean }) {
@@ -673,7 +789,8 @@ export function App() {
         `/api/approvals/${encodeURIComponent(approvalID)}/${action}`,
         {
           method: "POST",
-          body: action === "grant" ? JSON.stringify({ scope: "once" }) : undefined,
+          body:
+            action === "grant" ? JSON.stringify({ scope: "once" }) : undefined,
         },
       );
       await loadOverview();
@@ -682,11 +799,76 @@ export function App() {
     }
   }
 
+  async function saveAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (agentDraft.id.trim() === "") {
+      setRunError("Agent id is required.");
+      return;
+    }
+    setSettingsMutation("agent");
+    setRunError("");
+    try {
+      await apiRequest<AgentRecord>("/api/agents", {
+        method: "POST",
+        body: JSON.stringify({
+          ...agentDraft,
+          tools: splitCSV(agentDraft.tools?.join(",") ?? ""),
+          skills: splitCSV(agentDraft.skills?.join(",") ?? ""),
+          tags: splitCSV(agentDraft.tags?.join(",") ?? ""),
+        }),
+      });
+      setAgentDraft({
+        id: "",
+        kind: "model_agent",
+        model: "",
+        role: "",
+        instructions: "",
+      });
+      await loadOverview();
+    } catch (saveError) {
+      setRunError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Agent could not be saved",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function saveOrchestration(next: OrchestrationConfig) {
+    setSettingsMutation("orchestration");
+    setRunError("");
+    try {
+      const saved = await apiRequest<OrchestrationConfig>(
+        "/api/orchestration",
+        {
+          method: "PATCH",
+          body: JSON.stringify(next),
+        },
+      );
+      setOrchestration(saved);
+      await loadOverview();
+    } catch (saveError) {
+      setRunError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Role flow could not be saved",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   return (
     <main className={`shell theme-${theme}`}>
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="sidebar-brand">
-          <img alt="Nomici" className="brand-logo" src="/logo/logo-solid-black.svg" />
+          <img
+            alt="Nomici"
+            className="brand-logo"
+            src="/logo/logo-solid-black.svg"
+          />
           <strong>Nomici</strong>
         </div>
         <button
@@ -729,7 +911,9 @@ export function App() {
               <small>{chat.status}</small>
             </button>
           ))}
-          {chats.length === 0 ? <p className="empty compact-empty">No chats yet</p> : null}
+          {chats.length === 0 ? (
+            <p className="empty compact-empty">No chats yet</p>
+          ) : null}
         </div>
         <button
           className={`nav-button sidebar-settings ${
@@ -751,7 +935,9 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
-            <span className={`status ${overview.gateway.status === "ok" ? "status-ok" : ""}`}>
+            <span
+              className={`status ${overview.gateway.status === "ok" ? "status-ok" : ""}`}
+            >
               {overview.gateway.status}
             </span>
             <button
@@ -765,7 +951,11 @@ export function App() {
               </span>
               <span>{theme === "dark" ? "Dark" : "Light"}</span>
             </button>
-            <button className="button" type="button" onClick={() => void loadOverview()}>
+            <button
+              className="button"
+              type="button"
+              onClick={() => void loadOverview()}
+            >
               Refresh
             </button>
           </div>
@@ -792,7 +982,9 @@ export function App() {
             </button>
           </form>
         ) : null}
-        {status === "failed" ? <div className="banner banner-error">{error}</div> : null}
+        {status === "failed" ? (
+          <div className="banner banner-error">{error}</div>
+        ) : null}
         {warnings.map((warning) => (
           <div className="banner" key={warning}>
             {warning}
@@ -804,7 +996,10 @@ export function App() {
             <section className="chat-main">
               <div className="chat-transcript">
                 {(chatDetail?.messages ?? []).map((message) => (
-                  <article className={`message message-${message.role}`} key={message.message_id}>
+                  <article
+                    className={`message message-${message.role}`}
+                    key={message.message_id}
+                  >
                     <span>{message.role}</span>
                     <p>{message.content}</p>
                   </article>
@@ -824,33 +1019,49 @@ export function App() {
                   placeholder="Describe the outcome you want delivered"
                 />
                 <div className="composer-controls">
-                  <select value={runAgentId} onChange={(event) => setRunAgentId(event.target.value)}>
-                    {agentOptions.map((agent) => (
-                      <option value={agent.id} key={agent.id} disabled={!agent.supported}>
-                        {agent.id}
-                        {agent.supported ? "" : ` - ${agent.reason}`}
-                      </option>
-                    ))}
-                  </select>
+                  <details className="advanced-agent-picker">
+                    <summary>
+                      Agent: {runAgentId === "auto" ? "Auto" : runAgentId}
+                    </summary>
+                    <select
+                      value={runAgentId}
+                      onChange={(event) => setRunAgentId(event.target.value)}
+                    >
+                      <option value="auto">Auto</option>
+                      {agentOptions.map((agent) => (
+                        <option
+                          value={agent.id}
+                          key={agent.id}
+                          disabled={!agent.supported}
+                        >
+                          {agent.id}
+                          {agent.supported ? "" : ` - ${agent.reason}`}
+                        </option>
+                      ))}
+                    </select>
+                  </details>
                   <button
                     className="button task-submit"
                     type="submit"
                     disabled={
                       runStatus === "starting" ||
                       runStatus === "running" ||
-                      !selectedAgent?.supported ||
+                      (runAgentId !== "auto" && !selectedAgent?.supported) ||
                       messageText.trim() === ""
                     }
                   >
                     {runStatus === "starting" ? "Starting" : "Send"}
                   </button>
                 </div>
-                {runError ? <div className="inline-error">{runError}</div> : null}
+                {runError ? (
+                  <div className="inline-error">{runError}</div>
+                ) : null}
               </form>
             </section>
             <WorkspacePanel
               activeRunId={activeRunId}
               runStatus={runStatus}
+              routeDecision={activeRouteDecision}
               sessionDetail={sessionDetail}
               traceEvents={traceEvents}
               tasks={workspaceTasks}
@@ -881,6 +1092,7 @@ export function App() {
             <WorkspacePanel
               activeRunId={activeRunId}
               runStatus={runStatus}
+              routeDecision={activeRouteDecision}
               sessionDetail={sessionDetail}
               traceEvents={traceEvents}
               tasks={workspaceTasks}
@@ -933,6 +1145,12 @@ export function App() {
                 ))}
               </div>
             </section>
+            <OrchestrateBuilder
+              agents={agents}
+              orchestration={orchestration}
+              saving={settingsMutation === "orchestration"}
+              onSave={(next) => void saveOrchestration(next)}
+            />
           </section>
         ) : null}
 
@@ -1001,6 +1219,13 @@ export function App() {
                 ))}
               </div>
             </section>
+            <AgentBuilder
+              agents={agents}
+              draft={agentDraft}
+              setDraft={setAgentDraft}
+              saving={settingsMutation === "agent"}
+              onSave={(event) => void saveAgent(event)}
+            />
           </section>
         ) : null}
       </section>
@@ -1011,6 +1236,7 @@ export function App() {
 function WorkspacePanel({
   activeRunId,
   runStatus,
+  routeDecision,
   sessionDetail,
   traceEvents,
   tasks,
@@ -1033,6 +1259,7 @@ function WorkspacePanel({
 }: {
   activeRunId: string;
   runStatus: string;
+  routeDecision: RouteDecision | null;
   sessionDetail: RunSessionDetail | null;
   traceEvents: TraceEvent[];
   tasks: RunTask[];
@@ -1054,6 +1281,8 @@ function WorkspacePanel({
   onResolveApproval: (approvalID: string, action: "grant" | "deny") => void;
 }) {
   const latestOutput = humanOutput(traceEvents);
+  const decision =
+    routeDecision ?? sessionDetail?.session.metadata?.route_decision ?? null;
   return (
     <section className="run-workspace" aria-label="Current workspace">
       <div className="run-header">
@@ -1075,6 +1304,35 @@ function WorkspacePanel({
         </span>
       </div>
 
+      {decision ? (
+        <div className="route-decision">
+          <div className="mini-heading no-border">
+            <strong>Route decision</strong>
+            <span>{decision.mode}</span>
+          </div>
+          <div className="route-grid">
+            <span>Complexity</span>
+            <strong>{decision.complexity}</strong>
+            <span>Agent</span>
+            <strong>{decision.recommended_agent_id || "auto"}</strong>
+            <span>Plan review</span>
+            <strong>{decision.needs_plan_review ? "required" : "auto"}</strong>
+          </div>
+          {decision.rationale ? <p>{decision.rationale}</p> : null}
+          {decision.required_tools?.length ? (
+            <div className="chip-row">
+              {decision.required_tools.map((tool) => (
+                <span className="chip" key={tool}>
+                  {tool}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tasks.length > 0 ? <RoleTimeline tasks={tasks} /> : null}
+
       <div className="task-ledger">
         <div className="mini-heading">
           <strong>Task ledger</strong>
@@ -1084,13 +1342,36 @@ function WorkspacePanel({
           <div className="ledger-row" key={task.task_id}>
             <div>
               <strong>{taskRoleLabel(task)}</strong>
-              <span>{task.metadata?.summary || task.metadata?.purpose || "pending"}</span>
+              <span>
+                {task.metadata?.summary ||
+                  task.metadata?.purpose ||
+                  task.blocked_reason ||
+                  "pending"}
+              </span>
+              <small>
+                {task.started_at ? formatTime(task.started_at) : "-"} /{" "}
+                {task.completed_at
+                  ? formatTime(task.completed_at)
+                  : task.updated_at
+                    ? formatTime(task.updated_at)
+                    : "-"}
+                {task.artifact_refs?.length
+                  ? ` / artifacts ${task.artifact_refs.length}`
+                  : ""}
+                {task.metadata?.selection_reason
+                  ? ` / ${task.metadata.selection_reason}`
+                  : ""}
+              </small>
             </div>
-            <span className={`pill ${taskTone(task.status)}`}>{task.status}</span>
+            <span className={`pill ${taskTone(task.status)}`}>
+              {task.status}
+            </span>
           </div>
         ))}
         {tasks.length === 0 ? (
-          <p className="empty compact-empty">Task records appear when a run starts.</p>
+          <p className="empty compact-empty">
+            Task records appear when a run starts.
+          </p>
         ) : null}
         {sessionDetail?.sandbox ? (
           <div className="workspace-roots">
@@ -1100,7 +1381,8 @@ function WorkspacePanel({
             <code>{sessionDetail.sandbox.artifact_root || "-"}</code>
             <span>Sandbox</span>
             <code>
-              {sessionDetail.sandbox.provider} / {sessionDetail.sandbox.cleanup_status}
+              {sessionDetail.sandbox.provider} /{" "}
+              {sessionDetail.sandbox.cleanup_status}
             </code>
           </div>
         ) : null}
@@ -1155,12 +1437,16 @@ function WorkspacePanel({
           <div className="upload-box">
             <input
               type="file"
-              onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+              onChange={(event) =>
+                setUploadFile(event.target.files?.[0] ?? null)
+              }
             />
             <button
               className="button button-secondary"
               type="button"
-              disabled={!uploadFile || !sessionDetail || workspaceMutation !== ""}
+              disabled={
+                !uploadFile || !sessionDetail || workspaceMutation !== ""
+              }
               onClick={onUpload}
             >
               Add
@@ -1211,7 +1497,9 @@ function WorkspacePanel({
                   className="button button-secondary"
                   type="button"
                   disabled={mutatingApproval !== ""}
-                  onClick={() => onResolveApproval(approval.approval_id, "grant")}
+                  onClick={() =>
+                    onResolveApproval(approval.approval_id, "grant")
+                  }
                 >
                   Grant
                 </button>
@@ -1219,7 +1507,9 @@ function WorkspacePanel({
                   className="button button-danger"
                   type="button"
                   disabled={mutatingApproval !== ""}
-                  onClick={() => onResolveApproval(approval.approval_id, "deny")}
+                  onClick={() =>
+                    onResolveApproval(approval.approval_id, "deny")
+                  }
                 >
                   Deny
                 </button>
@@ -1229,12 +1519,243 @@ function WorkspacePanel({
         </div>
       </div>
 
-      {workspaceError ? <div className="inline-error panel-inline">{workspaceError}</div> : null}
+      {workspaceError ? (
+        <div className="inline-error panel-inline">{workspaceError}</div>
+      ) : null}
       {sessionDetail?.session.status === "running" ? (
-        <button className="button button-danger workspace-cancel" type="button" onClick={onCancel}>
+        <button
+          className="button button-danger workspace-cancel"
+          type="button"
+          onClick={onCancel}
+        >
           Cancel session
         </button>
       ) : null}
+    </section>
+  );
+}
+
+function RoleTimeline({ tasks }: { tasks: RunTask[] }) {
+  return (
+    <div className="role-flow" aria-label="Role flow">
+      {tasks.map((task, index) => (
+        <div
+          className={`role-step ${taskTone(task.status)}`}
+          key={task.task_id}
+        >
+          <span>{index + 1}</span>
+          <strong>{taskRoleLabel(task)}</strong>
+          <small>{task.status}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrchestrateBuilder({
+  agents,
+  orchestration,
+  saving,
+  onSave,
+}: {
+  agents: AgentRecord[];
+  orchestration: OrchestrationConfig;
+  saving: boolean;
+  onSave: (next: OrchestrationConfig) => void;
+}) {
+  const modelAgents = agents.filter((agent) => agent.kind !== "tool_agent");
+  const roleOrder = orchestration.role_order?.length
+    ? orchestration.role_order
+    : modelAgents.map((agent) => agent.id);
+  const disabled = new Set(orchestration.disabled_roles ?? []);
+  return (
+    <section className="panel" aria-label="Role flow builder">
+      <div className="panel-heading">
+        <div>
+          <h2>Role flow</h2>
+          <p>Sequential MVP flow</p>
+        </div>
+        <span className="tag">{roleOrder.length}</span>
+      </div>
+      <div className="builder-grid">
+        <label>
+          <span>Entrypoint</span>
+          <select
+            value={orchestration.entrypoint ?? ""}
+            onChange={(event) =>
+              onSave({ ...orchestration, entrypoint: event.target.value })
+            }
+            disabled={saving}
+          >
+            <option value="">Auto</option>
+            {agents.map((agent) => (
+              <option value={agent.id} key={agent.id}>
+                {agent.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Plan review</span>
+          <select
+            value={orchestration.plan_review_policy ?? "auto"}
+            onChange={(event) =>
+              onSave({
+                ...orchestration,
+                plan_review_policy: event.target.value,
+              })
+            }
+            disabled={saving}
+          >
+            <option value="auto">Auto</option>
+            <option value="always">Always</option>
+            <option value="never">Never</option>
+          </select>
+        </label>
+      </div>
+      <div className="role-library">
+        {roleOrder.map((roleID) => (
+          <button
+            className={`role-toggle ${disabled.has(roleID) ? "role-disabled" : ""}`}
+            type="button"
+            key={roleID}
+            disabled={saving}
+            onClick={() => {
+              const nextDisabled = new Set(disabled);
+              if (nextDisabled.has(roleID)) {
+                nextDisabled.delete(roleID);
+              } else {
+                nextDisabled.add(roleID);
+              }
+              onSave({
+                ...orchestration,
+                role_order: roleOrder,
+                disabled_roles: [...nextDisabled],
+              });
+            }}
+          >
+            <strong>{roleID}</strong>
+            <span>{disabled.has(roleID) ? "disabled" : "enabled"}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AgentBuilder({
+  agents,
+  draft,
+  setDraft,
+  saving,
+  onSave,
+}: {
+  agents: AgentRecord[];
+  draft: AgentRecord;
+  setDraft: (next: AgentRecord) => void;
+  saving: boolean;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="panel" aria-label="Agent builder">
+      <div className="panel-heading">
+        <div>
+          <h2>Agent Builder</h2>
+          <p>Create or update shared project agents</p>
+        </div>
+        <span className="tag">{agents.length}</span>
+      </div>
+      <form className="builder-form" onSubmit={onSave}>
+        <div className="builder-grid">
+          <label>
+            <span>ID</span>
+            <input
+              value={draft.id}
+              onChange={(event) =>
+                setDraft({ ...draft, id: event.target.value })
+              }
+              placeholder="planner"
+            />
+          </label>
+          <label>
+            <span>Kind</span>
+            <select
+              value={draft.kind}
+              onChange={(event) =>
+                setDraft({ ...draft, kind: event.target.value })
+              }
+            >
+              <option value="model_agent">Model agent</option>
+              <option value="gateway_agent">Gateway agent</option>
+              <option value="external_agent">External agent</option>
+            </select>
+          </label>
+          <label>
+            <span>Model</span>
+            <input
+              value={draft.model ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, model: event.target.value })
+              }
+              placeholder="default"
+            />
+          </label>
+          <label>
+            <span>Runtime</span>
+            <input
+              value={draft.runtime ?? ""}
+              onChange={(event) =>
+                setDraft({ ...draft, runtime: event.target.value })
+              }
+              placeholder="local_cli"
+            />
+          </label>
+        </div>
+        <label>
+          <span>Role</span>
+          <input
+            value={draft.role ?? ""}
+            onChange={(event) =>
+              setDraft({ ...draft, role: event.target.value })
+            }
+            placeholder="Plan and coordinate workspace runs"
+          />
+        </label>
+        <label>
+          <span>Instructions</span>
+          <textarea
+            rows={4}
+            value={draft.instructions ?? ""}
+            onChange={(event) =>
+              setDraft({ ...draft, instructions: event.target.value })
+            }
+            placeholder="Operating instructions"
+          />
+        </label>
+        <button
+          className="button"
+          type="submit"
+          disabled={saving || draft.id.trim() === ""}
+        >
+          {saving ? "Saving" : "Save agent"}
+        </button>
+      </form>
+      <div className="stack">
+        {agents.slice(0, 6).map((agent) => (
+          <button
+            className="list-item list-button"
+            key={agent.id}
+            type="button"
+            onClick={() => setDraft(agent)}
+          >
+            <div>
+              <strong>{agent.name || agent.id}</strong>
+              <span>{agent.role || agent.kind}</span>
+            </div>
+            <span>{agent.model || agent.runtime || "-"}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1262,10 +1783,18 @@ function buildAgentOptions(snapshot?: GraphSnapshot): AgentOption[] {
             reason: "model agents with outgoing edges are not executable yet",
           };
         }
-        return { id, supported: Boolean(agent.model), reason: agent.model ? "" : "missing model" };
+        return {
+          id,
+          supported: Boolean(agent.model),
+          reason: agent.model ? "" : "missing model",
+        };
       }
       if (agent.kind !== "external_agent") {
-        return { id, supported: false, reason: `${agent.kind} is not executable` };
+        return {
+          id,
+          supported: false,
+          reason: `${agent.kind} is not executable`,
+        };
       }
       if (!agent.runtime) {
         return { id, supported: false, reason: "missing runtime" };
@@ -1296,15 +1825,23 @@ function checkHandoffChain(
       return { supported: true, reason: "" };
     }
     if (outgoing.length > 1) {
-      return { supported: false, reason: "handoff chain has multiple outgoing edges" };
+      return {
+        supported: false,
+        reason: "handoff chain has multiple outgoing edges",
+      };
     }
     const edge = outgoing[0];
     if (edge.mode !== "handoff") {
       return { supported: false, reason: "only handoff chains are executable" };
     }
     const target = snapshot.ir.agents[edge.to];
-    const targetRuntime = target?.runtime ? snapshot.ir.runtimes?.[target.runtime] : undefined;
-    if (target?.kind !== "external_agent" || targetRuntime?.kind !== "cli_agent") {
+    const targetRuntime = target?.runtime
+      ? snapshot.ir.runtimes?.[target.runtime]
+      : undefined;
+    if (
+      target?.kind !== "external_agent" ||
+      targetRuntime?.kind !== "cli_agent"
+    ) {
       return {
         supported: false,
         reason: "handoff target is not a cli_agent external agent",
@@ -1330,6 +1867,22 @@ function normalizeOverview(next: Overview): Overview {
     latest_trace: next.latest_trace ?? [],
     pending_approvals: next.pending_approvals ?? [],
   };
+}
+
+function latestRouteDecision(messages: ChatMessage[]): RouteDecision | null {
+  for (const message of [...messages].reverse()) {
+    if (message.metadata?.route_decision) {
+      return message.metadata.route_decision;
+    }
+  }
+  return null;
+}
+
+function splitCSV(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function taskTone(status: string): string {
@@ -1368,7 +1921,13 @@ function mergeEvents(current: TraceEvent[], next: TraceEvent[]): TraceEvent[] {
 
 function eventOutput(event: TraceEvent): string {
   const payload = event.payload ?? {};
-  for (const key of ["output_preview", "stdout_preview", "stderr_preview", "message", "error"]) {
+  for (const key of [
+    "output_preview",
+    "stdout_preview",
+    "stderr_preview",
+    "message",
+    "error",
+  ]) {
     const value = payload[key];
     if (typeof value === "string" && value.trim() !== "") {
       return value;
@@ -1392,7 +1951,9 @@ function readTheme(): Theme {
   if (saved === "light" || saved === "dark") {
     return saved;
   }
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
 }
 
 function formatTime(value: string): string {

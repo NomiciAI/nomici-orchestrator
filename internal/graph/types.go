@@ -36,11 +36,18 @@ type Model struct {
 
 type Agent struct {
 	ID           string           `json:"id"`
+	Name         string           `json:"name,omitempty"`
+	Description  string           `json:"description,omitempty"`
 	Kind         string           `json:"kind"`
 	Model        string           `json:"model,omitempty"`
 	Runtime      string           `json:"runtime,omitempty"`
 	Role         string           `json:"role,omitempty"`
 	Instructions string           `json:"instructions,omitempty"`
+	Tools        []string         `json:"tools,omitempty"`
+	Skills       []string         `json:"skills,omitempty"`
+	Tags         []string         `json:"tags,omitempty"`
+	Triggers     []string         `json:"triggers,omitempty"`
+	Capabilities map[string]any   `json:"capabilities,omitempty"`
 	Source       agentspec.Source `json:"source"`
 }
 

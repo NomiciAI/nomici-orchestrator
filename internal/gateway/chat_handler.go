@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
+	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -24,8 +25,11 @@ type chatMessageRequest struct {
 }
 
 type chatMessageResponse struct {
-	Message *chats.Message     `json:"message"`
-	Run     *runCreateResponse `json:"run,omitempty"`
+	Message          *chats.Message               `json:"message"`
+	AssistantMessage *chats.Message               `json:"assistant_message,omitempty"`
+	Run              *runCreateResponse           `json:"run,omitempty"`
+	RouteDecision    *orchestration.RouteDecision `json:"route_decision,omitempty"`
+	Clarification    string                       `json:"clarification,omitempty"`
 }
 
 func chatListHandler(services Services) http.HandlerFunc {
@@ -146,7 +150,35 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	if err != nil {
 		return nil, &startRunError{Status: http.StatusInternalServerError, Code: "chat_message_failed", Message: "Chat message could not be saved.", Remediation: "Check Gateway logs."}
 	}
-	started, startErr := startWorkspaceRun(request.Context(), options, services, agentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID})
+	manualAgentID := strings.TrimSpace(agentID)
+	if strings.EqualFold(manualAgentID, "auto") {
+		manualAgentID = ""
+	}
+	var snapshotRoute *orchestration.RouteDecision
+	if services.Graph != nil {
+		if snapshot, err := services.Graph.Latest(request.Context()); err == nil {
+			decision := orchestration.Route(content, manualAgentID, snapshot)
+			snapshotRoute = &decision
+		}
+	}
+	if snapshotRoute == nil {
+		decision := orchestration.Route(content, manualAgentID, nil)
+		snapshotRoute = &decision
+	}
+	if snapshotRoute.Mode != orchestration.ModeWorkspaceRun {
+		reply := orchestration.DirectReply(*snapshotRoute)
+		assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
+			ChatID:   chatID,
+			Role:     chats.RoleAssistant,
+			Content:  reply,
+			Metadata: routeMetadata(snapshotRoute),
+		})
+		if err != nil {
+			return nil, &startRunError{Status: http.StatusInternalServerError, Code: "chat_message_failed", Message: "Chat response could not be saved.", Remediation: "Check Gateway logs."}
+		}
+		return &chatMessageResponse{Message: message, AssistantMessage: assistantMessage, RouteDecision: snapshotRoute, Clarification: snapshotRoute.Clarification}, nil
+	}
+	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute)
 	if startErr != nil {
 		return nil, startErr
 	}
@@ -154,7 +186,18 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 		message.RunID = started.Response.RunID
 		message.SessionID = started.Response.SessionID
 	}
-	return &chatMessageResponse{Message: message, Run: &started.Response}, nil
+	return &chatMessageResponse{Message: message, Run: &started.Response, RouteDecision: snapshotRoute}, nil
+}
+
+func routeMetadata(route *orchestration.RouteDecision) json.RawMessage {
+	if route == nil {
+		return json.RawMessage("{}")
+	}
+	payload, err := json.Marshal(map[string]any{"route_decision": route})
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return payload
 }
 
 func trimTitle(value string) string {

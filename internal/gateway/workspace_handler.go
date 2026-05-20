@@ -22,7 +22,7 @@ import (
 
 const maxUploadBytes = 25 * 1024 * 1024
 
-func sessionResumeHandler(services Services) http.HandlerFunc {
+func sessionResumeHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		if services.Runs == nil || services.Trace == nil {
@@ -34,6 +34,22 @@ func sessionResumeHandler(services Services) http.HandlerFunc {
 		if err != nil {
 			writeSessionLookupError(response, requestID, err)
 			return
+		}
+		if detail.Session.Status == runpkg.SessionStatusPlanReview {
+			if services.Artifacts == nil {
+				writeError(response, http.StatusServiceUnavailable, requestID, "plan_review_unavailable", "Plan review services are not initialized.", "Restart Gateway.")
+				return
+			}
+			artifactID, err := latestPlanArtifactID(request.Context(), services, detail.Session.SessionID)
+			if err != nil {
+				writeError(response, http.StatusConflict, requestID, "plan_not_approved", "Plan review must be approved before resume.", "Approve the plan first.")
+				return
+			}
+			artifact, err := services.Artifacts.Get(request.Context(), artifactID)
+			if err != nil || artifact.ReviewState != artifactpkg.ReviewApproved {
+				writeError(response, http.StatusConflict, requestID, "plan_not_approved", "Plan review must be approved before resume.", "Approve the plan first.")
+				return
+			}
 		}
 		if err := services.Runs.ResumeSession(request.Context(), sessionID); err != nil {
 			writeError(response, http.StatusConflict, requestID, "session_not_resumable", err.Error(), "Only blocked, plan review, or clarification sessions can be resumed.")
@@ -50,6 +66,10 @@ func sessionResumeHandler(services Services) http.HandlerFunc {
 		updated, err := services.Runs.GetBySession(request.Context(), sessionID)
 		if err != nil {
 			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		if startErr := resumeWorkspaceWorker(request.Context(), options, services, updated); startErr != nil {
+			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
 			return
 		}
 		payload, err := sessionDetailPayload(request.Context(), services, updated)
@@ -111,7 +131,7 @@ func sessionPlanReviseHandler(services Services) http.HandlerFunc {
 	}
 }
 
-func sessionPlanApproveHandler(services Services) http.HandlerFunc {
+func sessionPlanApproveHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		if services.Runs == nil || services.Artifacts == nil || services.Trace == nil {
@@ -159,6 +179,10 @@ func sessionPlanApproveHandler(services Services) http.HandlerFunc {
 		updated, err := services.Runs.GetBySession(request.Context(), detail.Session.SessionID)
 		if err != nil {
 			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		if startErr := resumeWorkspaceWorker(request.Context(), options, services, updated); startErr != nil {
+			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
 			return
 		}
 		payload, err := sessionDetailPayload(request.Context(), services, updated)

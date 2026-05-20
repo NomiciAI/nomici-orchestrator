@@ -17,6 +17,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
@@ -120,8 +121,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 		t.Fatalf("decode run create: %v", err)
 	}
 	events := waitForRunEvents(t, trace.NewStore(db), envelope.Data.RunID, trace.EventRunCompleted)
-	if len(events) != 12 {
-		t.Fatalf("expected twelve trace events, got %d", len(events))
+	if len(events) != 13 {
+		t.Fatalf("expected thirteen trace events, got %d", len(events))
 	}
 
 	eventsRequest := httptest.NewRequest(http.MethodGet, "/api/runs/"+envelope.Data.RunID+"/events?after_sequence=2", nil)
@@ -142,8 +143,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if err := json.NewDecoder(eventsResponse.Body).Decode(&eventsEnvelope); err != nil {
 		t.Fatalf("decode events: %v", err)
 	}
-	if len(eventsEnvelope.Data) != 10 {
-		t.Fatalf("expected ten events after sequence 2, got %d", len(eventsEnvelope.Data))
+	if len(eventsEnvelope.Data) != 11 {
+		t.Fatalf("expected eleven events after sequence 2, got %d", len(eventsEnvelope.Data))
 	}
 	if eventsEnvelope.Data[0].Sequence <= 2 {
 		t.Fatalf("expected sequence filtering, got %+v", eventsEnvelope.Data)
@@ -242,8 +243,11 @@ func TestRunCreateEndpointRolePlanReviewAndArtifacts(t *testing.T) {
 		t.Fatalf("decode run create: %v", err)
 	}
 	detail := waitForSessionStatus(t, runpkg.NewStore(db), envelope.Data.SessionID, runpkg.SessionStatusPlanReview)
-	if len(detail.Tasks) != 5 {
-		t.Fatalf("expected five role tasks, got %+v", detail.Tasks)
+	if len(detail.Tasks) != 4 {
+		t.Fatalf("expected dynamic role task plan, got %+v", detail.Tasks)
+	}
+	if detail.Tasks[2].AgentID != "coder" || detail.Tasks[3].AgentID != "reporter" {
+		t.Fatalf("expected implementation route to include coder and reporter, got %+v", detail.Tasks)
 	}
 	planArtifacts, err := artifacts.NewStore(db).List(context.Background(), envelope.Data.SessionID, 10)
 	if err != nil {
@@ -369,6 +373,37 @@ func TestChatMessageCreatesRunSession(t *testing.T) {
 	}
 }
 
+func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"setup status"}`)))
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var envelope struct {
+		Data chatMessageResponse `json:"data"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Run != nil {
+		t.Fatalf("expected direct reply without run, got %+v", envelope.Data.Run)
+	}
+	if envelope.Data.RouteDecision == nil || envelope.Data.RouteDecision.Mode != orchestration.ModeDirectReply {
+		t.Fatalf("expected direct route decision, got %+v", envelope.Data.RouteDecision)
+	}
+	if envelope.Data.AssistantMessage == nil || envelope.Data.AssistantMessage.Role != chats.RoleAssistant {
+		t.Fatalf("expected assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no run sessions, got %+v", sessions)
+	}
+}
+
 func TestLedgerTaskPlansUseInstalledPackRoles(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -401,22 +436,23 @@ func TestLedgerTaskPlansUseInstalledPackRoles(t *testing.T) {
 			"reporter":   {ID: "reporter", Kind: "model_agent", Model: "gpt"},
 		}},
 	}
-	plans, err := ledgerTaskPlans(context.Background(), Services{Packs: packs.NewStore(db)}, snapshot, "product_pm")
+	decision := orchestration.Route("implement workspace artifacts", "", snapshot)
+	plans, err := ledgerTaskPlans(context.Background(), Services{Packs: packs.NewStore(db)}, snapshot, "product_pm", &decision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plans) != 5 {
-		t.Fatalf("expected five role plans, got %+v", plans)
+	if len(plans) != 4 {
+		t.Fatalf("expected dynamic implementation role plans, got %+v", plans)
 	}
-	if plans[0].AgentID != "product_pm" || plans[4].AgentID != "reporter" {
+	if plans[0].AgentID != "product_pm" || plans[3].AgentID != "reporter" {
 		t.Fatalf("expected pack role order, got %+v", plans)
 	}
-	if plans[3].Metadata["plan_source"] != "pack_role" || plans[3].Metadata["role_id"] != "coder" {
-		t.Fatalf("expected coder role metadata, got %+v", plans[3].Metadata)
+	if plans[2].Metadata["plan_source"] != "pack_role" || plans[2].Metadata["role_id"] != "coder" {
+		t.Fatalf("expected coder role metadata, got %+v", plans[2].Metadata)
 	}
-	outputContract, ok := plans[3].Metadata["output_contract"].(packs.OutputContract)
+	outputContract, ok := plans[2].Metadata["output_contract"].(packs.OutputContract)
 	if !ok || outputContract.Kind != "implementation_result" {
-		t.Fatalf("expected coder output contract, got %+v", plans[3].Metadata["output_contract"])
+		t.Fatalf("expected coder output contract, got %+v", plans[2].Metadata["output_contract"])
 	}
 }
 

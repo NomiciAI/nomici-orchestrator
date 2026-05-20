@@ -24,6 +24,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(newModelCommand())
 	root.AddCommand(newProviderCommand())
 	root.AddCommand(newAgentCommand())
+	root.AddCommand(newOrchestrateCommand())
 	root.AddCommand(newRuntimeCommand())
 	root.AddCommand(newContextCommand())
 	root.AddCommand(newApprovalsCommand())
