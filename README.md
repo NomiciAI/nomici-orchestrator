@@ -220,6 +220,15 @@ make fmt
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Acknowledgments
+
+Some early architecture thinking in Nomici was informed by the open-source
+[DeerFlow](https://github.com/bytedance/deer-flow) project, especially around
+long-horizon agent orchestration, sub-agents, sandboxed execution, memory, and
+skill-oriented extensibility. Nomici Orchestrator is an independent
+implementation and does not include DeerFlow source code unless explicitly
+noted.
+
 ## License
 
 Nomici Orchestrator is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
