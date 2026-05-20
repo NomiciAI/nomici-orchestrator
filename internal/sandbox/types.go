@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"time"
 )
@@ -23,6 +24,7 @@ const (
 
 	CleanupActive   = "active"
 	CleanupReleased = "released"
+	CleanupDisabled = "disabled"
 )
 
 type Intent struct {
@@ -62,6 +64,7 @@ type CreateRecordRequest struct {
 	TaskID        string
 	ProjectID     string
 	Intent        Intent
+	BaseDir       string
 	WorkspaceRoot string
 	ArtifactRoot  string
 	Metadata      json.RawMessage
@@ -72,17 +75,30 @@ func DefaultIntent() Intent {
 }
 
 func IntentFromDeployment(deployment map[string]any) Intent {
+	intent, err := ParseIntent(deployment)
+	if err != nil {
+		return DefaultIntent()
+	}
+	return intent
+}
+
+func ParseIntent(deployment map[string]any) (Intent, error) {
 	intent := DefaultIntent()
 	raw, ok := deployment["sandbox"]
 	if !ok {
-		return intent
+		return intent, nil
 	}
 	sandbox, ok := raw.(map[string]any)
 	if !ok {
-		return intent
+		return Intent{}, fmt.Errorf("deployment.sandbox must be a map")
 	}
 	if mode, ok := sandbox["mode"].(string); ok && mode != "" {
+		if mode != ModeLocal && mode != ModeContainer && mode != ModeNone {
+			return Intent{}, fmt.Errorf("unsupported sandbox mode %q", mode)
+		}
 		intent.Mode = mode
+	} else {
+		return Intent{}, fmt.Errorf("deployment.sandbox.mode is required")
 	}
 	if enabled, ok := sandbox["bash_enabled"].(bool); ok {
 		intent.BashEnabled = enabled
@@ -90,7 +106,7 @@ func IntentFromDeployment(deployment map[string]any) Intent {
 	if enabled, ok := sandbox["file_write_enabled"].(bool); ok {
 		intent.FileWriteEnabled = enabled
 	}
-	return intent
+	return intent, nil
 }
 
 func NormalizeMode(mode string) string {
@@ -107,10 +123,16 @@ func DeterministicID(runID string) string {
 	return "sandbox_" + hex.EncodeToString(sum[:])[:16]
 }
 
-func DefaultWorkspaceRoot(runID string) string {
-	return filepath.Join(".nomici", "runs", runID, "workspace")
+func DefaultWorkspaceRoot(baseDir string, runID string) string {
+	if baseDir == "" {
+		baseDir = "."
+	}
+	return filepath.Join(baseDir, ".nomici", "runs", runID, "workspace")
 }
 
-func DefaultArtifactRoot(runID string) string {
-	return filepath.Join(".nomici", "runs", runID, "artifacts")
+func DefaultArtifactRoot(baseDir string, runID string) string {
+	if baseDir == "" {
+		baseDir = "."
+	}
+	return filepath.Join(baseDir, ".nomici", "runs", runID, "artifacts")
 }
