@@ -29,13 +29,13 @@ func newProviderListCommand() *cobra.Command {
 		Short: "List provider catalog entries",
 		RunE: func(command *cobra.Command, args []string) error {
 			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(writer, "ID\tNAME\tADAPTER\tAUTH\tMODELS\tREADY")
+			fmt.Fprintln(writer, "ID\tNAME\tADAPTER\tAUTH\tMODELS\tREADY\tDETAIL")
 			for _, provider := range providers.ProviderCatalog() {
 				ready := "yes"
 				if provider.Local && !provider.Available {
 					ready = "no"
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", provider.ID, provider.Name, provider.AdapterKind, provider.AuthMode, provider.CatalogMode, ready)
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", provider.ID, provider.Name, provider.AdapterKind, provider.AuthMode, provider.CatalogMode, ready, provider.AvailabilityMessage)
 			}
 			return writer.Flush()
 		},

@@ -18,10 +18,13 @@ export function SettingsPage({ state }: { state: ConsoleState }) {
           </div>
           {state.providerCatalog.map((provider) => (
             <div className="table-row" key={provider.id}>
-              <span>{provider.name}</span>
+              <span>
+                <strong>{provider.name}</strong>
+                <small>{provider.availability_message || provider.description}</small>
+              </span>
               <span>{provider.adapter_kind}</span>
               <span>{provider.catalog_mode}</span>
-              <span>{provider.available ? "yes" : "no"}</span>
+              <span>{provider.available ? "ready" : "not ready"}</span>
             </div>
           ))}
         </div>
