@@ -57,21 +57,24 @@ type RuntimeInvoke struct {
 }
 
 type Agent struct {
-	Name         string         `yaml:"name,omitempty" json:"name,omitempty"`
-	Description  string         `yaml:"description,omitempty" json:"description,omitempty"`
-	Kind         string         `yaml:"kind" json:"kind"`
-	Model        string         `yaml:"model,omitempty" json:"model,omitempty"`
-	Runtime      string         `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-	Endpoint     string         `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
-	Role         string         `yaml:"role,omitempty" json:"role,omitempty"`
-	Instructions string         `yaml:"instructions,omitempty" json:"instructions,omitempty"`
-	Tools        []string       `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Skills       []string       `yaml:"skills,omitempty" json:"skills,omitempty"`
-	Tags         []string       `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Triggers     []string       `yaml:"triggers,omitempty" json:"triggers,omitempty"`
-	Capabilities map[string]any `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
-	Subagents    []string       `yaml:"subagents,omitempty" json:"subagents,omitempty"`
-	Trust        string         `yaml:"trust,omitempty" json:"trust,omitempty"`
+	Name           string         `yaml:"name,omitempty" json:"name,omitempty"`
+	Description    string         `yaml:"description,omitempty" json:"description,omitempty"`
+	Kind           string         `yaml:"kind" json:"kind"`
+	Model          string         `yaml:"model,omitempty" json:"model,omitempty"`
+	Runtime        string         `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Endpoint       string         `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	Role           string         `yaml:"role,omitempty" json:"role,omitempty"`
+	Instructions   string         `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	Tools          []string       `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Skills         []string       `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Tags           []string       `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Triggers       []string       `yaml:"triggers,omitempty" json:"triggers,omitempty"`
+	Capabilities   map[string]any `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Permissions    map[string]any `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	RuntimeProfile map[string]any `yaml:"runtime_profile,omitempty" json:"runtime_profile,omitempty"`
+	ApprovalPolicy string         `yaml:"approval_policy,omitempty" json:"approval_policy,omitempty"`
+	Subagents      []string       `yaml:"subagents,omitempty" json:"subagents,omitempty"`
+	Trust          string         `yaml:"trust,omitempty" json:"trust,omitempty"`
 }
 
 type OutputContract struct {

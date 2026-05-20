@@ -20,6 +20,7 @@ func newArtifactCommand() *cobra.Command {
 	command.PersistentFlags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
 	command.AddCommand(newArtifactListCommand(&dbPath))
 	command.AddCommand(newArtifactShowCommand(&dbPath))
+	command.AddCommand(newArtifactRevisionsCommand(&dbPath))
 	return command
 }
 
@@ -54,6 +55,35 @@ func newArtifactListCommand(dbPath *string) *cobra.Command {
 	command.Flags().StringVar(&sessionID, "session", "", "Filter by session id")
 	command.Flags().IntVar(&limit, "limit", 50, "Maximum number of artifacts to list")
 	return command
+}
+
+func newArtifactRevisionsCommand(dbPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "revisions <artifact_id>",
+		Short: "List artifact revisions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			db, err := openMigratedDB(*dbPath)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			revisions, err := artifactpkg.NewStore(db).ListRevisions(command.Context(), args[0], 50)
+			if err != nil {
+				return err
+			}
+			if len(revisions) == 0 {
+				fmt.Fprintln(command.OutOrStdout(), "No artifact revisions.")
+				return nil
+			}
+			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(writer, "REVISION\tSTATE\tCREATED\tDIFF")
+			for _, revision := range revisions {
+				fmt.Fprintf(writer, "%d\t%s\t%s\t%s\n", revision.Revision, revision.ReviewState, shortTime(revision.CreatedAt), trimForTable(revision.DiffPreview, 90))
+			}
+			return writer.Flush()
+		},
+	}
 }
 
 func newArtifactShowCommand(dbPath *string) *cobra.Command {

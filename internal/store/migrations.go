@@ -404,4 +404,26 @@ CREATE INDEX IF NOT EXISTS idx_workspace_locks_run ON workspace_locks(run_id, st
 CREATE INDEX IF NOT EXISTS idx_workspace_locks_tool_call ON workspace_locks(tool_call_id);
 `,
 	},
+	{
+		Version: 16,
+		SQL: `
+CREATE TABLE IF NOT EXISTS artifact_revision_records (
+	revision_id TEXT PRIMARY KEY,
+	artifact_id TEXT NOT NULL,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	revision INTEGER NOT NULL,
+	review_state TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '',
+	preview TEXT NOT NULL DEFAULT '',
+	diff_preview TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_revisions_artifact ON artifact_revision_records(artifact_id, revision DESC);
+CREATE INDEX IF NOT EXISTS idx_artifact_revisions_session ON artifact_revision_records(session_id, created_at DESC);
+`,
+	},
 }

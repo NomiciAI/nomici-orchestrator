@@ -168,19 +168,26 @@ func MatchRoles(manifest packs.Manifest, snapshot *graph.Snapshot, startAgentID 
 		if !ok || selectedSet[id] {
 			continue
 		}
+		agent := snapshot.IR.Agents[id]
+		requiredTools := unique(append(role.RequiredTools, agent.Tools...))
+		requiredSkills := unique(append(role.RequiredSkills, agent.Skills...))
+		purpose := role.Purpose
+		if strings.TrimSpace(agent.Role) != "" {
+			purpose = agent.Role
+		}
 		selectedSet[id] = true
 		result.Roles = append(result.Roles, RoleSelection{
 			AgentID:         id,
 			RoleID:          id,
 			Sequence:        index + 1,
-			Purpose:         role.Purpose,
+			Purpose:         purpose,
 			SelectionReason: roleReason(role, decision),
 			MatchScore:      roleScore(role, decision),
-			RequiredTools:   role.RequiredTools,
-			RequiredSkills:  role.RequiredSkills,
+			RequiredTools:   requiredTools,
+			RequiredSkills:  requiredSkills,
 			OutputContract:  role.OutputContract,
 		})
-		result.RequiredTools = unique(append(result.RequiredTools, role.RequiredTools...))
+		result.RequiredTools = unique(append(result.RequiredTools, requiredTools...))
 	}
 	for _, role := range manifest.Roles {
 		if _, ok := available[role.ID]; ok && !selectedSet[role.ID] {

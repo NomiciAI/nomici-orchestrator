@@ -298,6 +298,55 @@ func TestModelToolLoopRepeatedFailureCreatesRetryDecision(t *testing.T) {
 	}
 }
 
+func TestReviewQueueEndpointListsOpenBlockedActions(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	action, err := blocked.NewStore(db).Create(context.Background(), blocked.CreateRequest{
+		SessionID:      "session_test",
+		RunID:          "run_test",
+		TaskID:         "task_test",
+		Kind:           blocked.KindRetryDecision,
+		Title:          "Review retry",
+		RequiredAction: "retry_skip_or_stop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/review-queue?status=open", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), action.BlockedActionID) {
+		t.Fatalf("expected review queue action, got %s", response.Body.String())
+	}
+}
+
+func TestArtifactRevisionsEndpoint(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	artifactStore := artifacts.NewStore(db)
+	artifact, err := artifactStore.Create(context.Background(), artifacts.CreateRequest{
+		SessionID: "session_test",
+		RunID:     "run_test",
+		Type:      artifacts.TypePlan,
+		Title:     "Plan",
+		Preview:   "first",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := artifactStore.Revise(context.Background(), artifact.ArtifactID, "second"); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/artifacts/"+artifact.ArtifactID+"/revisions", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"revision":2`) {
+		t.Fatalf("expected latest revision, got %s", response.Body.String())
+	}
+}
+
 func TestModelToolLoopApprovalResumesPendingCall(t *testing.T) {
 	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
 	var calls int64

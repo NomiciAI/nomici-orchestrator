@@ -14,14 +14,16 @@ import (
 )
 
 type chatCreateRequest struct {
-	Title   string `json:"title"`
-	AgentID string `json:"agent_id"`
-	Prompt  string `json:"prompt"`
+	Title          string   `json:"title"`
+	AgentID        string   `json:"agent_id"`
+	Prompt         string   `json:"prompt"`
+	SelectedSkills []string `json:"selected_skills"`
 }
 
 type chatMessageRequest struct {
-	AgentID string `json:"agent_id"`
-	Content string `json:"content"`
+	AgentID        string   `json:"agent_id"`
+	Content        string   `json:"content"`
+	SelectedSkills []string `json:"selected_skills"`
 }
 
 type chatMessageResponse struct {
@@ -82,7 +84,7 @@ func chatCreateHandler(options Options, services Services) http.HandlerFunc {
 			writeSuccess(response, requestID, detail, nil)
 			return
 		}
-		messageResponse, startErr := addChatMessageAndMaybeRun(request, options, services, thread.ChatID, body.AgentID, body.Prompt)
+		messageResponse, startErr := addChatMessageAndMaybeRun(request, options, services, thread.ChatID, body.AgentID, body.Prompt, body.SelectedSkills)
 		if startErr != nil {
 			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
 			return
@@ -119,7 +121,7 @@ func chatMessageHandler(options Options, services Services) http.HandlerFunc {
 			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send content and optional agent_id as JSON.")
 			return
 		}
-		result, startErr := addChatMessageAndMaybeRun(request, options, services, chi.URLParam(request, "chat_id"), body.AgentID, body.Content)
+		result, startErr := addChatMessageAndMaybeRun(request, options, services, chi.URLParam(request, "chat_id"), body.AgentID, body.Content, body.SelectedSkills)
 		if startErr != nil {
 			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
 			return
@@ -128,7 +130,7 @@ func chatMessageHandler(options Options, services Services) http.HandlerFunc {
 	}
 }
 
-func addChatMessageAndMaybeRun(request *http.Request, options Options, services Services, chatID string, agentID string, content string) (*chatMessageResponse, *startRunError) {
+func addChatMessageAndMaybeRun(request *http.Request, options Options, services Services, chatID string, agentID string, content string, selectedSkills []string) (*chatMessageResponse, *startRunError) {
 	if services.Chats == nil {
 		return nil, &startRunError{Status: http.StatusServiceUnavailable, Code: "chats_unavailable", Message: "Chat store is not initialized.", Remediation: "Restart Gateway."}
 	}
@@ -155,15 +157,20 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 		manualAgentID = ""
 	}
 	var snapshotRoute *orchestration.RouteDecision
+	conversation := recentChatContext(request, services, chatID, 8)
 	if services.Graph != nil {
 		if snapshot, err := services.Graph.Latest(request.Context()); err == nil {
-			decision := routeChatIntent(request.Context(), services, content, manualAgentID, snapshot)
+			decision := routeChatIntent(request.Context(), services, content, manualAgentID, snapshot, conversation)
 			snapshotRoute = &decision
 		}
 	}
 	if snapshotRoute == nil {
 		decision := orchestration.Route(content, manualAgentID, nil)
 		snapshotRoute = &decision
+	}
+	if len(selectedSkills) > 0 {
+		snapshotRoute.RequiredSkills = uniqueStrings(append(snapshotRoute.RequiredSkills, selectedSkills...))
+		snapshotRoute.Rationale = strings.TrimSpace(snapshotRoute.Rationale + " User-selected skills were added to the run context.")
 	}
 	if snapshotRoute.Mode != orchestration.ModeWorkspaceRun {
 		reply := orchestration.DirectReply(*snapshotRoute)
@@ -188,6 +195,32 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	}
 	startRunWorker(options, services, started.Executor, started.Request, started.Session, started.Tasks)
 	return &chatMessageResponse{Message: message, Run: &started.Response, RouteDecision: snapshotRoute}, nil
+}
+
+func recentChatContext(request *http.Request, services Services, chatID string, limit int) string {
+	if services.Chats == nil || limit <= 0 {
+		return ""
+	}
+	detail, err := services.Chats.Detail(request.Context(), chatID)
+	if err != nil {
+		return ""
+	}
+	messages := detail.Messages
+	if len(messages) > limit {
+		messages = messages[len(messages)-limit:]
+	}
+	lines := make([]string, 0, len(messages))
+	for _, message := range messages {
+		content := strings.Join(strings.Fields(message.Content), " ")
+		if content == "" {
+			continue
+		}
+		if len(content) > 240 {
+			content = content[:237] + "..."
+		}
+		lines = append(lines, message.Role+": "+content)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func routeMetadata(route *orchestration.RouteDecision) json.RawMessage {

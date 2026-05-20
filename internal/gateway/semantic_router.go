@@ -16,9 +16,9 @@ import (
 
 const semanticRouteMinConfidence = 0.6
 
-func routeChatIntent(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot) orchestration.RouteDecision {
+func routeChatIntent(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot, conversation string) orchestration.RouteDecision {
 	fallback := orchestration.Route(prompt, manualAgentID, snapshot)
-	semantic, err := semanticRoute(ctx, services, prompt, manualAgentID, snapshot, fallback)
+	semantic, err := semanticRoute(ctx, services, prompt, manualAgentID, snapshot, fallback, conversation)
 	if err != nil {
 		return fallback
 	}
@@ -30,7 +30,7 @@ func routeChatIntent(ctx context.Context, services Services, prompt string, manu
 	return semantic
 }
 
-func semanticRoute(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot, fallback orchestration.RouteDecision) (orchestration.RouteDecision, error) {
+func semanticRoute(ctx context.Context, services Services, prompt string, manualAgentID string, snapshot *graph.Snapshot, fallback orchestration.RouteDecision, conversation string) (orchestration.RouteDecision, error) {
 	if services.Adapter == nil || services.Secrets == nil || snapshot == nil {
 		return orchestration.RouteDecision{}, fmt.Errorf("semantic router unavailable")
 	}
@@ -64,7 +64,7 @@ func semanticRoute(ctx context.Context, services Services, prompt string, manual
 		}
 		apiKey = resolved
 	}
-	routerPrompt := semanticRouterPrompt(prompt, manualAgentID, snapshot, fallback)
+	routerPrompt := semanticRouterPrompt(prompt, manualAgentID, snapshot, fallback, conversation)
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	result, err := services.Adapter.Invoke(ctx, adapters.ModelConfig{
@@ -112,7 +112,7 @@ func semanticRoute(ctx context.Context, services Services, prompt string, manual
 	return decision, nil
 }
 
-func semanticRouterPrompt(prompt string, manualAgentID string, snapshot *graph.Snapshot, fallback orchestration.RouteDecision) string {
+func semanticRouterPrompt(prompt string, manualAgentID string, snapshot *graph.Snapshot, fallback orchestration.RouteDecision, conversation string) string {
 	agents := []string{}
 	if snapshot != nil {
 		for id, agent := range snapshot.IR.Agents {
@@ -160,8 +160,11 @@ Fallback route: %+v
 Available agents:
 %s
 
+Recent chat context:
+%s
+
 Chat message:
-%s`, manualAgentID, fallback, strings.Join(agents, "\n"), prompt)
+%s`, manualAgentID, fallback, strings.Join(agents, "\n"), conversation, prompt)
 }
 
 func parseRouteDecision(content string) (orchestration.RouteDecision, error) {

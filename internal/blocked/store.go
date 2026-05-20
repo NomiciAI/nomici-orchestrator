@@ -166,6 +166,41 @@ WHERE session_id = ?`
 	return actions, nil
 }
 
+func (store *Store) List(ctx context.Context, status string, limit int) ([]*Action, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `
+SELECT blocked_action_id, session_id, run_id, task_id, kind, status, title, body,
+	required_action, resume_target_task_id, approval_id, artifact_id, tool_call_id,
+	metadata_json, created_at, updated_at, resolved_at
+FROM blocked_actions`
+	args := []any{}
+	if status != "" {
+		query += " WHERE status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY updated_at DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := store.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list blocked actions: %w", err)
+	}
+	defer rows.Close()
+	var actions []*Action
+	for rows.Next() {
+		action, err := scanAction(rows)
+		if err != nil {
+			return nil, err
+		}
+		actions = append(actions, action)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list blocked actions: %w", err)
+	}
+	return actions, nil
+}
+
 func (store *Store) Get(ctx context.Context, actionID string) (*Action, error) {
 	row := store.db.QueryRowContext(ctx, `
 SELECT blocked_action_id, session_id, run_id, task_id, kind, status, title, body,

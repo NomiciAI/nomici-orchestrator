@@ -37,6 +37,7 @@ type Request struct {
 	AgentID  string
 	Prompt   string
 	RunID    string
+	Tools    []adapters.ToolSchema
 }
 
 type Result struct {
@@ -47,6 +48,7 @@ type Result struct {
 	GraphSnapshotID   string
 	ContextSnapshotID string
 	Messages          []adapters.Message
+	ToolCalls         []adapters.ToolCall
 	CLI               *clirunner.Result
 }
 
@@ -194,6 +196,7 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 			"base_url":       profile.BaseURL,
 			"prompt":         sharedcontext.RedactText(prompt),
 			"api_key_source": profile.APIKeyEnv,
+			"tool_schemas":   len(request.Tools),
 		}),
 		Redactions: redactions,
 	}); err != nil {
@@ -207,6 +210,7 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 		RunID:    runID,
 		NodeID:   agent.ID,
 		Messages: []adapters.Message{{Role: "user", Content: prompt}},
+		Tools:    request.Tools,
 		Options:  adapters.InvokeOptions{Stream: false},
 	})
 	if err != nil {
@@ -232,6 +236,7 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 			"model":          profile.Model,
 			"usage":          invokeResult.Usage,
 			"messages":       redactMessages(invokeResult.Messages),
+			"tool_calls":     redactToolCalls(invokeResult.ToolCalls),
 			"output_preview": messagePreview(invokeResult.Messages),
 		}),
 	}); err != nil {
@@ -244,7 +249,7 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 	}); err != nil {
 		return nil, err
 	}
-	return &Result{RunID: runID, Status: adapters.StatusCompleted, AgentID: agent.ID, GraphSnapshotID: request.Snapshot.SnapshotID, Messages: invokeResult.Messages}, nil
+	return &Result{RunID: runID, Status: adapters.StatusCompleted, AgentID: agent.ID, GraphSnapshotID: request.Snapshot.SnapshotID, Messages: invokeResult.Messages, ToolCalls: invokeResult.ToolCalls}, nil
 }
 
 func (executor *Executor) executeExternal(ctx context.Context, request Request, agent graph.Agent, runID string, taskID string) (*Result, error) {
@@ -959,6 +964,18 @@ func redactMessages(messages []adapters.Message) []adapters.Message {
 	redacted := make([]adapters.Message, 0, len(messages))
 	for _, message := range messages {
 		redacted = append(redacted, adapters.Message{Role: message.Role, Content: sharedcontext.RedactText(limitText(message.Content, previewLimit))})
+	}
+	return redacted
+}
+
+func redactToolCalls(calls []adapters.ToolCall) []adapters.ToolCall {
+	redacted := make([]adapters.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		input := map[string]any{}
+		for key, value := range call.Input {
+			input[key] = sharedcontext.RedactText(limitText(fmt.Sprint(value), previewLimit))
+		}
+		redacted = append(redacted, adapters.ToolCall{ID: call.ID, ToolID: call.ToolID, Input: input})
 	}
 	return redacted
 }

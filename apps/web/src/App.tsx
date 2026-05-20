@@ -210,6 +210,15 @@ type ArtifactContent = {
   truncated: boolean;
 };
 
+type ArtifactRevision = {
+  revision_id: string;
+  artifact_id: string;
+  revision: number;
+  review_state: string;
+  diff_preview?: string;
+  created_at: string;
+};
+
 type ToolCallRecord = {
   tool_call_id: string;
   task_id?: string;
@@ -343,6 +352,9 @@ type AgentRecord = {
   skills?: string[];
   tags?: string[];
   triggers?: string[];
+  approval_policy?: string;
+  permissions?: Record<string, unknown>;
+  runtime_profile?: Record<string, unknown>;
 };
 
 type OrchestrationConfig = {
@@ -360,6 +372,9 @@ type OrchestrationConfig = {
         description?: string;
         required?: string[];
       };
+      required_tools?: string[];
+      required_skills?: string[];
+      plan_review_policy?: string;
     }
   >;
 };
@@ -429,6 +444,7 @@ export function App() {
   const [error, setError] = useState("");
   const [runAgentId, setRunAgentId] = useState("auto");
   const [messageText, setMessageText] = useState("");
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [activeRouteDecision, setActiveRouteDecision] =
     useState<RouteDecision | null>(null);
   const [activeRunId, setActiveRunId] = useState("");
@@ -449,9 +465,13 @@ export function App() {
   const [mutatingApproval, setMutatingApproval] = useState("");
   const [memoryProposals, setMemoryProposals] = useState<MemoryProposal[]>([]);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [reviewQueue, setReviewQueue] = useState<BlockedAction[]>([]);
   const [mutatingMemory, setMutatingMemory] = useState("");
   const [artifactContent, setArtifactContent] =
     useState<ArtifactContent | null>(null);
+  const [artifactRevisions, setArtifactRevisions] = useState<
+    ArtifactRevision[]
+  >([]);
   const [artifactMutation, setArtifactMutation] = useState("");
   const [agentDraft, setAgentDraft] = useState<AgentRecord>({
     id: "",
@@ -542,6 +562,7 @@ export function App() {
         nextOrchestration,
         nextMemory,
         nextMemoryItems,
+        nextReviewQueue,
       ] = await Promise.all([
           apiRequest<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
           apiRequest<ProviderDefinition[]>(
@@ -571,6 +592,11 @@ export function App() {
           apiRequest<MemoryItem[]>("/api/memory/items", {}, nextToken).catch(
             () => [],
           ),
+          apiRequest<BlockedAction[]>(
+            "/api/review-queue?status=open",
+            {},
+            nextToken,
+          ).catch(() => []),
         ]);
       setChats(nextChats ?? []);
       setProviderCatalog(catalog ?? []);
@@ -580,6 +606,7 @@ export function App() {
       setOrchestration(nextOrchestration ?? {});
       setMemoryProposals(nextMemory ?? []);
       setMemoryItems(nextMemoryItems ?? []);
+      setReviewQueue(nextReviewQueue ?? []);
       setStatus("ready");
     } catch (loadError) {
       const message =
@@ -681,6 +708,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           agent_id: runAgentId === "auto" ? "" : selectedAgent?.id,
+          selected_skills: selectedSkillIds,
           prompt: content,
           content,
         }),
@@ -1025,7 +1053,11 @@ export function App() {
       const content = await apiRequest<ArtifactContent>(
         `/api/artifacts/${encodeURIComponent(artifactID)}/content`,
       );
+      const revisions = await apiRequest<ArtifactRevision[]>(
+        `/api/artifacts/${encodeURIComponent(artifactID)}/revisions`,
+      ).catch(() => []);
       setArtifactContent(content);
+      setArtifactRevisions(revisions);
     } catch (artifactError) {
       setWorkspaceError(
         artifactError instanceof Error
@@ -1373,6 +1405,25 @@ export function App() {
                       ))}
                     </select>
                   </details>
+                  <details className="advanced-agent-picker">
+                    <summary>Skills: {selectedSkillIds.length || "Auto"}</summary>
+                    <div className="checkbox-grid composer-skill-grid">
+                      {skillCatalog.map((skill) => (
+                        <label key={skill.id}>
+                          <input
+                            type="checkbox"
+                            checked={selectedSkillIds.includes(skill.id)}
+                            onChange={() =>
+                              setSelectedSkillIds(
+                                toggleListValue(selectedSkillIds, skill.id),
+                              )
+                            }
+                          />
+                          <span>{skill.name || skill.id}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
                   <button
                     className="button task-submit"
                     type="submit"
@@ -1405,6 +1456,7 @@ export function App() {
               memoryProposals={memoryProposals}
               memoryItems={memoryItems}
               artifactContent={artifactContent}
+              artifactRevisions={artifactRevisions}
               artifactMutation={artifactMutation}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
@@ -1456,6 +1508,7 @@ export function App() {
               memoryProposals={memoryProposals}
               memoryItems={memoryItems}
               artifactContent={artifactContent}
+              artifactRevisions={artifactRevisions}
               artifactMutation={artifactMutation}
               planArtifact={sessionNeedsPlanReview ? planArtifact : undefined}
               planRevision={planRevision}
@@ -1518,9 +1571,43 @@ export function App() {
                 ))}
               </div>
             </section>
+            <section className="panel" aria-label="Review queue">
+              <div className="panel-heading">
+                <h2>Review queue</h2>
+                <span className="tag">{reviewQueue.length}</span>
+              </div>
+              <div className="stack">
+                {reviewQueue.slice(0, 8).map((action) => (
+                  <button
+                    className="list-item list-button"
+                    key={action.blocked_action_id}
+                    type="button"
+                    onClick={() => {
+                      setActiveRunId(action.run_id);
+                      setActiveSessionId(action.session_id);
+                      void loadSessionDetail(action.session_id);
+                    }}
+                  >
+                    <div>
+                      <strong>{action.title}</strong>
+                      <span>{action.kind}</span>
+                    </div>
+                    <div className="list-meta">
+                      <span>{action.status}</span>
+                      <span>{formatTime(action.updated_at)}</span>
+                    </div>
+                  </button>
+                ))}
+                {reviewQueue.length === 0 ? (
+                  <p className="empty compact-empty">No open review items.</p>
+                ) : null}
+              </div>
+            </section>
             <OrchestrateBuilder
               agents={agents}
               orchestration={orchestration}
+              toolCatalog={toolCatalog}
+              skillCatalog={skillCatalog}
               saving={settingsMutation === "orchestration"}
               onSave={(next) => void saveOrchestration(next)}
             />
@@ -1627,6 +1714,7 @@ function WorkspacePanel({
   memoryProposals,
   memoryItems,
   artifactContent,
+  artifactRevisions,
   artifactMutation,
   planArtifact,
   planRevision,
@@ -1664,6 +1752,7 @@ function WorkspacePanel({
   memoryProposals: MemoryProposal[];
   memoryItems: MemoryItem[];
   artifactContent: ArtifactContent | null;
+  artifactRevisions: ArtifactRevision[];
   artifactMutation: string;
   planArtifact?: ArtifactRecord;
   planRevision: string;
@@ -2019,6 +2108,28 @@ function WorkspacePanel({
               </div>
               <code>{artifactContent.path}</code>
               <pre>{artifactContent.content}</pre>
+              {artifactRevisions.length > 0 ? (
+                <div className="revision-list">
+                  <div className="mini-heading no-border">
+                    <strong>Revisions</strong>
+                    <span>{artifactRevisions.length}</span>
+                  </div>
+                  {artifactRevisions.slice(0, 5).map((revision) => (
+                    <div
+                      className="event-row passive-row"
+                      key={revision.revision_id}
+                    >
+                      <span>
+                        r{revision.revision} / {revision.review_state}
+                      </span>
+                      <strong>{formatTime(revision.created_at)}</strong>
+                      {revision.diff_preview ? (
+                        <small>{revision.diff_preview}</small>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -2176,11 +2287,15 @@ function RoleTimeline({ tasks }: { tasks: RunTask[] }) {
 function OrchestrateBuilder({
   agents,
   orchestration,
+  toolCatalog,
+  skillCatalog,
   saving,
   onSave,
 }: {
   agents: AgentRecord[];
   orchestration: OrchestrationConfig;
+  toolCatalog: ToolDefinition[];
+  skillCatalog: SkillDefinition[];
   saving: boolean;
   onSave: (next: OrchestrationConfig) => void;
 }) {
@@ -2377,6 +2492,82 @@ function OrchestrateBuilder({
               placeholder="Expected deliverable"
             />
           </label>
+          <label>
+            <span>Role plan review</span>
+            <select
+              value={currentRoleConfig.plan_review_policy ?? "auto"}
+              onChange={(event) =>
+                updateRole(currentRole, {
+                  plan_review_policy: event.target.value,
+                })
+              }
+              disabled={saving}
+            >
+              <option value="auto">Auto</option>
+              <option value="required">Required</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          <div className="selection-panel">
+            <div className="mini-heading no-border">
+              <strong>Required tools</strong>
+              <span>{currentRoleConfig.required_tools?.length ?? 0}</span>
+            </div>
+            <div className="checkbox-grid">
+              {toolCatalog.map((tool) => (
+                <label key={tool.id}>
+                  <input
+                    type="checkbox"
+                    checked={
+                      currentRoleConfig.required_tools?.includes(tool.id) ??
+                      false
+                    }
+                    onChange={() =>
+                      updateRole(currentRole, {
+                        required_tools: toggleListValue(
+                          currentRoleConfig.required_tools ?? [],
+                          tool.id,
+                        ),
+                      })
+                    }
+                    disabled={saving}
+                  />
+                  <span>{tool.id}</span>
+                  <small>{tool.mutation_risk}</small>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="selection-panel">
+            <div className="mini-heading no-border">
+              <strong>Required skills</strong>
+              <span>{currentRoleConfig.required_skills?.length ?? 0}</span>
+            </div>
+            <div className="checkbox-grid">
+              {skillCatalog.map((skill) => (
+                <label key={skill.id}>
+                  <input
+                    type="checkbox"
+                    checked={
+                      currentRoleConfig.required_skills?.includes(skill.id) ??
+                      false
+                    }
+                    onChange={() =>
+                      updateRole(currentRole, {
+                        required_skills: toggleListValue(
+                          currentRoleConfig.required_skills ?? [],
+                          skill.id,
+                        ),
+                      })
+                    }
+                    disabled={saving}
+                  />
+                  <span>{skill.name || skill.id}</span>
+                  <small>{skill.risk || "low"}</small>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
       <div className="config-preview">
@@ -2522,6 +2713,98 @@ function AgentBuilder({
               placeholder="local_cli"
             />
           </label>
+          <label>
+            <span>Approval policy</span>
+            <select
+              value={draft.approval_policy ?? "default"}
+              onChange={(event) =>
+                setDraft({ ...draft, approval_policy: event.target.value })
+              }
+            >
+              <option value="default">Default</option>
+              <option value="ask">Ask for mutations</option>
+              <option value="strict">Strict review</option>
+              <option value="readonly">Read-only</option>
+            </select>
+          </label>
+        </div>
+        {draft.kind === "external_agent" ? (
+          <div className="builder-grid">
+            <label>
+              <span>Command template</span>
+              <input
+                value={String(draft.runtime_profile?.command_template ?? "")}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    runtime_profile: {
+                      ...(draft.runtime_profile ?? {}),
+                      command_template: event.target.value,
+                    },
+                  })
+                }
+                placeholder="agent-cli run --prompt {{prompt}}"
+              />
+            </label>
+            <label>
+              <span>Timeout seconds</span>
+              <input
+                type="number"
+                min="1"
+                max="3600"
+                value={String(draft.runtime_profile?.timeout_seconds ?? "")}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    runtime_profile: {
+                      ...(draft.runtime_profile ?? {}),
+                      timeout_seconds: Number(event.target.value || 0),
+                    },
+                  })
+                }
+                placeholder="300"
+              />
+            </label>
+          </div>
+        ) : null}
+        <div className="builder-grid">
+          <label>
+            <span>Filesystem permission</span>
+            <select
+              value={String(draft.permissions?.filesystem ?? "approval")}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  permissions: {
+                    ...(draft.permissions ?? {}),
+                    filesystem: event.target.value,
+                  },
+                })
+              }
+            >
+              <option value="read">Read</option>
+              <option value="approval">Write with approval</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label>
+            <span>Bash permission</span>
+            <select
+              value={String(draft.permissions?.bash ?? "approval")}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  permissions: {
+                    ...(draft.permissions ?? {}),
+                    bash: event.target.value,
+                  },
+                })
+              }
+            >
+              <option value="approval">Run with approval</option>
+              <option value="none">None</option>
+            </select>
+          </label>
         </div>
         <label>
           <span>Description</span>
@@ -2633,6 +2916,13 @@ function AgentBuilder({
             {validation === "valid" ? "Agent config is valid." : validation}
           </div>
         ) : null}
+        <div className="config-preview compact-config">
+          <div className="mini-heading no-border">
+            <strong>Save preview</strong>
+            <span>{draft.id || "new agent"}</span>
+          </div>
+          <pre>{JSON.stringify(draft, null, 2)}</pre>
+        </div>
         <button
           className="button button-secondary"
           type="button"

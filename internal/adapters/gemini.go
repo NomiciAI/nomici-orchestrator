@@ -28,7 +28,11 @@ func (adapter *GeminiAdapter) Invoke(ctx context.Context, baseURL string, model 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	body, err := json.Marshal(geminiRequest{Contents: geminiContents(request.Messages)})
+	payload := geminiRequest{Contents: geminiContents(request.Messages)}
+	if len(request.Tools) > 0 {
+		payload.Tools = geminiTools(request.Tools)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal Gemini request: %w", err)
 	}
@@ -59,6 +63,11 @@ func (adapter *GeminiAdapter) Invoke(ctx context.Context, baseURL string, model 
 		return nil, fmt.Errorf("read Gemini response: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if len(request.Tools) > 0 && retryableToolSchemaStatus(response.StatusCode) {
+			retry := request
+			retry.Tools = nil
+			return adapter.Invoke(ctx, baseURL, model, apiKey, retry)
+		}
 		code := ErrorEndpointUnavailable
 		retryable := response.StatusCode >= 500
 		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
@@ -76,8 +85,9 @@ func (adapter *GeminiAdapter) Invoke(ctx context.Context, baseURL string, model 
 		return &InvokeResult{Status: StatusFailed, Error: &AdapterError{Code: ErrorInvalidResponse, Message: "provider returned invalid JSON", Retryable: false}}, nil
 	}
 	return &InvokeResult{
-		Status:   StatusCompleted,
-		Messages: []Message{{Role: "assistant", Content: strings.TrimSpace(geminiText(decoded))}},
+		Status:    StatusCompleted,
+		Messages:  []Message{{Role: "assistant", Content: strings.TrimSpace(geminiText(decoded))}},
+		ToolCalls: geminiToolCalls(decoded),
 		Usage: &UsageInfo{
 			InputTokens:  decoded.UsageMetadata.PromptTokenCount,
 			OutputTokens: decoded.UsageMetadata.CandidatesTokenCount,
@@ -122,6 +132,7 @@ func geminiText(response geminiResponse) string {
 
 type geminiRequest struct {
 	Contents []geminiContent `json:"contents"`
+	Tools    []geminiTool    `json:"tools,omitempty"`
 }
 
 type geminiContent struct {
@@ -130,7 +141,23 @@ type geminiContent struct {
 }
 
 type geminiPart struct {
-	Text string `json:"text"`
+	Text         string              `json:"text,omitempty"`
+	FunctionCall *geminiFunctionCall `json:"functionCall,omitempty"`
+}
+
+type geminiTool struct {
+	FunctionDeclarations []geminiFunctionDeclaration `json:"functionDeclarations"`
+}
+
+type geminiFunctionDeclaration struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type geminiFunctionCall struct {
+	Name string         `json:"name"`
+	Args map[string]any `json:"args,omitempty"`
 }
 
 type geminiResponse struct {
@@ -142,4 +169,41 @@ type geminiResponse struct {
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
 		TotalTokenCount      int `json:"totalTokenCount"`
 	} `json:"usageMetadata"`
+}
+
+func geminiTools(tools []ToolSchema) []geminiTool {
+	declarations := make([]geminiFunctionDeclaration, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.ID)
+		if name == "" {
+			continue
+		}
+		parameters := tool.Parameters
+		if parameters == nil {
+			parameters = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		declarations = append(declarations, geminiFunctionDeclaration{Name: name, Description: tool.Description, Parameters: parameters})
+	}
+	if len(declarations) == 0 {
+		return nil
+	}
+	return []geminiTool{{FunctionDeclarations: declarations}}
+}
+
+func geminiToolCalls(response geminiResponse) []ToolCall {
+	if len(response.Candidates) == 0 {
+		return nil
+	}
+	result := []ToolCall{}
+	for _, part := range response.Candidates[0].Content.Parts {
+		if part.FunctionCall == nil || strings.TrimSpace(part.FunctionCall.Name) == "" {
+			continue
+		}
+		input := part.FunctionCall.Args
+		if input == nil {
+			input = map[string]any{}
+		}
+		result = append(result, ToolCall{ToolID: part.FunctionCall.Name, Input: input})
+	}
+	return result
 }

@@ -46,6 +46,7 @@ After resolving the action, Console resumes the session when it is safe. CLI use
 
 ```bash
 nomici session show <session_id>
+nomici review list
 nomici approvals list
 ```
 
@@ -59,12 +60,28 @@ Check the session sandbox policy and workspace roots in Console. Mutating tools 
 - approval unless a scoped grant already exists
 - no critical command pattern for bash
 
-Container bash execution requires Docker or Podman and an explicit container sandbox.
+Container bash execution requires Docker or Podman and an explicit container sandbox. The container provider mounts the session workspace at `/workspace` and uses the configured runtime binary from sandbox detection.
 
 ## Artifacts have preview but no downloadable file
 
-Some artifacts are text-only records. Download is available when the artifact has a file path inside the session workspace or artifact root. Use the preview for text-only plan/report artifacts.
+Some artifacts are text-only records. Download is available when the artifact has a file path inside the session workspace or artifact root. Use the preview for text-only plan/report artifacts, and inspect revisions with `nomici artifact revisions <artifact_id>` when a plan or report was revised.
 
 ## Memory is not reused
 
-Only approved memory proposals become reusable context. Review memory proposals in Console, approve the useful ones, and delete stale approved items when they no longer apply.
+Only approved memory proposals become reusable context. Review memory proposals in Console, approve the useful ones, and delete stale approved items when they no longer apply. CLI users can inspect approved items with `nomici memory items` and delete stale entries with `nomici memory delete-item <context_id>`.
+
+## Router decisions look wrong
+
+Run the local router eval harness:
+
+```bash
+nomici eval router
+```
+
+For a specific prompt, use:
+
+```bash
+nomici eval router --prompt "implement the fix and run tests"
+```
+
+The command checks baseline direct-reply, clarification, research, and mutation cases. Provider-backed routing still depends on the configured model and falls back to the local heuristic when the provider is unavailable or returns invalid structured output.
