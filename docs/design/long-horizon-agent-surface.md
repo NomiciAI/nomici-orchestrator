@@ -4,14 +4,14 @@
 
 Nomici should support agent work that lasts minutes to hours without becoming a hidden agent framework.
 
-Projects such as DeerFlow show a useful product shape: sandboxes, memory, tools, skills, subagents, and a message gateway make long tasks feel like one coherent agent workspace. Nomici should learn from that shape, but keep its own boundary:
+Long-horizon agent systems need sandboxes, memory, tools, skills, subagents, and a message gateway so tasks feel like one coherent workspace. Nomici should provide the control-plane layer for that product shape while keeping its own boundary:
 
 - Nomici is the local-first control plane.
 - Specialized runtimes keep their own reasoning loops, memory, tools, and sessions.
 - Gateway owns graph coordination, policy, approvals, traces, artifacts, and cross-agent context.
 - External runtimes are integrated through adapters instead of being absorbed into core.
 
-The implementation details that matter are architectural, not cosmetic. DeerFlow's sandbox layer uses a provider lifecycle (`acquire`, `get`, `release`), deterministic thread-scoped sandbox identity, workspace/uploads/outputs mounts, read-only skills mounts, readiness checks, warm-pool reuse, idle cleanup, and startup reconciliation for orphaned containers. Its subagent layer resolves built-in and custom agents through a registry, applies per-agent overrides, loads skills per subagent, filters tools through skill policy, and passes parent thread/sandbox state into child execution. Nomici should translate those mechanics into control-plane records and adapter contracts before trying to mimic all runtime behavior.
+The implementation details that matter are architectural, not cosmetic. The useful primitives are a provider lifecycle (`acquire`, `get`, `release`), deterministic run-scoped sandbox identity, workspace/uploads/outputs mounts, read-only skills mounts, readiness checks, warm-pool reuse, idle cleanup, and startup reconciliation for orphaned workspaces. The subagent layer should resolve built-in and custom agents through a registry, apply per-agent overrides, load skills per subagent, filter tools through skill policy, and pass parent run/sandbox state into child execution. Nomici should translate those mechanics into control-plane records and adapter contracts before adding broad runtime behavior.
 
 ## Product Surface
 
@@ -114,7 +114,7 @@ v0.1 stance:
 
 ## Subagents
 
-DeerFlow's subagent shape maps well to Nomici, but the implementation should stay graph-native.
+Subagent execution should stay graph-native in Nomici.
 
 Subagent responsibilities:
 

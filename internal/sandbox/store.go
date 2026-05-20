@@ -53,7 +53,7 @@ func (store *Store) CreateForRun(ctx context.Context, request CreateRecordReques
 			"workspace_mount":     "/workspace",
 			"artifact_mount":      "/artifacts",
 			"base_dir":            request.BaseDir,
-			"deerflow_reference":  "SandboxProvider acquire/get/release lifecycle with per-run workspace mounts.",
+			"design_note":         "SandboxProvider acquire/get/release lifecycle with per-run workspace mounts.",
 			"allocation_strategy": "deterministic_run_id",
 		})
 		if err != nil {

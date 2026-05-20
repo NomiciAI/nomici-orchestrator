@@ -72,7 +72,7 @@ Planned:
 - Timeline replay improvements
 - Policy engine v1
 
-See `docs/design/deerflow-reference-roadmap.md` for the DeerFlow-inspired gap analysis, phased delivery plan, per-PR sequence, and acceptance criteria.
+See `docs/design/long-horizon-capability-roadmap.md` for the long-horizon capability gap analysis, phased delivery plan, per-PR sequence, and acceptance criteria.
 
 ## v0.3: Framework Adapters
 
