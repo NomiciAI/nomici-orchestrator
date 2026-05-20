@@ -292,4 +292,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id, crea
 CREATE INDEX IF NOT EXISTS idx_chat_messages_run ON chat_messages(run_id);
 `,
 	},
+	{
+		Version: 11,
+		SQL: `
+ALTER TABLE run_sessions ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'idle';
+ALTER TABLE run_tasks ADD COLUMN blocked_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE run_tasks ADD COLUMN selected_context_snapshot_id TEXT NOT NULL DEFAULT '';
+`,
+	},
 }

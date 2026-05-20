@@ -47,6 +47,17 @@ LIMIT 1`)
 	return scanSnapshot(row)
 }
 
+func (store *Store) Get(ctx context.Context, snapshotID string) (*Snapshot, error) {
+	if snapshotID == "" {
+		return nil, fmt.Errorf("graph snapshot id is required")
+	}
+	row := store.db.QueryRowContext(ctx, `
+SELECT snapshot_id, schema_version, project_id, source_hash, ir_json, created_at
+FROM graph_snapshots
+WHERE snapshot_id = ?`, snapshotID)
+	return scanSnapshot(row)
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
