@@ -26,6 +26,10 @@ type RouteDecision struct {
 	SelectedRoles      []string `json:"selected_roles"`
 	NeedsPlanReview    bool     `json:"needs_plan_review"`
 	RequiredTools      []string `json:"required_tools"`
+	RequiredSkills     []string `json:"required_skills,omitempty"`
+	MissingInputs      []string `json:"missing_inputs,omitempty"`
+	Risk               string   `json:"risk,omitempty"`
+	Confidence         float64  `json:"confidence,omitempty"`
 	Rationale          string   `json:"rationale"`
 	Clarification      string   `json:"clarification,omitempty"`
 	ManualAgentID      string   `json:"manual_agent_id,omitempty"`
@@ -65,6 +69,8 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		Complexity:         ComplexityMedium,
 		RecommendedAgentID: defaultAgent(snapshot),
 		ManualAgentID:      strings.TrimSpace(manualAgentID),
+		Confidence:         0.55,
+		Risk:               "medium",
 		Rationale:          "Defaulting to a workspace run so Nomici can plan, execute, and preserve artifacts.",
 	}
 	if decision.ManualAgentID != "" {
@@ -77,37 +83,51 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		decision.Mode = ModeClarify
 		decision.Complexity = ComplexitySimple
 		decision.Clarification = "What outcome should Nomici deliver?"
+		decision.MissingInputs = []string{"goal"}
+		decision.Confidence = 0.95
+		decision.Risk = "low"
 		decision.Rationale = "The chat message was empty."
 		return decision
 	case isDirectQuery(lower):
 		decision.Mode = ModeDirectReply
 		decision.Complexity = ComplexitySimple
+		decision.Confidence = 0.8
+		decision.Risk = "low"
 		decision.Rationale = "This looks like a status, setup, or navigation question rather than a workspace task."
 		return decision
 	case isAmbiguous(lower):
 		decision.Mode = ModeClarify
 		decision.Complexity = ComplexitySimple
 		decision.Clarification = "Please include the target outcome and any constraints, files, or tools Nomici should use."
+		decision.MissingInputs = []string{"target_outcome", "constraints"}
+		decision.Confidence = 0.8
+		decision.Risk = "low"
 		decision.Rationale = "The request is too short to choose a safe execution plan."
 		return decision
 	}
 	if wantsImplementation(lower) || wantsResearch(lower) || wantsPlan(lower) {
 		decision.Complexity = ComplexityLongHorizon
+		decision.Confidence = 0.7
 		decision.Rationale = "The request implies planning, verification, implementation, or research across multiple steps."
 	} else {
 		decision.Complexity = ComplexityMedium
 	}
 	if wantsResearch(lower) {
 		decision.RequiredTools = append(decision.RequiredTools, "read_project")
+		decision.RequiredSkills = append(decision.RequiredSkills, "research")
 	}
 	if wantsImplementation(lower) {
 		decision.RequiredTools = append(decision.RequiredTools, "read_project", "write_project", "run_checks")
+		decision.RequiredSkills = append(decision.RequiredSkills, "coding")
 		decision.NeedsPlanReview = true
+		decision.Risk = "high"
 	}
 	if wantsMutation(lower) {
 		decision.NeedsPlanReview = true
+		decision.Risk = "high"
 	}
 	decision.RequiredTools = unique(decision.RequiredTools)
+	decision.RequiredSkills = unique(decision.RequiredSkills)
 	return decision
 }
 

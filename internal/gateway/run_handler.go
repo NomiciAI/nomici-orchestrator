@@ -20,12 +20,15 @@ import (
 	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
+	"github.com/NomiciAI/nomici-orchestrator/internal/memory"
 	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/projectconfig"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
+	"github.com/NomiciAI/nomici-orchestrator/internal/skills"
+	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	uploadpkg "github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 	"github.com/go-chi/chi/v5"
@@ -61,11 +64,12 @@ type traceEventResponse struct {
 }
 
 type runSessionDetailResponse struct {
-	Session   *runpkg.Session         `json:"session"`
-	Tasks     []*runpkg.Task          `json:"tasks"`
-	Sandbox   *sandbox.Record         `json:"sandbox,omitempty"`
-	Uploads   []*uploadpkg.Upload     `json:"uploads,omitempty"`
-	Artifacts []*artifactpkg.Artifact `json:"artifacts,omitempty"`
+	Session   *runpkg.Session          `json:"session"`
+	Tasks     []*runpkg.Task           `json:"tasks"`
+	Sandbox   *sandbox.Record          `json:"sandbox,omitempty"`
+	Uploads   []*uploadpkg.Upload      `json:"uploads,omitempty"`
+	Artifacts []*artifactpkg.Artifact  `json:"artifacts,omitempty"`
+	ToolCalls []*toolbroker.CallRecord `json:"tool_calls,omitempty"`
 }
 
 var detectSandboxAvailability = sandbox.Detect
@@ -228,7 +232,7 @@ func startRunWorker(options Options, services Services, executor *runpkg.Executo
 	go func() {
 		runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := executeWorkspaceSession(runCtx, services, executor, request, session, tasks); err != nil {
+		if err := executeWorkspaceSession(runCtx, options, services, executor, request, session, tasks); err != nil {
 			if current, lookupErr := services.Runs.GetBySession(runCtx, session.SessionID); lookupErr == nil {
 				switch current.Session.Status {
 				case runpkg.SessionStatusCancelled:
@@ -510,7 +514,15 @@ func sessionDetailPayload(ctx context.Context, services Services, detail *runpkg
 		}
 		artifacts = records
 	}
-	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts}, nil
+	var toolCalls []*toolbroker.CallRecord
+	if services.Tools != nil {
+		records, err := services.Tools.ListBySession(ctx, detail.Session.SessionID, 50)
+		if err != nil {
+			return nil, err
+		}
+		toolCalls = records
+	}
+	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts, ToolCalls: toolCalls}, nil
 }
 
 func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string, sourceChannel string, metadata map[string]any, routeDecision *orchestration.RouteDecision) (*runpkg.Session, *sandbox.Record, []*runpkg.Task, error) {
@@ -619,7 +631,7 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 	return session, sandboxRecord, tasks, nil
 }
 
-func executeWorkspaceSession(ctx context.Context, services Services, executor *runpkg.Executor, request runpkg.Request, session *runpkg.Session, tasks []*runpkg.Task) error {
+func executeWorkspaceSession(ctx context.Context, options Options, services Services, executor *runpkg.Executor, request runpkg.Request, session *runpkg.Session, tasks []*runpkg.Task) error {
 	var summaries []string
 	for index, task := range tasks {
 		if task.Status == runpkg.TaskStatusCompleted {
@@ -659,6 +671,46 @@ func executeWorkspaceSession(ctx context.Context, services Services, executor *r
 			}
 			continue
 		}
+		if task.Status == runpkg.TaskStatusBlocked && taskMetadataString(task, "output_preview") != "" {
+			if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
+				return err
+			}
+			postToolSummaries, err := executeRoleToolPreparation(ctx, options, services, session, task, "post")
+			if err != nil {
+				return err
+			}
+			summary := taskMetadataString(task, "summary")
+			if len(postToolSummaries) > 0 {
+				summary = strings.Join(append([]string{summary}, postToolSummaries...), "\n")
+				if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+					"summary": summary,
+				}); err != nil {
+					return err
+				}
+			}
+			if err := services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusCompleted); err != nil {
+				return err
+			}
+			if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCompleted, task.AgentID, map[string]any{
+				"task_id": task.TaskID,
+				"status":  runpkg.TaskStatusCompleted,
+				"summary": summary,
+				"reason":  "tool_approval_resolved",
+			}); err != nil {
+				return err
+			}
+			var nextTask *runpkg.Task
+			if index+1 < len(tasks) {
+				nextTask = tasks[index+1]
+			}
+			if err := saveRoleContextSnapshot(ctx, services, session, task, nextTask, summary); err != nil {
+				return err
+			}
+			if summary != "" {
+				summaries = append(summaries, fmt.Sprintf("%s: %s", task.AgentID, summary))
+			}
+			continue
+		}
 		if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
 			return err
 		}
@@ -671,9 +723,13 @@ func executeWorkspaceSession(ctx context.Context, services Services, executor *r
 		}); err != nil {
 			return err
 		}
+		preToolSummaries, err := executeRoleToolPreparation(ctx, options, services, session, task, "pre")
+		if err != nil {
+			return err
+		}
 		roleRequest := request
 		roleRequest.AgentID = task.AgentID
-		roleRequest.Prompt = rolePrompt(request.Prompt, task, summaries)
+		roleRequest.Prompt = rolePrompt(options.ConfigPath, request.Prompt, task, append(summaries, preToolSummaries...))
 		result, err := executor.ExecuteTask(ctx, roleRequest, task.TaskID)
 		if err != nil {
 			_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
@@ -699,6 +755,18 @@ func executeWorkspaceSession(ctx context.Context, services Services, executor *r
 		summaries = append(summaries, fmt.Sprintf("%s: %s", task.AgentID, summary))
 		if err := createRoleArtifact(ctx, services, session, task, preview, index == len(tasks)-1); err != nil {
 			return err
+		}
+		postToolSummaries, err := executeRoleToolPreparation(ctx, options, services, session, task, "post")
+		if err != nil {
+			return err
+		}
+		if len(postToolSummaries) > 0 {
+			summary = strings.Join(append([]string{summary}, postToolSummaries...), "\n")
+			if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+				"summary": summary,
+			}); err != nil {
+				return err
+			}
 		}
 		if taskRoleID(task) == "planner" && routeNeedsPlanReview(session) {
 			return blockForPlanReview(ctx, services, session, task, request.RunID)
@@ -773,9 +841,74 @@ func completeSessionLifecycle(ctx context.Context, services Services, runID stri
 			return err
 		}
 	}
+	if sessionStatus == runpkg.SessionStatusCompleted {
+		if err := createSessionMemoryProposal(ctx, services, runID); err != nil {
+			return err
+		}
+	}
 	return appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCompleted, "", map[string]any{
 		"status": sessionStatus,
 	})
+}
+
+func createSessionMemoryProposal(ctx context.Context, services Services, runID string) error {
+	if services.Memory == nil || services.Runs == nil {
+		return nil
+	}
+	detail, err := services.Runs.GetByRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	body := ""
+	artifactRefs := []string{}
+	if services.Artifacts != nil {
+		records, err := services.Artifacts.List(ctx, detail.Session.SessionID, 20)
+		if err != nil {
+			return err
+		}
+		for _, artifact := range records {
+			artifactRefs = append(artifactRefs, artifact.ArtifactID)
+			if artifact.Type == artifactpkg.TypeReport && body == "" {
+				body = artifact.Preview
+			}
+		}
+	}
+	if body == "" {
+		for _, task := range detail.Tasks {
+			if summary := taskMetadataString(task, "summary"); summary != "" {
+				body += task.AgentID + ": " + summary + "\n"
+			}
+		}
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return nil
+	}
+	proposal, err := services.Memory.Create(ctx, memory.CreateRequest{
+		ProjectID:    detail.Session.ProjectID,
+		SessionID:    detail.Session.SessionID,
+		RunID:        detail.Session.RunID,
+		SourceType:   "session_summary",
+		Title:        "Reusable context from " + trimMemoryTitle(detail.Session.Title),
+		Body:         body,
+		ArtifactRefs: artifactRefs,
+	})
+	if err != nil {
+		return err
+	}
+	return appendRunLedgerTrace(ctx, services.Trace, runID, "memory.proposal.created", "", map[string]any{
+		"proposal_id": proposal.ProposalID,
+		"status":      proposal.Status,
+		"title":       proposal.Title,
+	})
+}
+
+func trimMemoryTitle(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) <= 64 {
+		return value
+	}
+	return value[:61] + "..."
 }
 
 func blockForPlanReview(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, runID string) error {
@@ -794,6 +927,90 @@ func blockForPlanReview(ctx context.Context, services Services, session *runpkg.
 		return err
 	}
 	return nil
+}
+
+func blockForToolApproval(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, record *toolbroker.CallRecord) error {
+	if record == nil {
+		return fmt.Errorf("tool approval is pending")
+	}
+	reason := "tool_approval"
+	if record.ApprovalID != "" {
+		reason += ":" + record.ApprovalID
+	}
+	if err := services.Runs.UpdateSessionStatus(ctx, session.RunID, runpkg.SessionStatusBlocked); err != nil {
+		return err
+	}
+	if err := services.Runs.SetTaskBlocked(ctx, task.TaskID, runpkg.TaskStatusBlocked, reason); err != nil {
+		return err
+	}
+	if err := appendRunLedgerTrace(ctx, services.Trace, session.RunID, trace.EventTaskBlocked, task.AgentID, map[string]any{
+		"session_id":    session.SessionID,
+		"task_id":       task.TaskID,
+		"status":        runpkg.SessionStatusBlocked,
+		"reason":        "tool_approval",
+		"tool_call_id":  record.ToolCallID,
+		"tool_id":       record.ToolID,
+		"approval_id":   record.ApprovalID,
+		"approval_hint": "Grant or deny the approval, then resume the session.",
+	}); err != nil {
+		return err
+	}
+	return fmt.Errorf("tool approval pending: %s", record.ApprovalID)
+}
+
+func executeRoleToolPreparation(ctx context.Context, options Options, services Services, session *runpkg.Session, task *runpkg.Task, phase string) ([]string, error) {
+	if services.Tools == nil || session == nil || task == nil {
+		return nil, nil
+	}
+	required := taskMetadataStringSlice(task, "required_tools")
+	if len(required) == 0 {
+		return nil, nil
+	}
+	broker := newToolBroker(options, services)
+	summaries := []string{}
+	for _, tool := range required {
+		switch {
+		case phase == "pre" && tool == "read_project":
+			record, err := broker.Execute(ctx, toolbroker.ExecuteRequest{
+				SessionID: session.SessionID,
+				RunID:     session.RunID,
+				TaskID:    task.TaskID,
+				AgentID:   task.AgentID,
+				ToolID:    toolbroker.ToolListFiles,
+				Input:     map[string]any{"path": ".", "limit": 80},
+			})
+			if err != nil {
+				summaries = append(summaries, "Tool list_files failed: "+err.Error())
+				continue
+			}
+			if record != nil && record.OutputPreview != "" {
+				summaries = append(summaries, "Workspace files:\n"+record.OutputPreview)
+			}
+		case phase == "post" && tool == "run_checks":
+			record, err := broker.Execute(ctx, toolbroker.ExecuteRequest{
+				SessionID: session.SessionID,
+				RunID:     session.RunID,
+				TaskID:    task.TaskID,
+				AgentID:   task.AgentID,
+				ToolID:    toolbroker.ToolBash,
+				Input:     map[string]any{"command": "make test", "cwd": ".", "timeout_seconds": 300},
+			})
+			if record != nil && record.Status == toolbroker.StatusWaitingApproval {
+				return summaries, blockForToolApproval(ctx, services, session, task, record)
+			}
+			if err != nil {
+				summaries = append(summaries, "Verification tool failed:\n"+err.Error())
+				if record != nil && record.OutputPreview != "" {
+					summaries = append(summaries, record.OutputPreview)
+				}
+				continue
+			}
+			if record != nil && record.OutputPreview != "" {
+				summaries = append(summaries, "Verification tool output:\n"+record.OutputPreview)
+			}
+		}
+	}
+	return summaries, nil
 }
 
 func stopIfSessionRunnable(ctx context.Context, services Services, sessionID string) error {
@@ -840,7 +1057,7 @@ func routeNeedsPlanReview(session *runpkg.Session) bool {
 	return value
 }
 
-func rolePrompt(originalPrompt string, task *runpkg.Task, summaries []string) string {
+func rolePrompt(configPath string, originalPrompt string, task *runpkg.Task, summaries []string) string {
 	var builder strings.Builder
 	builder.WriteString(originalPrompt)
 	builder.WriteString("\n\nRole task:\n")
@@ -848,6 +1065,15 @@ func rolePrompt(originalPrompt string, task *runpkg.Task, summaries []string) st
 	if purpose := taskMetadataString(task, "purpose"); purpose != "" {
 		builder.WriteString("\nPurpose: ")
 		builder.WriteString(purpose)
+	}
+	skillBriefings := skills.Briefings(configPath, taskMetadataStringSlice(task, "required_skills"))
+	if len(skillBriefings) > 0 {
+		builder.WriteString("\n\nSelected skill briefings:\n")
+		for _, briefing := range skillBriefings {
+			builder.WriteString("- ")
+			builder.WriteString(briefing)
+			builder.WriteString("\n")
+		}
 	}
 	if len(summaries) > 0 {
 		builder.WriteString("\n\nPrior role summaries:\n")
@@ -969,6 +1195,35 @@ func taskMetadataString(task *runpkg.Task, key string) string {
 	}
 	value, _ := metadata[key].(string)
 	return value
+}
+
+func taskMetadataStringSlice(task *runpkg.Task, key string) []string {
+	metadata := map[string]any{}
+	if len(task.Metadata) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(task.Metadata, &metadata); err != nil {
+		return nil
+	}
+	raw, ok := metadata[key]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []string:
+		return typed
+	case []any:
+		values := []string{}
+		for _, value := range typed {
+			text, ok := value.(string)
+			if ok && strings.TrimSpace(text) != "" {
+				values = append(values, text)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
 }
 
 func taskRoleID(task *runpkg.Task) string {

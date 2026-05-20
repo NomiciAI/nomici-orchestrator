@@ -300,4 +300,57 @@ ALTER TABLE run_tasks ADD COLUMN blocked_reason TEXT NOT NULL DEFAULT '';
 ALTER TABLE run_tasks ADD COLUMN selected_context_snapshot_id TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		Version: 12,
+		SQL: `
+CREATE TABLE IF NOT EXISTS tool_call_records (
+	tool_call_id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	tool_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	risk TEXT NOT NULL DEFAULT '',
+	input_preview TEXT NOT NULL DEFAULT '',
+	output_preview TEXT NOT NULL DEFAULT '',
+	artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+	approval_id TEXT NOT NULL DEFAULT '',
+	error TEXT NOT NULL DEFAULT '',
+	redactions_json TEXT NOT NULL DEFAULT '[]',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	completed_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_call_records(session_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_call_records(run_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_task ON tool_call_records(task_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_status ON tool_call_records(status, updated_at DESC);
+`,
+	},
+	{
+		Version: 13,
+		SQL: `
+CREATE TABLE IF NOT EXISTS memory_proposals (
+	proposal_id TEXT PRIMARY KEY,
+	project_id TEXT NOT NULL,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	source_type TEXT NOT NULL,
+	title TEXT NOT NULL,
+	body TEXT NOT NULL,
+	status TEXT NOT NULL,
+	context_id TEXT NOT NULL DEFAULT '',
+	artifact_refs_json TEXT NOT NULL DEFAULT '[]',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_proposals_session ON memory_proposals(session_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_proposals_run_source ON memory_proposals(run_id, source_type);
+`,
+	},
 }

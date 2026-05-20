@@ -96,6 +96,25 @@ func agentDeleteHandler(options Options, services Services) http.HandlerFunc {
 	}
 }
 
+func agentValidateHandler() http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		var body projectconfig.AgentRecord
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send an agent definition.")
+			return
+		}
+		if body.ID == "" {
+			body.ID = chi.URLParam(request, "agent_id")
+		}
+		if err := projectconfig.ValidateAgent(body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "agent_invalid", err.Error(), "Fix the agent fields and retry.")
+			return
+		}
+		writeSuccess(response, requestID, map[string]string{"status": "valid"}, nil)
+	}
+}
+
 func orchestrationShowHandler(options Options) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
@@ -126,6 +145,21 @@ func orchestrationUpdateHandler(options Options) http.HandlerFunc {
 			return
 		}
 		writeSuccess(response, requestID, config, nil)
+	}
+}
+
+func orchestrationValidateHandler() http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		var body projectconfig.OrchestrationConfig
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send orchestration settings.")
+			return
+		}
+		writeSuccess(response, requestID, map[string]any{
+			"status": "valid",
+			"config": body,
+		}, nil)
 	}
 }
 

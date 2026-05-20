@@ -6,6 +6,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/gateway/web"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/memory"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
@@ -13,6 +14,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
+	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/NomiciAI/nomici-orchestrator/internal/uploads"
 	"github.com/go-chi/chi/v5"
@@ -32,6 +34,8 @@ type Services struct {
 	Artifacts *artifacts.Store
 	Uploads   *uploads.Store
 	Chats     *chats.Store
+	Tools     *toolbroker.Store
+	Memory    *memory.Store
 }
 
 func NewRouter(options Options, services Services) *chi.Mux {
@@ -61,14 +65,26 @@ func NewRouter(options Options, services Services) *chi.Mux {
 		api.Post("/api/sessions/{session_id}/resume", sessionResumeHandler(options, services))
 		api.Post("/api/sessions/{session_id}/plan/revise", sessionPlanReviseHandler(services))
 		api.Post("/api/sessions/{session_id}/plan/approve", sessionPlanApproveHandler(options, services))
+		api.Get("/api/sessions/{session_id}/tool-calls", sessionToolCallsHandler(services))
+		api.Post("/api/sessions/{session_id}/tool-calls", sessionToolCallCreateHandler(options, services))
 		api.Get("/api/sessions/{session_id}/events", sessionEventsHandler(services))
+		api.Get("/api/tools", toolListHandler())
+		api.Get("/api/tools/{tool_id}", toolDetailHandler())
+		api.Get("/api/skills", skillListHandler(options))
+		api.Get("/api/skills/{skill_id}", skillDetailHandler(options))
+		api.Get("/api/memory/proposals", memoryProposalListHandler(services))
+		api.Post("/api/memory/proposals/{proposal_id}/approve", memoryProposalApproveHandler(services))
+		api.Post("/api/memory/proposals/{proposal_id}/reject", memoryProposalRejectHandler(services))
+		api.Post("/api/memory/proposals/{proposal_id}/delete", memoryProposalDeleteHandler(services))
 		api.Get("/api/agents", agentListHandler(options, services))
 		api.Post("/api/agents", agentCreateHandler(options, services))
 		api.Get("/api/agents/{agent_id}", agentDetailHandler(options, services))
 		api.Patch("/api/agents/{agent_id}", agentUpdateHandler(options, services))
 		api.Delete("/api/agents/{agent_id}", agentDeleteHandler(options, services))
+		api.Post("/api/agents/{agent_id}/validate", agentValidateHandler())
 		api.Get("/api/orchestration", orchestrationShowHandler(options))
 		api.Patch("/api/orchestration", orchestrationUpdateHandler(options))
+		api.Post("/api/orchestration/validate", orchestrationValidateHandler())
 		api.Get("/api/uploads", uploadListHandler(services))
 		api.Post("/api/uploads", uploadCreateHandler(services))
 		api.Get("/api/artifacts", artifactListHandler(services))
