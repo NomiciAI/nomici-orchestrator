@@ -22,6 +22,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(newLogsCommand())
 	root.AddCommand(newGatewayCommand(version))
 	root.AddCommand(newModelCommand())
+	root.AddCommand(newProviderCommand())
 	root.AddCommand(newAgentCommand())
 	root.AddCommand(newRuntimeCommand())
 	root.AddCommand(newContextCommand())

@@ -15,6 +15,7 @@ import (
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/adapters"
 	"github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	"github.com/NomiciAI/nomici-orchestrator/internal/chats"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
@@ -326,6 +327,48 @@ func TestSessionEndpointsValidationAndCancel(t *testing.T) {
 	}
 }
 
+func TestChatMessageCreatesRunSession(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{
+			"choices": [{"message": {"role": "assistant", "content": "Chat run completed."}}],
+			"usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7}
+		}`))
+	}))
+	defer providerServer.Close()
+
+	db, router := newRunTestRouter(t)
+	saveRunTestGraph(t, graph.NewStore(db), providerServer.URL, []graph.Edge{})
+
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"hello from chat"}`)))
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var envelope struct {
+		Data chatMessageResponse `json:"data"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Message.ChatID == "" || envelope.Data.Run == nil || envelope.Data.Run.SessionID == "" {
+		t.Fatalf("expected chat message and run metadata, got %+v", envelope.Data)
+	}
+	waitForRunEvents(t, trace.NewStore(db), envelope.Data.Run.RunID, trace.EventRunCompleted)
+
+	listResponse := httptest.NewRecorder()
+	router.ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/api/chats", nil))
+	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), envelope.Data.Message.ChatID) {
+		t.Fatalf("expected chat in list, got %d: %s", listResponse.Code, listResponse.Body.String())
+	}
+
+	detailResponse := httptest.NewRecorder()
+	router.ServeHTTP(detailResponse, httptest.NewRequest(http.MethodGet, "/api/chats/"+envelope.Data.Message.ChatID, nil))
+	if detailResponse.Code != http.StatusOK || !strings.Contains(detailResponse.Body.String(), "hello from chat") {
+		t.Fatalf("expected chat detail, got %d: %s", detailResponse.Code, detailResponse.Body.String())
+	}
+}
+
 func TestLedgerTaskPlansUseInstalledPackRoles(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -548,6 +591,7 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 		Sandboxes: sandbox.NewStore(db),
 		Artifacts: artifacts.NewStore(db),
 		Uploads:   uploads.NewStore(db),
+		Chats:     chats.NewStore(db),
 	})
 }
 

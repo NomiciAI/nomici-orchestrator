@@ -263,4 +263,33 @@ CREATE INDEX IF NOT EXISTS idx_uploads_session ON upload_records(session_id, cre
 CREATE INDEX IF NOT EXISTS idx_uploads_run ON upload_records(run_id, created_at DESC);
 `,
 	},
+	{
+		Version: 10,
+		SQL: `
+CREATE TABLE IF NOT EXISTS chat_threads (
+	chat_id TEXT PRIMARY KEY,
+	title TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+	message_id TEXT PRIMARY KEY,
+	chat_id TEXT NOT NULL,
+	role TEXT NOT NULL,
+	content TEXT NOT NULL,
+	run_id TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_run ON chat_messages(run_id);
+`,
+	},
 }
