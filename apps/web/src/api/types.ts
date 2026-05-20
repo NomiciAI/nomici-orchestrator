@@ -1,5 +1,5 @@
 export type Theme = "dark" | "light";
-export type View = "chat" | "orchestrate" | "settings";
+export type View = "chat" | "agents" | "orchestrate" | "runs" | "settings";
 
 export type ApiEnvelope<T> = {
   data: T;
@@ -258,6 +258,29 @@ export type RunSessionDetail = {
   blocked_actions?: BlockedAction[];
 };
 
+export type TimelineItem = {
+  id: string;
+  kind: string;
+  time: string;
+  status?: string;
+  title: string;
+  agent_id?: string;
+  task_id?: string;
+  tool_id?: string;
+  artifact_id?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type TodoItem = {
+  id: string;
+  title: string;
+  status: string;
+  agent_id?: string;
+  task_id?: string;
+  summary?: string;
+  blocked_by?: string;
+};
+
 export type TraceEvent = {
   event_id: string;
   run_id: string;
@@ -336,6 +359,16 @@ export type ChatMessageResponse = {
   };
 };
 
+export type ChatFeedback = {
+  feedback_id: string;
+  chat_id: string;
+  message_id: string;
+  score: string;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AgentRecord = {
   id: string;
   name?: string;
@@ -352,6 +385,31 @@ export type AgentRecord = {
   approval_policy?: string;
   permissions?: Record<string, unknown>;
   runtime_profile?: Record<string, unknown>;
+};
+
+export type AgentTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  kind: string;
+  role: string;
+  instructions: string;
+  tools?: string[];
+  skills?: string[];
+  tags?: string[];
+  triggers?: string[];
+  permissions?: Record<string, unknown>;
+  approval_policy?: string;
+};
+
+export type AgentTestResult = {
+  agent_id: string;
+  status: string;
+  mode: string;
+  run_id?: string;
+  output?: string;
+  warnings?: string[];
+  trace_hint?: string;
 };
 
 export type OrchestrationConfig = {
@@ -374,6 +432,25 @@ export type OrchestrationConfig = {
       plan_review_policy?: string;
     }
   >;
+};
+
+export type OrchestrationPreview = {
+  status: string;
+  graph_snapshot_id?: string;
+  entrypoint?: string;
+  route_decision: RouteDecision;
+  tasks: Array<{
+    agent_id: string;
+    runtime_id?: string;
+    role_id?: string;
+    sequence?: number;
+    purpose?: string;
+    selection_reason?: string;
+    required_tools?: string[];
+    required_skills?: string[];
+    output_contract?: Record<string, unknown>;
+  }>;
+  warnings?: string[];
 };
 
 export type Overview = {

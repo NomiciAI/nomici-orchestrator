@@ -11,8 +11,8 @@ This RFC consolidates Nomici's application architecture and engineering architec
 Nomici should be:
 
 ```text
-a local-first Agent Control Plane and Designer
-with first-run usable provider setup and agent packs
+a local-first long-horizon agent harness
+with Chat, Agent Studio, Orchestration Studio, Runs, and Settings
 backed by a clean, extensible engineering core
 ```
 
@@ -50,19 +50,22 @@ Nomici's product surface should be organized around these modules:
 
 ```text
 Nomici Console
-  Dashboard
-  Setup
-  Pack Gallery
-  Canvas
+  Chat
   Agents
-  Runtimes
-  Models
-  Tools
+  Orchestration
   Runs
-  Traces
-  Approvals
-  Artifacts
   Settings
+
+Chat Context Panels
+  Route Decision
+  Role Timeline
+  Plan Review
+  Files and Uploads
+  Artifacts
+  Approvals and Review Queue
+  Tool Calls
+  Trace
+  Memory
 ```
 
 Nomici Gateway owns the control-plane backend:
@@ -76,10 +79,11 @@ Nomici Gateway
   Runtime Registry
   Runtime Reconciler
   Adapter Registry
+  Harness Runtime
   Tool Broker
   Policy Engine
   Approval Queue
-  Run Engine
+  Run Runtime
   Task Ledger
   Shared Context
   Trace Store
@@ -123,14 +127,14 @@ The primary v0.1 user flow should be:
 
 ```text
 Install Nomici
-  -> nomici doctor
-  -> configure provider
-  -> test model
-  -> choose agent pack
-  -> review permissions
-  -> start Gateway and runtimes
-  -> run task
-  -> inspect trace and artifacts
+  -> nomici setup
+  -> nomici dev
+  -> Chat asks or receives a goal
+  -> router chooses direct reply, clarify, or harness run
+  -> agent matcher selects agent/roles/tools/skills
+  -> user reviews risky plan or tool actions
+  -> harness executes tools and agents
+  -> artifacts, timeline, memory proposal, and history remain inspectable
 ```
 
 This flow should be available from both CLI and Console.
@@ -138,26 +142,21 @@ This flow should be available from both CLI and Console.
 CLI:
 
 ```bash
-nomici doctor
-nomici model setup
-nomici model test
-nomici pack list
-nomici pack inspect developer-team
-nomici pack install developer-team
-nomici up
-nomici run product_pm "..."
-nomici trace show <run_id>
+nomici setup
+nomici dev
+nomici agent test planner
+nomici orchestrate preview
+nomici run timeline <session_id>
+nomici eval harness
 ```
 
 Console:
 
-- setup checklist
-- provider catalog
-- capability probe result
-- pack gallery
-- permission review
-- first-run launcher
-- trace and artifact viewer
+- Chat as the default route
+- Agent Studio for templates, validation, test run, and config diff
+- Orchestration Studio for sequential flow, role grants, preview, and test harness
+- Runs for timeline, todos, tool calls, approvals, artifacts, memory, and blocked actions
+- Settings for providers, models, tools, permissions, packs, and diagnostics
 
 ## Control Plane Boundary
 

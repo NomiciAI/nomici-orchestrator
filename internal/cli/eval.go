@@ -15,6 +15,7 @@ func newEvalCommand() *cobra.Command {
 		Short: "Run local quality checks for workspace intelligence",
 	}
 	command.AddCommand(newEvalRouterCommand())
+	command.AddCommand(newEvalHarnessCommand())
 	return command
 }
 
@@ -59,6 +60,48 @@ func newEvalRouterCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&prompt, "prompt", "", "Evaluate a single prompt")
+	return command
+}
+
+func newEvalHarnessCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "harness",
+		Short: "Run local harness readiness eval cases",
+		RunE: func(command *cobra.Command, args []string) error {
+			cases := []routerEvalCase{
+				{Name: "basic-chat", Prompt: "hey", WantMode: orchestration.ModeDirectReply},
+				{Name: "empty-clarify", Prompt: "", WantMode: orchestration.ModeClarify},
+				{Name: "setup-question", Prompt: "how do I start the local console?", WantMode: orchestration.ModeDirectReply},
+				{Name: "research-work", Prompt: "research this project architecture and summarize tradeoffs", WantMode: orchestration.ModeWorkspaceRun, WantTools: []string{"read_project"}},
+				{Name: "code-mutation", Prompt: "fix the bug, edit files, and run tests", WantMode: orchestration.ModeWorkspaceRun, WantTools: []string{"write_project", "run_checks"}},
+			}
+			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(writer, "CASE\tMODE\tCONFIDENCE\tPASS\tRATIONALE")
+			failed := 0
+			for _, testCase := range cases {
+				decision := orchestration.Route(testCase.Prompt, "", nil)
+				pass := routerEvalPass(decision, testCase)
+				if !pass {
+					failed++
+				}
+				fmt.Fprintf(writer, "%s\t%s\t%.2f\t%t\t%s\n",
+					testCase.Name,
+					decision.Mode,
+					decision.Confidence,
+					pass,
+					trimForTable(decision.Rationale, 100),
+				)
+			}
+			if err := writer.Flush(); err != nil {
+				return err
+			}
+			if failed > 0 {
+				return fmt.Errorf("harness eval failed %d case(s)", failed)
+			}
+			fmt.Fprintln(command.OutOrStdout(), "Harness eval passed.")
+			return nil
+		},
+	}
 	return command
 }
 

@@ -351,13 +351,21 @@ Future kinds:
 Gateway agent fields:
 
 - `kind`
+- `name`
+- `description`
 - `model`
 - `role`
 - `instructions`
+- `capabilities`
+- `triggers`
 - `tools`
+- `skills`
 - `subagents`
 - `permissions`
+- `runtime_profile`
+- `approval_policy`
 - `budget`
+- `test_prompt`
 
 External agent fields:
 
@@ -365,6 +373,12 @@ External agent fields:
 - `runtime`
 - `endpoint`
 - `capabilities`
+- `triggers`
+- `tools`
+- `skills`
+- `permissions`
+- `runtime_profile.command_template`
+- `runtime_profile.timeout_seconds`
 - `trust`
 
 Model agent fields:
@@ -372,6 +386,25 @@ Model agent fields:
 - `kind`
 - `model`
 - `role`
+- `instructions`
+- `capabilities`
+- `triggers`
+- `tools`
+- `skills`
+
+Harness and orchestration fields:
+
+- `orchestration.entrypoint`: default agent for Auto mode.
+- `orchestration.role_order`: ordered role IDs for the sequential v1 flow.
+- `orchestration.disabled_roles`: role IDs skipped by default.
+- `orchestration.plan_review_policy`: `auto`, `always`, or `never`.
+- `orchestration.roles.<role_id>.purpose`: user-visible purpose.
+- `orchestration.roles.<role_id>.instructions`: role-specific instructions.
+- `orchestration.roles.<role_id>.required_tools`: Tool Broker grants.
+- `orchestration.roles.<role_id>.required_skills`: skill briefing grants.
+- `orchestration.roles.<role_id>.output_contract`: expected result schema or deliverable.
+- `budgets`: token, time, round, tool-call, retry, and subagent limits.
+- `review_policy`: plan review, tool risk review, approval, retry, and clarification behavior.
 
 Rules:
 
@@ -380,6 +413,7 @@ Rules:
 - `subagents` must reference entries in `agents` or compatible runtime-backed agent IDs.
 - External agents are untrusted by default unless policy says otherwise.
 - `gateway_agent` is a minimal Gateway-run coordinator loop, not durable execution or a full framework runtime.
+- Normal users should not need to edit these fields directly. Agent Studio and Orchestration Studio must write valid AgentSpec-compatible config and show a diff before save.
 
 ## Tools
 

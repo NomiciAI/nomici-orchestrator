@@ -1,25 +1,31 @@
 import { useEffect, useState } from "react";
-import type {
-  AgentRecord,
-  OrchestrationConfig,
-  SkillDefinition,
-  ToolDefinition,
-} from "../../api/types";
+import type { AgentRecord, OrchestrationConfig, OrchestrationPreview, SkillDefinition, ToolDefinition } from "../../api/types";
 import { toggleListValue } from "../../lib/lists";
+import { OrchestrationPreviewSummary } from "./OrchestrationPreviewSummary";
 
 export function OrchestrateBuilder({
   agents,
   orchestration,
   toolCatalog,
   skillCatalog,
+  preview,
   saving,
+  previewing,
+  testing,
+  onPreview,
+  onTest,
   onSave,
 }: {
   agents: AgentRecord[];
   orchestration: OrchestrationConfig;
   toolCatalog: ToolDefinition[];
   skillCatalog: SkillDefinition[];
+  preview?: OrchestrationPreview | null;
   saving: boolean;
+  previewing: boolean;
+  testing: boolean;
+  onPreview: () => void;
+  onTest: () => void;
   onSave: (next: OrchestrationConfig) => void;
 }) {
   const modelAgents = agents.filter((agent) => agent.kind !== "tool_agent");
@@ -310,14 +316,33 @@ export function OrchestrateBuilder({
         </div>
         <pre>{JSON.stringify(draft, null, 2)}</pre>
       </div>
-      <button
-        className="button"
-        type="button"
-        disabled={saving}
-        onClick={() => onSave({ ...draft, role_order: roleOrder })}
-      >
-        Save role flow
-      </button>
+      {preview ? <OrchestrationPreviewSummary preview={preview} /> : null}
+      <div className="builder-actions">
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={saving || previewing || testing}
+          onClick={onPreview}
+        >
+          {previewing ? "Previewing" : "Preview"}
+        </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={saving || previewing || testing}
+          onClick={onTest}
+        >
+          {testing ? "Testing" : "Test"}
+        </button>
+        <button
+          className="button"
+          type="button"
+          disabled={saving}
+          onClick={() => onSave({ ...draft, role_order: roleOrder })}
+        >
+          Save role flow
+        </button>
+      </div>
     </section>
   );
 }

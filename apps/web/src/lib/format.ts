@@ -123,8 +123,12 @@ export function viewTitle(view: View): string {
   switch (view) {
     case "chat":
       return "Chat";
+    case "agents":
+      return "Agents";
     case "orchestrate":
-      return "Orchestrate";
+      return "Orchestration";
+    case "runs":
+      return "Runs";
     case "settings":
       return "Settings";
     default:

@@ -6,13 +6,13 @@ Target release: Nomici Orchestrator v0.1
 
 ## Summary
 
-Nomici Orchestrator is a local-first, open-source control plane for local and remote AI agents.
+Nomici Orchestrator is a local-first, open-source long-horizon agent harness for orchestrating, observing, and governing multi-agent AI work.
 
 The first release should prove one narrow promise:
 
-> A user can describe an agent organization in `nomici.yaml`, start it with `nomici up`, inspect it in Nomici Console, run an agent, and see traces, logs, policy decisions, and approvals through Nomici Gateway.
+> A user can run `nomici setup`, start `nomici dev`, describe a goal in Chat, and watch Nomici route the request into either a normal answer or a governed harness run with agents, tools, artifacts, review, and resumable history.
 
-Nomici should not be positioned as another multi-agent framework. It should be positioned as the open control plane for agent organizations: a layer above strong agent runtimes, local model servers, MCP servers, and A2A-compatible remote agents.
+Nomici should not be positioned as another multi-agent framework. It should be positioned as an agent harness: a local product and engineering surface above strong model providers, local runtimes, MCP servers, tools, packs, and future workflow adapters.
 
 ## Product Positioning
 
@@ -34,7 +34,7 @@ Primary category:
 
 Description:
 
-> Nomici Orchestrator lets users run, register, connect, observe, and govern multiple AI agent runtimes from one local-first Gateway, CLI, Web Console, and versioned AgentSpec so teams can prototype reliable long-horizon agent workflows before that capability becomes native to every model.
+> Nomici Orchestrator lets users explore how far multi-agent AI work can go today by turning chat goals into governed harness runs with explicit routing, agent selection, tool execution, review checkpoints, artifacts, memory proposals, and durable timelines.
 
 ## Users
 
@@ -55,14 +55,18 @@ The user problem:
 
 v0.1 must support these product goals:
 
-- Define an agent organization in `nomici.yaml`.
-- Start Nomici Gateway and local runtimes with `nomici up`.
+- Configure the first usable model, tools, starter pack, and sandbox policy with `nomici setup`.
+- Start the complete local product with `nomici dev`.
+- Make Chat the default entrypoint for both direct answers and long-horizon runs.
+- Route user intent into direct reply, clarification, or workspace run without requiring users to know agent IDs.
+- Provide Agent Studio for creating, testing, validating, and saving agents without hand-editing YAML.
+- Provide Orchestration Studio for sequential role flow editing, preview, testing, and review policy.
 - Register models, agents, runtimes, MCP tools, and graph edges.
-- Run native or external agents through a common interface.
+- Run model, gateway, and external agents through a common harness interface.
 - Carry shared context across handoffs without replacing agent-native memory.
 - Manage local process runtimes with PID, port, health, and logs.
 - Connect to OpenAI-compatible endpoints, including local model servers and external agent gateways.
-- Provide a Web Console with dashboard, canvas, runtimes, models, agents, runs, traces, approvals, and settings.
+- Provide a Web Console with Chat, Agents, Orchestration, Runs, Settings, timeline, review queue, artifacts, tools, and memory.
 - Persist event logs and operational state in SQLite.
 - Enforce conservative default policy and approval rules.
 - Provide CLI commands for all core Web Console operations.
@@ -86,7 +90,7 @@ v0.1 must not attempt to do these things:
 
 v0.1 is named:
 
-> Nomici Orchestrator v0.1: Local Agent Control Plane
+> Nomici Orchestrator v0.1: Local Long-Horizon Agent Harness
 
 Included:
 
@@ -109,6 +113,10 @@ Included:
 - Shared Context Layer for project/run context and handoff snapshots
 - Approval queue
 - Policy defaults for high-risk tools
+- Chat-first router, agent matcher, and suggestions
+- Agent Studio and Orchestration Studio
+- Harness run timeline, todos, tool calls, artifacts, review queue, and memory proposals
+- Local eval harness for router and multi-agent workflow probes
 - 3 demo templates:
   - AI Application PM
   - PR Review Agents
@@ -135,23 +143,22 @@ Deferred:
 The first successful user journey should be:
 
 ```bash
-curl -fsSL https://nomici.ai/install.sh | bash
-nomici init --template ai-application-pm
-nomici up
-nomici gateway open
-nomici run product_pm "Design an AI app for local coding agents"
-nomici trace list
-nomici trace show <run_id>
+scripts/install.sh --from-source .
+nomici setup
+nomici dev
 ```
 
 Expected result:
 
 - Gateway starts on `http://127.0.0.1:8787`.
 - Console opens from the Gateway.
-- Config is loaded from `nomici.yaml`.
-- Local runtimes are started if configured.
-- Agent graph is visible in the Console.
-- A run can be started from CLI or Web UI.
+- Chat is immediately usable for direct questions.
+- Complex goals are automatically routed into a harness run.
+- Agent and role selection is explained before and during execution.
+- Plans, review requests, tool calls, artifacts, todos, and timeline are visible in context.
+- Agent creation and orchestration editing are available from Console.
+- Config is loaded from shared project config and local overrides.
+- Local runtimes and sandbox providers are started or diagnosed if configured.
 - Events are persisted in SQLite.
 - Risky actions create approvals before execution.
 

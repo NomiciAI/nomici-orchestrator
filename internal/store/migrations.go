@@ -426,4 +426,22 @@ CREATE INDEX IF NOT EXISTS idx_artifact_revisions_artifact ON artifact_revision_
 CREATE INDEX IF NOT EXISTS idx_artifact_revisions_session ON artifact_revision_records(session_id, created_at DESC);
 `,
 	},
+	{
+		Version: 17,
+		SQL: `
+CREATE TABLE IF NOT EXISTS chat_feedback (
+	feedback_id TEXT PRIMARY KEY,
+	chat_id TEXT NOT NULL,
+	message_id TEXT NOT NULL,
+	score TEXT NOT NULL,
+	note TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_feedback_message ON chat_feedback(message_id);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_chat ON chat_feedback(chat_id, updated_at DESC);
+`,
+	},
 }

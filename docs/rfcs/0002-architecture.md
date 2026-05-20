@@ -6,9 +6,9 @@ Target release: Nomici Orchestrator v0.1
 
 ## Summary
 
-Nomici Orchestrator uses a Gateway-centered architecture.
+Nomici Orchestrator uses a Gateway-centered architecture with a first-class harness runtime.
 
-The CLI, Web Console, OpenAI-compatible endpoint, A2A endpoint, MCP registry, runtime manager, policy engine, approval queue, and trace store should all converge through Nomici Gateway. The Gateway owns the control plane. External agents, local model servers, MCP servers, and worker processes form the data plane.
+The CLI, Web Console, OpenAI-compatible endpoint, A2A endpoint, MCP registry, runtime manager, policy engine, approval queue, and trace store should all converge through Nomici Gateway. The Gateway owns the control plane. The harness runtime owns durable long-horizon execution: route decisions, middleware, tool loop, subagent execution, blocked actions, artifacts, and resumable cursors. External agents, local model servers, MCP servers, and worker processes form the data plane.
 
 The recommended v0.1 implementation stack is:
 
@@ -36,7 +36,7 @@ The recommended v0.1 implementation stack is:
 │                                                               │
 │  Spec Loader        Agent Registry      Runtime Manager        │
 │  Model Registry     Tool Registry       Adapter Layer          │
-│  Run Engine         Policy Engine       Approval Queue         │
+│  Harness Runtime    Policy Engine       Approval Queue         │
 │  Trace Store        Secrets Manager     Event Stream           │
 │  OpenAI-compatible API                  Health API             │
 └───────────────▲───────────────▲──────────────▲────────────────┘
@@ -232,11 +232,24 @@ Later adapter contract:
 - `exportTrace`
 - `approvalBridge`
 
-### Run Engine
+### Harness Core
 
-The Run Engine coordinates a run without replacing specialized runtimes.
+The Harness Core coordinates long-horizon work without replacing specialized runtimes.
 
-v0.1 run capabilities:
+v0.1 harness capabilities:
+
+- chat intent routing into direct reply, clarification, or workspace run
+- agent and role matching from AgentSpec and pack metadata
+- durable thread/run state with messages, uploads, workspace roots, artifacts, todos, memory refs, active agents, subruns, tool calls, blocked actions, and timeline events
+- middleware chain for thread data, upload exposure, sandbox acquire, dangling tool-call recovery, model error recovery, policy, audit, tool error recovery, summarization, todos, token usage, title, memory proposal, deferred tools, subagent limits, loop detection, and clarification
+- native structured tool loop: `model -> tool call -> Tool Broker -> observation -> model continue`
+- JSON tool-call fallback only for providers without native tool calls
+- model-callable subagent delegation with scoped context, tool grants, budget, timeout, result schema, and timeline events
+- plan review, approval, clarification, retry decision, and resume through persisted blocked actions
+
+The Gateway API exposes harness state, but handler code must not contain hidden role logic, tool execution shortcuts, or provider-specific loops. Those belong behind `RunRuntime`, Tool Broker, adapters, and AgentSpec-aware matching.
+
+Base run contract:
 
 - Invoke one agent.
 - Route to an external endpoint.

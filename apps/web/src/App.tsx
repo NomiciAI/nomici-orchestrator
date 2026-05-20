@@ -1,6 +1,8 @@
 import "./styles/index.css";
 import { ChatPage } from "./features/chat/ChatPage";
+import { AgentsPage } from "./features/settings/AgentsPage";
 import { OrchestratePage } from "./features/orchestrate/OrchestratePage";
+import { RunsPage } from "./features/orchestrate/RunsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { useChatWorkspace } from "./hooks/useChatWorkspace";
 import { viewTitle } from "./lib/format";
@@ -34,11 +36,25 @@ export function App() {
           Chats
         </button>
         <button
+          className={`nav-button ${state.view === "agents" ? "nav-active" : ""}`}
+          type="button"
+          onClick={() => state.setView("agents")}
+        >
+          Agents
+        </button>
+        <button
           className={`nav-button ${state.view === "orchestrate" ? "nav-active" : ""}`}
           type="button"
           onClick={() => state.setView("orchestrate")}
         >
           Orchestration
+        </button>
+        <button
+          className={`nav-button ${state.view === "runs" ? "nav-active" : ""}`}
+          type="button"
+          onClick={() => state.setView("runs")}
+        >
+          Runs
         </button>
         <div className="chat-list">
           {state.chats.map((chat) => (
@@ -67,7 +83,7 @@ export function App() {
           type="button"
           onClick={() => state.setView("settings")}
         >
-          Agents & Settings
+          Settings
         </button>
       </aside>
 
@@ -148,8 +164,14 @@ export function App() {
         {state.isAuthenticated && state.view === "chat" ? (
           <ChatPage state={state} />
         ) : null}
+        {state.isAuthenticated && state.view === "agents" ? (
+          <AgentsPage state={state} />
+        ) : null}
         {state.isAuthenticated && state.view === "orchestrate" ? (
           <OrchestratePage state={state} />
+        ) : null}
+        {state.isAuthenticated && state.view === "runs" ? (
+          <RunsPage state={state} />
         ) : null}
         {state.isAuthenticated && state.view === "settings" ? (
           <SettingsPage state={state} />

@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import type {
   AgentRecord,
+  AgentTestResult,
   GraphSnapshot,
   ProviderProfile,
   SkillDefinition,
@@ -9,6 +10,7 @@ import type {
 import { splitCSV, toggleListValue } from "../../lib/lists";
 import { AgentBuilderActions } from "./AgentBuilderActions";
 import { AgentSummaryList } from "./AgentSummaryList";
+import { AgentTestResultPanel } from "./AgentTestResultPanel";
 
 export function AgentBuilder({
   agents,
@@ -21,7 +23,10 @@ export function AgentBuilder({
   saving,
   validating,
   validation,
+  testResult,
+  testing = false,
   onValidate,
+  onTest,
   onSave,
 }: {
   agents: AgentRecord[];
@@ -34,7 +39,10 @@ export function AgentBuilder({
   saving: boolean;
   validating: boolean;
   validation: string;
+  testResult?: AgentTestResult | null;
+  testing?: boolean;
   onValidate: () => void;
+  onTest?: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const graphModelOptions = graphSnapshot
@@ -321,10 +329,13 @@ export function AgentBuilder({
         <AgentBuilderActions
           validation={validation}
           validating={validating}
+          testing={testing}
           agentIsInvalid={agentIsInvalid}
           saving={saving}
           onValidate={onValidate}
+          onTest={onTest}
         />
+        {testResult ? <AgentTestResultPanel result={testResult} /> : null}
       </form>
       <AgentSummaryList agents={agents} setDraft={setDraft} />
     </section>

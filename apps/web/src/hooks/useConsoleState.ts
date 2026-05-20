@@ -3,6 +3,8 @@ import { apiRequest as gatewayRequest } from "../api/client";
 import {
   emptyOverview,
   type AgentRecord,
+  type AgentTemplate,
+  type AgentTestResult,
   type Approval,
   type ArtifactContent,
   type ArtifactRecord,
@@ -14,12 +16,15 @@ import {
   type MemoryItem,
   type MemoryProposal,
   type OrchestrationConfig,
+  type OrchestrationPreview,
   type Overview,
   type ProviderDefinition,
   type RouteDecision,
   type RunSessionDetail,
   type SkillDefinition,
   type Theme,
+  type TimelineItem,
+  type TodoItem,
   type ToolDefinition,
   type TraceEvent,
   type UploadRecord,
@@ -49,9 +54,15 @@ export function useConsoleState() {
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<SkillDefinition[]>([]);
   const [agents, setAgents] = useState<AgentRecord[]>([]);
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const [agentTestResult, setAgentTestResult] =
+    useState<AgentTestResult | null>(null);
   const [orchestration, setOrchestration] = useState<OrchestrationConfig>({});
+  const [orchestrationPreview, setOrchestrationPreview] =
+    useState<OrchestrationPreview | null>(null);
   const [chats, setChats] = useState<ChatThread[]>([]);
   const [chatDetail, setChatDetail] = useState<ChatDetail | null>(null);
+  const [chatSuggestions, setChatSuggestions] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "failed" | "auth">(
     "loading",
@@ -81,6 +92,8 @@ export function useConsoleState() {
   const [memoryProposals, setMemoryProposals] = useState<MemoryProposal[]>([]);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [reviewQueue, setReviewQueue] = useState<BlockedAction[]>([]);
+  const [sessionTimeline, setSessionTimeline] = useState<TimelineItem[]>([]);
+  const [sessionTodos, setSessionTodos] = useState<TodoItem[]>([]);
   const [mutatingMemory, setMutatingMemory] = useState("");
   const [artifactContent, setArtifactContent] =
     useState<ArtifactContent | null>(null);
@@ -172,6 +185,7 @@ export function useConsoleState() {
         nextTools,
         nextSkills,
         nextAgents,
+        nextAgentTemplates,
         nextOrchestration,
         nextMemory,
         nextMemoryItems,
@@ -184,6 +198,9 @@ export function useConsoleState() {
           () => [],
         ),
         request<AgentRecord[]>("/api/agents", {}, nextToken).catch(() => []),
+        request<AgentTemplate[]>("/api/agents/templates", {}, nextToken).catch(
+          () => [],
+        ),
         request<OrchestrationConfig>("/api/orchestration", {}, nextToken).catch(
           () => ({}),
         ),
@@ -206,6 +223,7 @@ export function useConsoleState() {
       setToolCatalog(nextTools ?? []);
       setSkillCatalog(nextSkills ?? []);
       setAgents(nextAgents ?? []);
+      setAgentTemplates(nextAgentTemplates ?? []);
       setOrchestration(nextOrchestration ?? {});
       setMemoryProposals(nextMemory ?? []);
       setMemoryItems(nextMemoryItems ?? []);
@@ -254,6 +272,7 @@ export function useConsoleState() {
       `/api/chats/${encodeURIComponent(chatID)}`,
     );
     setChatDetail(detail);
+    void loadChatSuggestions(chatID);
     const lastRun = [...detail.messages]
       .reverse()
       .find((message) => message.run_id);
@@ -287,6 +306,9 @@ export function useConsoleState() {
     setActiveSessionId("");
     setSessionDetail(null);
     setRunEvents([]);
+    setChatSuggestions([]);
+    setSessionTimeline([]);
+    setSessionTodos([]);
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -350,6 +372,7 @@ export function useConsoleState() {
     setChats(nextChats ?? []);
     setChatDetail(detail);
     setActiveRouteDecision(latestRouteDecision(detail.messages));
+    void loadChatSuggestions(chatID);
   }
 
   async function loadSessionDetail(sessionId: string) {
@@ -361,6 +384,36 @@ export function useConsoleState() {
     );
     setSessionDetail(detail);
     setActiveRouteDecision(detail.session.metadata?.route_decision ?? null);
+    const [timeline, todos] = await Promise.all([
+      request<TimelineItem[]>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/timeline`,
+      ).catch(() => []),
+      request<TodoItem[]>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/todos`,
+      ).catch(() => []),
+    ]);
+    setSessionTimeline(timeline ?? []);
+    setSessionTodos(todos ?? []);
+  }
+
+  async function loadChatSuggestions(chatID: string) {
+    const suggestions = await request<string[]>(
+      `/api/chats/${encodeURIComponent(chatID)}/suggestions`,
+    ).catch(() => []);
+    setChatSuggestions(suggestions ?? []);
+  }
+
+  async function submitMessageFeedback(messageID: string, score: string) {
+    if (!chatDetail) {
+      return;
+    }
+    await request(
+      `/api/chats/${encodeURIComponent(chatDetail.thread.chat_id)}/feedback`,
+      {
+        method: "POST",
+        body: JSON.stringify({ message_id: messageID, score }),
+      },
+    ).catch(() => null);
   }
 
   async function approvePlan() {
@@ -672,6 +725,56 @@ export function useConsoleState() {
     }
   }
 
+  function applyAgentTemplate(template: AgentTemplate) {
+    setAgentDraft({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      kind: template.kind,
+      role: template.role,
+      instructions: template.instructions,
+      tools: template.tools ?? [],
+      skills: template.skills ?? [],
+      tags: template.tags ?? [],
+      triggers: template.triggers ?? [],
+      permissions: template.permissions,
+      approval_policy: template.approval_policy,
+    });
+    setAgentValidation("");
+    setAgentTestResult(null);
+    setView("agents");
+  }
+
+  async function testAgentDraft() {
+    if (agentDraft.id.trim() === "") {
+      setAgentValidation("Agent id is required.");
+      return;
+    }
+    setSettingsMutation("agent-test");
+    setAgentValidation("");
+    setAgentTestResult(null);
+    try {
+      const result = await request<AgentTestResult>(
+        `/api/agents/${encodeURIComponent(agentDraft.id)}/test`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            prompt: "Reply with one concise sentence confirming this agent is ready.",
+            execute: true,
+          }),
+        },
+      );
+      setAgentTestResult(result);
+      setAgentValidation(result.status || "tested");
+    } catch (testError) {
+      setAgentValidation(
+        testError instanceof Error ? testError.message : "Agent test failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   async function saveAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (agentDraft.id.trim() === "") {
@@ -736,6 +839,62 @@ export function useConsoleState() {
     }
   }
 
+  async function previewOrchestration() {
+    setSettingsMutation("orchestration-preview");
+    setRunError("");
+    try {
+      const preview = await request<OrchestrationPreview>(
+        "/api/orchestration/preview",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            prompt:
+              messageText.trim() ||
+              "Preview a long-horizon workspace task.",
+            agent_id: runAgentId === "auto" ? "" : runAgentId,
+          }),
+        },
+      );
+      setOrchestrationPreview(preview);
+    } catch (previewError) {
+      setRunError(
+        previewError instanceof Error
+          ? previewError.message
+          : "Orchestration preview failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function testOrchestration() {
+    setSettingsMutation("orchestration-test");
+    setRunError("");
+    try {
+      const preview = await request<OrchestrationPreview>(
+        "/api/orchestration/test",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            prompt:
+              messageText.trim() ||
+              "Preview a long-horizon workspace task.",
+            agent_id: runAgentId === "auto" ? "" : runAgentId,
+          }),
+        },
+      );
+      setOrchestrationPreview(preview);
+    } catch (testError) {
+      setRunError(
+        testError instanceof Error
+          ? testError.message
+          : "Orchestration test failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   return {
     gatewayToken,
     tokenInput,
@@ -749,10 +908,14 @@ export function useConsoleState() {
     toolCatalog,
     skillCatalog,
     agents,
+    agentTemplates,
+    agentTestResult,
     orchestration,
+    orchestrationPreview,
     chats,
     chatDetail,
     setChatDetail,
+    chatSuggestions,
     warnings,
     status,
     error,
@@ -785,6 +948,8 @@ export function useConsoleState() {
     memoryProposals,
     memoryItems,
     reviewQueue,
+    sessionTimeline,
+    sessionTodos,
     mutatingMemory,
     artifactContent,
     artifactRevisions,
@@ -809,6 +974,8 @@ export function useConsoleState() {
     startNewChat,
     sendMessage,
     loadSessionDetail,
+    loadChatSuggestions,
+    submitMessageFeedback,
     approvePlan,
     revisePlan,
     cancelSession,
@@ -821,8 +988,12 @@ export function useConsoleState() {
     downloadArtifact,
     submitClarification,
     validateAgentDraft,
+    applyAgentTemplate,
+    testAgentDraft,
     saveAgent,
     saveOrchestration,
+    previewOrchestration,
+    testOrchestration,
   };
 }
 

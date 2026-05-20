@@ -208,6 +208,78 @@
   border-radius: 8px;
 }
 
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 14px 15px;
+}
+
+.template-card {
+  min-height: 104px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  color: inherit;
+  background: var(--surface-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.template-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
+.template-card strong,
+.template-card span,
+.template-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.template-card span,
+.template-card small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 15px;
+}
+
+.builder-note {
+  margin: 0;
+  padding: 10px 15px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.builder-warning-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 15px 12px;
+}
+
+.builder-warning-list span {
+  color: var(--warning);
+  font-size: 12px;
+}
+
 .list-item {
   min-height: 58px;
   display: flex;
