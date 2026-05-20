@@ -18,6 +18,7 @@ import (
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
+	blockedpkg "github.com/NomiciAI/nomici-orchestrator/internal/blocked"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
 	"github.com/NomiciAI/nomici-orchestrator/internal/memory"
@@ -70,9 +71,25 @@ type runSessionDetailResponse struct {
 	Uploads   []*uploadpkg.Upload      `json:"uploads,omitempty"`
 	Artifacts []*artifactpkg.Artifact  `json:"artifacts,omitempty"`
 	ToolCalls []*toolbroker.CallRecord `json:"tool_calls,omitempty"`
+	Blocked   []*blockedpkg.Action     `json:"blocked_actions,omitempty"`
 }
 
 var detectSandboxAvailability = sandbox.Detect
+
+const (
+	maxModelToolRounds        = 5
+	maxModelToolCallsPerRound = 8
+)
+
+type modelToolEnvelope struct {
+	ToolCalls []modelToolCall `json:"tool_calls"`
+	Final     string          `json:"final,omitempty"`
+}
+
+type modelToolCall struct {
+	ToolID string         `json:"tool_id"`
+	Input  map[string]any `json:"input,omitempty"`
+}
 
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
@@ -522,7 +539,15 @@ func sessionDetailPayload(ctx context.Context, services Services, detail *runpkg
 		}
 		toolCalls = records
 	}
-	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts, ToolCalls: toolCalls}, nil
+	var blockedActions []*blockedpkg.Action
+	if services.Blocked != nil {
+		records, err := services.Blocked.ListBySession(ctx, detail.Session.SessionID, "", 50)
+		if err != nil {
+			return nil, err
+		}
+		blockedActions = records
+	}
+	return &runSessionDetailResponse{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord, Uploads: uploads, Artifacts: artifacts, ToolCalls: toolCalls, Blocked: blockedActions}, nil
 }
 
 func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string, intent sandbox.Intent, baseDir string, sourceChannel string, metadata map[string]any, routeDecision *orchestration.RouteDecision) (*runpkg.Session, *sandbox.Record, []*runpkg.Task, error) {
@@ -643,6 +668,73 @@ func executeWorkspaceSession(ctx context.Context, options Options, services Serv
 		if task.Status == runpkg.TaskStatusCancelled || task.Status == runpkg.TaskStatusFailed {
 			return fmt.Errorf("task %s is %s", task.TaskID, task.Status)
 		}
+		if task.Status == runpkg.TaskStatusBlocked && taskMetadataString(task, "tool_loop_prompt") != "" {
+			if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
+				return err
+			}
+			if err := services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusRunning); err != nil {
+				return err
+			}
+			roleRequest := request
+			roleRequest.AgentID = task.AgentID
+			prompt := taskMetadataString(task, "tool_loop_prompt")
+			if pending := taskMetadataString(task, "tool_loop_pending_json"); pending != "" {
+				resumeObservations, err := executePendingModelToolCalls(ctx, options, services, session, task, pending)
+				if err != nil {
+					return err
+				}
+				prompt = appendToolObservations(prompt, resumeObservations)
+				if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+					"tool_loop_prompt":       prompt,
+					"tool_loop_pending_json": "",
+				}); err != nil {
+					return err
+				}
+			}
+			result, toolSummaries, err := executeTaskWithToolLoop(ctx, options, services, executor, roleRequest, session, task, prompt)
+			if err != nil {
+				return err
+			}
+			preview := resultPreview(result)
+			summary := taskSummary(task, preview)
+			if len(toolSummaries) > 0 {
+				summary = strings.Join(append([]string{summary}, toolSummaries...), "\n")
+			}
+			if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+				"summary":                summary,
+				"output_preview":         preview,
+				"tool_loop_prompt":       "",
+				"tool_loop_pending_json": "",
+			}); err != nil {
+				return err
+			}
+			summaries = append(summaries, fmt.Sprintf("%s: %s", task.AgentID, summary))
+			if err := createRoleArtifact(ctx, services, session, task, preview, index == len(tasks)-1); err != nil {
+				return err
+			}
+			if taskRoleID(task) == "planner" && routeNeedsPlanReview(session) {
+				return blockForPlanReview(ctx, services, session, task, request.RunID)
+			}
+			if err := services.Runs.UpdateTaskStatus(ctx, task.TaskID, runpkg.TaskStatusCompleted); err != nil {
+				return err
+			}
+			if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCompleted, task.AgentID, map[string]any{
+				"task_id": task.TaskID,
+				"status":  runpkg.TaskStatusCompleted,
+				"summary": summary,
+				"reason":  "tool_loop_resumed",
+			}); err != nil {
+				return err
+			}
+			var nextTask *runpkg.Task
+			if index+1 < len(tasks) {
+				nextTask = tasks[index+1]
+			}
+			if err := saveRoleContextSnapshot(ctx, services, session, task, nextTask, summary); err != nil {
+				return err
+			}
+			continue
+		}
 		if task.Status == runpkg.TaskStatusPlanReview {
 			if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
 				return err
@@ -729,9 +821,12 @@ func executeWorkspaceSession(ctx context.Context, options Options, services Serv
 		}
 		roleRequest := request
 		roleRequest.AgentID = task.AgentID
-		roleRequest.Prompt = rolePrompt(options.ConfigPath, request.Prompt, task, append(summaries, preToolSummaries...))
-		result, err := executor.ExecuteTask(ctx, roleRequest, task.TaskID)
+		roleRequest.Prompt = rolePrompt(ctx, options.ConfigPath, services, session, request.Prompt, task, append(summaries, preToolSummaries...))
+		result, toolSummaries, err := executeTaskWithToolLoop(ctx, options, services, executor, roleRequest, session, task, roleRequest.Prompt)
 		if err != nil {
+			if sessionIsPaused(ctx, services, session.SessionID) {
+				return err
+			}
 			_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
 				"summary":        err.Error(),
 				"failure_reason": err.Error(),
@@ -746,6 +841,9 @@ func executeWorkspaceSession(ctx context.Context, options Options, services Serv
 		}
 		preview := resultPreview(result)
 		summary := taskSummary(task, preview)
+		if len(toolSummaries) > 0 {
+			summary = strings.Join(append([]string{summary}, toolSummaries...), "\n")
+		}
 		if err := updateTaskMetadata(ctx, services.Runs, task, map[string]any{
 			"summary":        summary,
 			"output_preview": preview,
@@ -790,6 +888,22 @@ func executeWorkspaceSession(ctx context.Context, options Options, services Serv
 		}
 	}
 	return completeSessionLifecycle(ctx, services, request.RunID, runpkg.SessionStatusCompleted)
+}
+
+func sessionIsPaused(ctx context.Context, services Services, sessionID string) bool {
+	if services.Runs == nil || sessionID == "" {
+		return false
+	}
+	detail, err := services.Runs.GetBySession(ctx, sessionID)
+	if err != nil {
+		return false
+	}
+	switch detail.Session.Status {
+	case runpkg.SessionStatusPlanReview, runpkg.SessionStatusBlocked, runpkg.SessionStatusNeedsClarification:
+		return true
+	default:
+		return false
+	}
 }
 
 func saveRoleContextSnapshot(ctx context.Context, services Services, session *runpkg.Session, task *runpkg.Task, nextTask *runpkg.Task, summary string) error {
@@ -918,11 +1032,31 @@ func blockForPlanReview(ctx context.Context, services Services, session *runpkg.
 	if err := services.Runs.SetTaskBlocked(ctx, task.TaskID, runpkg.TaskStatusPlanReview, "plan_review"); err != nil {
 		return err
 	}
+	artifactID := ""
+	if services.Artifacts != nil {
+		if latest, err := latestPlanArtifactID(ctx, services, session.SessionID); err == nil {
+			artifactID = latest
+		}
+	}
+	if services.Blocked != nil {
+		_, _ = services.Blocked.Create(ctx, blockedpkg.CreateRequest{
+			SessionID:          session.SessionID,
+			RunID:              runID,
+			TaskID:             task.TaskID,
+			Kind:               blockedpkg.KindPlanReview,
+			Title:              "Review plan",
+			Body:               "Approve or revise the plan before execution continues.",
+			RequiredAction:     "approve_plan",
+			ResumeTargetTaskID: task.TaskID,
+			ArtifactID:         artifactID,
+		})
+	}
 	if err := appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventTaskBlocked, "", map[string]any{
-		"session_id": session.SessionID,
-		"task_id":    task.TaskID,
-		"status":     runpkg.SessionStatusPlanReview,
-		"reason":     "plan_review",
+		"session_id":  session.SessionID,
+		"task_id":     task.TaskID,
+		"status":      runpkg.SessionStatusPlanReview,
+		"reason":      "plan_review",
+		"artifact_id": artifactID,
 	}); err != nil {
 		return err
 	}
@@ -942,6 +1076,24 @@ func blockForToolApproval(ctx context.Context, services Services, session *runpk
 	}
 	if err := services.Runs.SetTaskBlocked(ctx, task.TaskID, runpkg.TaskStatusBlocked, reason); err != nil {
 		return err
+	}
+	if services.Blocked != nil {
+		_, _ = services.Blocked.Create(ctx, blockedpkg.CreateRequest{
+			SessionID:          session.SessionID,
+			RunID:              session.RunID,
+			TaskID:             task.TaskID,
+			Kind:               blockedpkg.KindToolApproval,
+			Title:              "Approve tool call",
+			Body:               "Grant or deny the requested tool call, then resume the session.",
+			RequiredAction:     "grant_or_deny_approval",
+			ResumeTargetTaskID: task.TaskID,
+			ApprovalID:         record.ApprovalID,
+			ToolCallID:         record.ToolCallID,
+			Metadata: rawJSON(map[string]any{
+				"tool_id": record.ToolID,
+				"risk":    record.Risk,
+			}),
+		})
 	}
 	if err := appendRunLedgerTrace(ctx, services.Trace, session.RunID, trace.EventTaskBlocked, task.AgentID, map[string]any{
 		"session_id":    session.SessionID,
@@ -1013,6 +1165,269 @@ func executeRoleToolPreparation(ctx context.Context, options Options, services S
 	return summaries, nil
 }
 
+func executeTaskWithToolLoop(ctx context.Context, options Options, services Services, executor *runpkg.Executor, request runpkg.Request, session *runpkg.Session, task *runpkg.Task, prompt string) (*runpkg.Result, []string, error) {
+	if services.Tools == nil || session == nil || task == nil {
+		result, err := executor.ExecuteTask(ctx, request, task.TaskID)
+		return result, nil, err
+	}
+	broker := newToolBroker(options, services)
+	observations := []string{}
+	currentPrompt := prompt
+	for round := 0; round <= maxModelToolRounds; round++ {
+		if err := stopIfSessionRunnable(ctx, services, session.SessionID); err != nil {
+			return nil, observations, err
+		}
+		roundRequest := request
+		roundRequest.Prompt = currentPrompt
+		result, err := executor.ExecuteTask(ctx, roundRequest, task.TaskID)
+		if err != nil {
+			return result, observations, err
+		}
+		preview := resultPreview(result)
+		calls, ok := extractModelToolCalls(preview)
+		if !ok || len(calls) == 0 {
+			_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "tool.loop.completed", task.AgentID, map[string]any{
+				"task_id":       task.TaskID,
+				"rounds":        round,
+				"observations":  len(observations),
+				"final_preview": sharedcontext.RedactText(preview),
+			})
+			return result, observations, nil
+		}
+		if round == maxModelToolRounds {
+			return result, observations, fmt.Errorf("tool loop budget exhausted after %d rounds", maxModelToolRounds)
+		}
+		if len(calls) > maxModelToolCallsPerRound {
+			calls = calls[:maxModelToolCallsPerRound]
+		}
+		_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "tool.loop.requested", task.AgentID, map[string]any{
+			"task_id": task.TaskID,
+			"round":   round + 1,
+			"count":   len(calls),
+		})
+		roundObservations := []string{}
+		for _, call := range calls {
+			toolID := normalizeModelToolID(call.ToolID)
+			if toolID == "" {
+				roundObservations = append(roundObservations, fmt.Sprintf("Tool %q was skipped because it is not available.", call.ToolID))
+				continue
+			}
+			record, execErr := broker.Execute(ctx, toolbroker.ExecuteRequest{
+				SessionID: session.SessionID,
+				RunID:     session.RunID,
+				TaskID:    task.TaskID,
+				AgentID:   task.AgentID,
+				ToolID:    toolID,
+				Input:     call.Input,
+			})
+			if record != nil && record.Status == toolbroker.StatusWaitingApproval {
+				pendingPrompt := appendToolObservations(currentPrompt, roundObservations)
+				pendingJSON, _ := json.Marshal([]modelToolCall{call})
+				_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+					"summary":                "Waiting for approval to run " + toolID + ".",
+					"output_preview":         preview,
+					"tool_loop_prompt":       pendingPrompt,
+					"tool_loop_pending_json": string(pendingJSON),
+					"tool_loop_round":        round + 1,
+				})
+				_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "tool.loop.blocked", task.AgentID, map[string]any{
+					"task_id":      task.TaskID,
+					"round":        round + 1,
+					"tool_id":      toolID,
+					"tool_call_id": record.ToolCallID,
+					"approval_id":  record.ApprovalID,
+				})
+				return result, observations, blockForToolApproval(ctx, services, session, task, record)
+			}
+			observation := toolObservation(toolID, record, execErr)
+			roundObservations = append(roundObservations, observation)
+			_ = appendRunLedgerTrace(ctx, services.Trace, session.RunID, "tool.loop.observed", task.AgentID, map[string]any{
+				"task_id":        task.TaskID,
+				"tool_id":        toolID,
+				"tool_call_id":   toolCallID(record),
+				"status":         toolCallStatus(record, execErr),
+				"output_preview": sharedcontext.RedactText(observation),
+			})
+		}
+		observations = append(observations, roundObservations...)
+		currentPrompt = appendToolObservations(currentPrompt, roundObservations)
+	}
+	return nil, observations, fmt.Errorf("tool loop did not produce a final response")
+}
+
+func executePendingModelToolCalls(ctx context.Context, options Options, services Services, session *runpkg.Session, task *runpkg.Task, raw string) ([]string, error) {
+	var calls []modelToolCall
+	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
+		return nil, fmt.Errorf("resume tool loop: decode pending tool calls: %w", err)
+	}
+	if services.Tools == nil {
+		return nil, fmt.Errorf("resume tool loop: tool broker is not initialized")
+	}
+	broker := newToolBroker(options, services)
+	observations := []string{}
+	for _, call := range calls {
+		toolID := normalizeModelToolID(call.ToolID)
+		if toolID == "" {
+			observations = append(observations, fmt.Sprintf("Tool %q was skipped because it is not available.", call.ToolID))
+			continue
+		}
+		record, err := broker.Execute(ctx, toolbroker.ExecuteRequest{
+			SessionID: session.SessionID,
+			RunID:     session.RunID,
+			TaskID:    task.TaskID,
+			AgentID:   task.AgentID,
+			ToolID:    toolID,
+			Input:     call.Input,
+		})
+		if record != nil && record.Status == toolbroker.StatusWaitingApproval {
+			pendingJSON, _ := json.Marshal([]modelToolCall{call})
+			_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
+				"tool_loop_pending_json": string(pendingJSON),
+			})
+			return observations, blockForToolApproval(ctx, services, session, task, record)
+		}
+		observations = append(observations, toolObservation(toolID, record, err))
+		if err != nil && record == nil {
+			return observations, err
+		}
+	}
+	return observations, nil
+}
+
+func extractModelToolCalls(output string) ([]modelToolCall, bool) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, false
+	}
+	candidates := []string{output}
+	if fenced := fencedJSON(output); fenced != "" {
+		candidates = append([]string{fenced}, candidates...)
+	}
+	if object := firstJSONObject(output); object != "" && object != output {
+		candidates = append(candidates, object)
+	}
+	for _, candidate := range candidates {
+		var envelope modelToolEnvelope
+		if err := json.Unmarshal([]byte(candidate), &envelope); err != nil {
+			continue
+		}
+		calls := make([]modelToolCall, 0, len(envelope.ToolCalls))
+		for _, call := range envelope.ToolCalls {
+			if strings.TrimSpace(call.ToolID) == "" {
+				continue
+			}
+			if call.Input == nil {
+				call.Input = map[string]any{}
+			}
+			calls = append(calls, call)
+		}
+		if len(calls) > 0 {
+			return calls, true
+		}
+	}
+	return nil, false
+}
+
+func fencedJSON(output string) string {
+	start := strings.Index(output, "```")
+	if start < 0 {
+		return ""
+	}
+	rest := output[start+3:]
+	if strings.HasPrefix(strings.ToLower(rest), "json") {
+		rest = rest[4:]
+	}
+	end := strings.Index(rest, "```")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+func firstJSONObject(output string) string {
+	start := strings.Index(output, "{")
+	end := strings.LastIndex(output, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	return strings.TrimSpace(output[start : end+1])
+}
+
+func normalizeModelToolID(toolID string) string {
+	switch strings.TrimSpace(toolID) {
+	case toolbroker.ToolListFiles, "read_project", "list_project":
+		return toolbroker.ToolListFiles
+	case toolbroker.ToolReadFile:
+		return toolbroker.ToolReadFile
+	case toolbroker.ToolWriteFile, "write_project":
+		return toolbroker.ToolWriteFile
+	case toolbroker.ToolReplaceFile, "str_replace", "edit_file":
+		return toolbroker.ToolReplaceFile
+	case toolbroker.ToolPresentArtifact, "artifact":
+		return toolbroker.ToolPresentArtifact
+	case toolbroker.ToolBash, "run_checks", "shell":
+		return toolbroker.ToolBash
+	case toolbroker.ToolSearch, "web_search":
+		return toolbroker.ToolSearch
+	case toolbroker.ToolFetch, "web_fetch":
+		return toolbroker.ToolFetch
+	default:
+		return ""
+	}
+}
+
+func appendToolObservations(prompt string, observations []string) string {
+	if len(observations) == 0 {
+		return prompt
+	}
+	var builder strings.Builder
+	builder.WriteString(prompt)
+	builder.WriteString("\n\nTool observations:\n")
+	for _, observation := range observations {
+		builder.WriteString("- ")
+		builder.WriteString(strings.ReplaceAll(strings.TrimSpace(observation), "\n", "\n  "))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\nContinue this role. Return another tool_calls JSON object only if more tools are required; otherwise return the final role result as normal text.")
+	return builder.String()
+}
+
+func toolObservation(toolID string, record *toolbroker.CallRecord, err error) string {
+	if record == nil {
+		if err != nil {
+			return fmt.Sprintf("%s failed: %s", toolID, err.Error())
+		}
+		return toolID + " produced no record."
+	}
+	if err != nil {
+		if record.OutputPreview != "" {
+			return fmt.Sprintf("%s failed: %s\n%s", toolID, err.Error(), record.OutputPreview)
+		}
+		return fmt.Sprintf("%s failed: %s", toolID, err.Error())
+	}
+	if record.OutputPreview == "" {
+		return fmt.Sprintf("%s completed.", toolID)
+	}
+	return fmt.Sprintf("%s output:\n%s", toolID, record.OutputPreview)
+}
+
+func toolCallID(record *toolbroker.CallRecord) string {
+	if record == nil {
+		return ""
+	}
+	return record.ToolCallID
+}
+
+func toolCallStatus(record *toolbroker.CallRecord, err error) string {
+	if record != nil && record.Status != "" {
+		return record.Status
+	}
+	if err != nil {
+		return toolbroker.StatusFailed
+	}
+	return toolbroker.StatusCompleted
+}
+
 func stopIfSessionRunnable(ctx context.Context, services Services, sessionID string) error {
 	detail, err := services.Runs.GetBySession(ctx, sessionID)
 	if err != nil {
@@ -1057,7 +1472,7 @@ func routeNeedsPlanReview(session *runpkg.Session) bool {
 	return value
 }
 
-func rolePrompt(configPath string, originalPrompt string, task *runpkg.Task, summaries []string) string {
+func rolePrompt(ctx context.Context, configPath string, services Services, session *runpkg.Session, originalPrompt string, task *runpkg.Task, summaries []string) string {
 	var builder strings.Builder
 	builder.WriteString(originalPrompt)
 	builder.WriteString("\n\nRole task:\n")
@@ -1075,6 +1490,14 @@ func rolePrompt(configPath string, originalPrompt string, task *runpkg.Task, sum
 			builder.WriteString("\n")
 		}
 	}
+	if memory := reusableMemoryBriefings(ctx, services.Context, session); len(memory) > 0 {
+		builder.WriteString("\n\nApproved reusable context:\n")
+		for _, item := range memory {
+			builder.WriteString("- ")
+			builder.WriteString(item)
+			builder.WriteString("\n")
+		}
+	}
 	if len(summaries) > 0 {
 		builder.WriteString("\n\nPrior role summaries:\n")
 		for _, summary := range summaries {
@@ -1083,8 +1506,52 @@ func rolePrompt(configPath string, originalPrompt string, task *runpkg.Task, sum
 			builder.WriteString("\n")
 		}
 	}
+	if shouldOfferToolProtocol(task) {
+		builder.WriteString("\n\nTool protocol:\n")
+		builder.WriteString("When this role needs workspace, shell, artifact, search, or fetch access, return only compact JSON in this shape:\n")
+		builder.WriteString(`{"tool_calls":[{"tool_id":"read_file","input":{"path":"README.md","max_bytes":12000}}]}`)
+		builder.WriteString("\nAvailable tool_id values: list_files, read_file, write_file, replace_file, present_artifact, bash, search, fetch.\n")
+		builder.WriteString("Use normal prose only when you are done with tool use. Mutating tools can pause for user approval and then resume from saved state.\n")
+	}
 	builder.WriteString("\nReturn a concise task result with decisions, evidence, and next handoff notes.")
 	return builder.String()
+}
+
+func reusableMemoryBriefings(ctx context.Context, store *sharedcontext.Store, session *runpkg.Session) []string {
+	if store == nil || session == nil || session.ProjectID == "" {
+		return nil
+	}
+	items, err := store.ListItems(ctx, session.ProjectID, sharedcontext.ScopeProject, 5)
+	if err != nil {
+		return nil
+	}
+	briefings := []string{}
+	for _, item := range items {
+		body := strings.Join(strings.Fields(item.Body), " ")
+		if body == "" {
+			continue
+		}
+		if len(body) > 500 {
+			body = body[:497] + "..."
+		}
+		briefings = append(briefings, item.Title+": "+body)
+	}
+	return briefings
+}
+
+func shouldOfferToolProtocol(task *runpkg.Task) bool {
+	if task == nil {
+		return false
+	}
+	if len(taskMetadataStringSlice(task, "required_tools")) > 0 {
+		return true
+	}
+	switch taskRoleID(task) {
+	case "researcher", "coder":
+		return true
+	default:
+		return false
+	}
 }
 
 func taskSummary(task *runpkg.Task, preview string) string {
@@ -1224,6 +1691,14 @@ func taskMetadataStringSlice(task *runpkg.Task, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func rawJSON(value any) json.RawMessage {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return payload
 }
 
 func taskRoleID(task *runpkg.Task) string {
@@ -1504,6 +1979,9 @@ func approvalGrantHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "trace_failed", "Approval trace event could not be written.", "Check Gateway logs.")
 			return
 		}
+		if services.Blocked != nil {
+			_ = services.Blocked.ResolveByApproval(request.Context(), approval.ApprovalID, blockedpkg.StatusResolved)
+		}
 		writeSuccess(response, requestID, approval, nil)
 	}
 }
@@ -1523,6 +2001,9 @@ func approvalDenyHandler(services Services) http.HandlerFunc {
 		if err := runpkg.ApprovalTraceEvent(request.Context(), services.Trace, trace.EventApprovalDenied, approval); err != nil {
 			writeError(response, http.StatusInternalServerError, requestID, "trace_failed", "Approval trace event could not be written.", "Check Gateway logs.")
 			return
+		}
+		if services.Blocked != nil {
+			_ = services.Blocked.ResolveByApproval(request.Context(), approval.ApprovalID, blockedpkg.StatusRejected)
 		}
 		writeSuccess(response, requestID, approval, nil)
 	}

@@ -353,4 +353,33 @@ CREATE INDEX IF NOT EXISTS idx_memory_proposals_session ON memory_proposals(sess
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_proposals_run_source ON memory_proposals(run_id, source_type);
 `,
 	},
+	{
+		Version: 14,
+		SQL: `
+CREATE TABLE IF NOT EXISTS blocked_actions (
+	blocked_action_id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	task_id TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL,
+	status TEXT NOT NULL,
+	title TEXT NOT NULL,
+	body TEXT NOT NULL DEFAULT '',
+	required_action TEXT NOT NULL DEFAULT '',
+	resume_target_task_id TEXT NOT NULL DEFAULT '',
+	approval_id TEXT NOT NULL DEFAULT '',
+	artifact_id TEXT NOT NULL DEFAULT '',
+	tool_call_id TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	resolved_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocked_actions_session ON blocked_actions(session_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blocked_actions_run ON blocked_actions(run_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blocked_actions_approval ON blocked_actions(approval_id);
+CREATE INDEX IF NOT EXISTS idx_blocked_actions_artifact ON blocked_actions(artifact_id);
+`,
+	},
 }
