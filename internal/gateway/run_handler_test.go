@@ -292,10 +292,7 @@ func TestModelToolLoopRepeatedFailureCreatesRetryDecision(t *testing.T) {
 	if detail.Tasks[0].BlockedReason != "repeated_tool_failure" {
 		t.Fatalf("expected repeated failure block, got %+v", detail.Tasks[0])
 	}
-	actions, err := blocked.NewStore(db).ListBySession(context.Background(), envelope.Data.SessionID, blocked.StatusOpen, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
+	actions := waitForBlockedActions(t, blocked.NewStore(db), envelope.Data.SessionID, blocked.KindRetryDecision)
 	if len(actions) != 1 || actions[0].Kind != blocked.KindRetryDecision {
 		t.Fatalf("expected retry decision action, got %+v", actions)
 	}
@@ -341,10 +338,7 @@ deployment:
 		t.Fatalf("decode run create: %v", err)
 	}
 	waitForSessionStatus(t, runpkg.NewStore(db), envelope.Data.SessionID, runpkg.SessionStatusBlocked)
-	actions, err := blocked.NewStore(db).ListBySession(context.Background(), envelope.Data.SessionID, blocked.StatusOpen, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
+	actions := waitForBlockedActions(t, blocked.NewStore(db), envelope.Data.SessionID, blocked.KindToolApproval)
 	if len(actions) != 1 || actions[0].Kind != blocked.KindToolApproval || actions[0].ApprovalID == "" {
 		t.Fatalf("expected open tool approval blocked action, got %+v", actions)
 	}
@@ -937,5 +931,26 @@ func waitForSessionStatus(t *testing.T, store *runpkg.Store, sessionID string, s
 		t.Fatalf("session %s did not reach %s; last status %s tasks %v", sessionID, status, last.Session.Status, taskState)
 	}
 	t.Fatalf("session %s did not reach %s", sessionID, status)
+	return nil
+}
+
+func waitForBlockedActions(t *testing.T, store *blocked.Store, sessionID string, kind string) []*blocked.Action {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var last []*blocked.Action
+	for time.Now().Before(deadline) {
+		actions, err := store.ListBySession(context.Background(), sessionID, blocked.StatusOpen, 10)
+		if err != nil {
+			t.Fatalf("list blocked actions: %v", err)
+		}
+		last = actions
+		for _, action := range actions {
+			if action.Kind == kind {
+				return actions
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("session %s did not create blocked action %s; last actions %+v", sessionID, kind, last)
 	return nil
 }
