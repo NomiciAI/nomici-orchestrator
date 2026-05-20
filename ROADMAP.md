@@ -62,15 +62,17 @@ Planned:
 - Knowledge and memory bridge
 - Message Gateway channel adapters
 - Human-in-the-loop planning and artifact editing
+- Uploads, artifact revisions, and workspace path mapping
+- Context summarization, budget accounting, and loop detection
+- MCP registry with allowlisted tool brokering
 - A2A server and client
-- MCP registry
 - A2A sidecars
 - Better router
 - Parallel fan-out and fan-in
 - Timeline replay improvements
 - Policy engine v1
 
-See `docs/design/deerflow-reference-roadmap.md` for the DeerFlow-inspired capability sequence and per-PR acceptance criteria.
+See `docs/design/deerflow-reference-roadmap.md` for the DeerFlow-inspired gap analysis, phased delivery plan, per-PR sequence, and acceptance criteria.
 
 ## v0.3: Framework Adapters
 
