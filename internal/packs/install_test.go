@@ -37,6 +37,16 @@ func TestInstallDeveloperTeamCreatesRunnableSpec(t *testing.T) {
 	if errors := agentspec.Validate(loaded); len(errors) != 0 {
 		t.Fatalf("expected installed spec to validate, got %+v", errors)
 	}
+	model, ok := loaded.Spec.Models["gpt"]
+	if !ok {
+		t.Fatalf("expected gpt model reference")
+	}
+	if model.Profile != "gpt" {
+		t.Fatalf("expected pack model to reference local profile, got %+v", model)
+	}
+	if model.BaseURL != "" || model.APIKeyEnv != "" || model.Model != "" {
+		t.Fatalf("expected pack model to omit local provider details, got %+v", model)
+	}
 	if loaded.Spec.Agents["product_pm"].Kind != agentspec.AgentKindGateway {
 		t.Fatalf("expected product_pm gateway agent")
 	}

@@ -41,6 +41,71 @@ agents:
 	}
 }
 
+func TestValidateProfileBackedModelReference(t *testing.T) {
+	path := writeSpec(t, `
+version: "0.1"
+project:
+  name: demo
+models:
+  primary:
+    profile: local_profile
+agents:
+  product_pm:
+    kind: gateway_agent
+    model: primary
+`)
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	if errors := Validate(loaded); len(errors) != 0 {
+		t.Fatalf("expected no validation errors, got %+v", errors)
+	}
+}
+
+func TestLoadFileWithLocalAppliesIgnoredOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nomici.yaml")
+	if err := os.WriteFile(path, []byte(`
+version: "0.1"
+project:
+  name: demo
+models:
+  primary:
+    profile: default_profile
+agents:
+  product_pm:
+    kind: gateway_agent
+    model: primary
+`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nomici.local.yaml"), []byte(`
+models:
+  primary:
+    profile: laptop_profile
+deployment:
+  sandbox:
+    mode: local
+`), 0o644); err != nil {
+		t.Fatalf("write local override: %v", err)
+	}
+	loaded, err := LoadFileWithLocal(path)
+	if err != nil {
+		t.Fatalf("load spec with local override: %v", err)
+	}
+	if loaded.LocalFile == "" {
+		t.Fatal("expected local override path")
+	}
+	if loaded.Spec.Models["primary"].Profile != "laptop_profile" {
+		t.Fatalf("expected local model override, got %+v", loaded.Spec.Models["primary"])
+	}
+	sandbox, ok := loaded.Spec.Deployment["sandbox"].(map[string]any)
+	if !ok || sandbox["mode"] != "local" {
+		t.Fatalf("expected local sandbox override, got %+v", loaded.Spec.Deployment)
+	}
+}
+
 func TestValidateRejectsNativeAgent(t *testing.T) {
 	path := writeSpec(t, `
 version: "0.1"

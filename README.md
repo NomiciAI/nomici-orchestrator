@@ -87,12 +87,12 @@ nomici down
 `nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici pack install`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
 
 ```text
-LLM provider -> live model catalog -> web search/fetch -> starter pack -> sandbox policy -> nomici.yaml -> nomici dev
+LLM provider -> live model catalog -> web search/fetch -> starter pack -> sandbox policy -> commit-safe nomici.yaml -> nomici dev
 ```
 
-The setup command writes model, web search/fetch, starter pack, and sandbox intent into the local workspace. Provider selection is two-level: choose a provider, then pick from that provider's live model catalog where the provider exposes one. Local CLI providers and custom OpenAI-compatible endpoints allow an explicit model id when the model list cannot be discovered. v0.1 treats the web tool entries as read-only provider contracts until mediated tool execution is enabled. `nomici doctor` reports whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
+The setup command writes the project manifest, web search/fetch contracts, starter pack, and sandbox intent into the local workspace. Provider selection is two-level: choose a provider, then pick from that provider's live model catalog where the provider exposes one. Local CLI providers and custom OpenAI-compatible endpoints allow an explicit model id when the model list cannot be discovered. Provider URLs, selected provider instances, and auth env-var bindings live in the local profile store under `.nomici/`; `nomici.yaml` only references those local profiles. v0.1 treats the web tool entries as read-only provider contracts until mediated tool execution is enabled. `nomici doctor` reports whether the project manifest stays commit-safe, whether sandbox config exists, whether requested web providers have required env vars, and whether a requested container sandbox has a local container runtime such as Docker or Podman.
 
-Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store.
+Provider setup stores only secret references such as `OPENAI_API_KEY`; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store. `.nomici/` and `nomici.local.yaml` are local-only; `nomici.local.yaml` can override local tools, deployment, runtimes, and model references without changing the shared project manifest.
 
 The bundled `developer-team` pack installs a runnable `product_pm` coordinator entrypoint plus planner, researcher, coder, and reporter role agents using an existing model provider profile. Its manifest also exposes role purpose, tool and skill expectations, handoff mode, model/runtime preference, and output contract metadata so run task ledgers can show role ownership without hardcoding those roles in Gateway. It also saves a graph snapshot for Console. Optional CLI-backed implementer/reviewer roles are represented in the pack design but are not installed by default yet.
 
@@ -103,7 +103,7 @@ The current graph runner supports a single executable `gateway_agent` or `model_
 The intended v0.1 flow:
 
 - Check the local machine with `nomici doctor`.
-- Configure an LLM provider without writing raw secrets to `nomici.yaml`.
+- Configure an LLM provider without writing local provider details or raw secrets to `nomici.yaml`.
 - Install a useful agent pack.
 - Review requested permissions.
 - Start Nomici Gateway on `http://127.0.0.1:8787`.
@@ -199,7 +199,8 @@ Nomici is a control plane and must be conservative by default:
 - Gateway binds to `127.0.0.1` by default.
 - Gateway token auth is enabled by default.
 - Remote access is disabled by default.
-- Secrets are referenced, not stored in `nomici.yaml`.
+- Shared project config stays in `nomici.yaml`; local state stays in `.nomici/` or `nomici.local.yaml`.
+- Secrets are referenced, not stored in project config.
 - MCP servers and remote agents are untrusted by default.
 - Shell, filesystem write, email, deploy, and unknown network actions require approval by default.
 - OpenAI-compatible `/v1/*` endpoints are treated as operator-level surfaces unless scoped differently in a future release.

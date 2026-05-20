@@ -48,6 +48,16 @@ func TestSetupCreatesUsableConfigAndSandbox(t *testing.T) {
 	if _, ok := loaded.Spec.Agents["product_pm"]; !ok {
 		t.Fatalf("expected product_pm agent")
 	}
+	model, ok := loaded.Spec.Models["local_llama"]
+	if !ok {
+		t.Fatalf("expected local profile-backed model reference")
+	}
+	if model.Profile != "local_llama" {
+		t.Fatalf("expected model to reference local profile, got %+v", model)
+	}
+	if model.BaseURL != "" || model.APIKeyEnv != "" || model.Model != "" {
+		t.Fatalf("expected project manifest to omit local provider details, got %+v", model)
+	}
 	sandbox, ok := loaded.Spec.Deployment["sandbox"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected deployment.sandbox map, got %#v", loaded.Spec.Deployment["sandbox"])
@@ -100,6 +110,9 @@ func TestSetupCreatesUsableConfigAndSandbox(t *testing.T) {
 	}
 	if !strings.Contains(doctorOutput, "web_tools") || !strings.Contains(doctorOutput, "search=duckduckgo fetch=jina_reader") {
 		t.Fatalf("expected doctor web tool readiness, got:\n%s", doctorOutput)
+	}
+	if !strings.Contains(doctorOutput, "config_scope") || !strings.Contains(doctorOutput, "commit-safe") {
+		t.Fatalf("expected doctor config boundary readiness, got:\n%s", doctorOutput)
 	}
 }
 

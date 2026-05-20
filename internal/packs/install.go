@@ -44,17 +44,12 @@ func InstallDeveloperTeam(ctx context.Context, options InstallOptions) (*Install
 
 	modelID := profile.ID
 	if existing, ok := spec.Models[modelID]; ok && !options.Force {
-		if existing.Kind != providers.NormalizeKind(profile.Kind) || existing.Model != profile.Model {
+		if existing.Profile != profile.ID && (existing.Kind != providers.NormalizeKind(profile.Kind) || existing.Model != profile.Model) {
 			return nil, fmt.Errorf("model %q already exists in %s; use --model with a different provider profile or --force to overwrite", modelID, options.ConfigPath)
 		}
 	}
 	spec.Models[modelID] = agentspec.Model{
-		Kind:          providers.NormalizeKind(profile.Kind),
-		BaseURL:       profile.BaseURL,
-		APIKeyEnv:     profile.APIKeyEnv,
-		Model:         profile.Model,
-		Capabilities:  profileCapabilities(profile),
-		ContextWindow: profile.ContextWindow,
+		Profile: profile.ID,
 	}
 
 	if err := addAgent(spec, "product_pm", agentspec.Agent{

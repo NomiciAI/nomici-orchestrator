@@ -274,7 +274,7 @@ func loadSpecIfExists(configPath string) (*agentspec.LoadedSpec, bool, error) {
 		}
 		return nil, false, err
 	}
-	loaded, err := agentspec.LoadFile(configPath)
+	loaded, err := agentspec.LoadFileWithLocal(configPath)
 	if err != nil {
 		return nil, true, err
 	}

@@ -363,7 +363,7 @@ func loadConsoleTools(configPath string) ([]consoleToolStatus, []string, error) 
 		}
 		return nil, nil, err
 	}
-	loaded, err := agentspec.LoadFile(configPath)
+	loaded, err := agentspec.LoadFileWithLocal(configPath)
 	if err != nil {
 		return nil, nil, err
 	}

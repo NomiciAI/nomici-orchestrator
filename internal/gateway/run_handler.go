@@ -832,7 +832,7 @@ func sandboxIntentFromConfig(configPath string) (sandbox.Intent, error) {
 	if configPath == "" {
 		configPath = "nomici.yaml"
 	}
-	loaded, err := agentspec.LoadFile(configPath)
+	loaded, err := agentspec.LoadFileWithLocal(configPath)
 	if err != nil {
 		return sandbox.Intent{}, err
 	}

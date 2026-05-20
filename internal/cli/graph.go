@@ -66,7 +66,7 @@ func newGraphExportCommand(configPath *string) *cobra.Command {
 }
 
 func compileGraphFromConfig(configPath string, command *cobra.Command) (*graph.Snapshot, error) {
-	loaded, err := agentspec.LoadFile(configPath)
+	loaded, err := agentspec.LoadFileWithLocal(configPath)
 	if err != nil {
 		return nil, err
 	}

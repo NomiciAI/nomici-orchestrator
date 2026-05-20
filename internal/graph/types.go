@@ -24,6 +24,7 @@ type IR struct {
 
 type Model struct {
 	ID            string           `json:"id"`
+	Profile       string           `json:"profile,omitempty"`
 	Kind          string           `json:"kind"`
 	BaseURL       string           `json:"base_url"`
 	APIKeyEnv     string           `json:"api_key_env,omitempty"`

@@ -685,7 +685,8 @@ func printSetupSummary(out io.Writer, options setupOptions, profile *providers.P
 	fmt.Fprintf(out, "  Web search: %s\n", options.webSearch)
 	fmt.Fprintf(out, "  Web fetch: %s\n", options.webFetch)
 	fmt.Fprintf(out, "  Sandbox:   %s (bash=%t, file_write=%t)\n", options.sandboxMode, options.enableBash && options.sandboxMode != sandboxModeNone, options.enableFileWrite && options.sandboxMode != sandboxModeNone)
-	fmt.Fprintf(out, "  Config:    %s\n", options.configPath)
+	fmt.Fprintf(out, "  Project:   %s (profile references only)\n", options.configPath)
+	fmt.Fprintf(out, "  Local DB:  %s\n", options.dbPath)
 
 	fmt.Fprintln(out, "\nNext steps:")
 	fmt.Fprintln(out, "  nomici doctor")
