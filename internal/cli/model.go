@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
+	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -69,7 +70,7 @@ func newModelDoctorCommand(dbPath *string) *cobra.Command {
 					message = err.Error()
 					failed = true
 				} else if profile.APIKeyEnv != "" {
-					if _, ok := os.LookupEnv(profile.APIKeyEnv); !ok {
+					if _, ok := secrets.NewResolver().ResolveEnv(profile.APIKeyEnv); !ok {
 						status = "warning"
 						message = "environment variable " + profile.APIKeyEnv + " is not set"
 					}

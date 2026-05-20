@@ -97,7 +97,7 @@ func runGraphEntrypoint(command *cobra.Command, configPath string, dbPath string
 		return err
 	}
 
-	executor := runs.DBExecutor(db, adapters.NewModelAdapter(), secrets.NewResolver(), configPath)
+	executor := runs.DBExecutor(db, adapters.NewModelAdapter(), secrets.NewResolverForConfig(configPath), configPath)
 	result, err := executor.Execute(command.Context(), runs.Request{
 		Snapshot: snapshot,
 		AgentID:  entrypoint,

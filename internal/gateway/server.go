@@ -130,7 +130,7 @@ func (server *Server) initialize() error {
 	services := Services{
 		Providers: providers.NewStore(db),
 		Trace:     trace.NewStore(db),
-		Secrets:   secrets.NewResolver(),
+		Secrets:   secrets.NewResolverForConfig(server.options.ConfigPath),
 		Adapter:   adapters.NewModelAdapter(),
 		Graph:     graph.NewStore(db),
 		Packs:     packs.NewStore(db),

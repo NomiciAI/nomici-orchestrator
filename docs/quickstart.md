@@ -147,7 +147,7 @@ nomici down
 
 ## Optional: Configure An LLM Provider
 
-Provider setup stores only the environment variable name, not the raw key.
+Scriptable provider setup stores only the environment variable name, not the raw key. The interactive `nomici setup` wizard also accepts a pasted provider key and saves it to ignored `.nomici/secrets.env` while keeping `nomici.yaml` commit-safe.
 
 ```bash
 export OPENAI_API_KEY=...

@@ -2,21 +2,36 @@ package secrets
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 // Resolver resolves secret references to their values.
-type Resolver struct{}
+type Resolver struct {
+	localSecretPaths []string
+}
 
 func NewResolver() *Resolver {
-	return &Resolver{}
+	return &Resolver{localSecretPaths: []string{filepath.Join(".nomici", "secrets.env")}}
+}
+
+func NewResolverForConfig(configPath string) *Resolver {
+	resolver := NewResolver()
+	configDir := filepath.Dir(strings.TrimSpace(configPath))
+	if configDir != "" && configDir != "." {
+		resolver.localSecretPaths = append([]string{filepath.Join(configDir, ".nomici", "secrets.env")}, resolver.localSecretPaths...)
+	}
+	return resolver
 }
 
 func (resolver *Resolver) ResolveEnv(name string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	return os.LookupEnv(name)
+	if value, ok := os.LookupEnv(name); ok {
+		return value, true
+	}
+	return resolver.lookupLocalSecret(name)
 }
 
 func (resolver *Resolver) Redact(value string) string {
@@ -45,4 +60,24 @@ func LooksSensitive(value string) bool {
 		strings.HasPrefix(lower, "ant-") ||
 		strings.HasPrefix(lower, "ghp_") ||
 		strings.HasPrefix(lower, "xox")
+}
+
+func (resolver *Resolver) lookupLocalSecret(name string) (string, bool) {
+	for _, path := range resolver.localSecretPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, value, ok := strings.Cut(line, "=")
+			if ok && strings.TrimSpace(key) == name {
+				return strings.TrimSpace(value), true
+			}
+		}
+	}
+	return "", false
 }
