@@ -197,4 +197,29 @@ CREATE INDEX IF NOT EXISTS idx_run_tasks_run ON run_tasks(run_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_run_tasks_status ON run_tasks(status, updated_at DESC);
 `,
 	},
+	{
+		Version: 8,
+		SQL: `
+CREATE TABLE IF NOT EXISTS sandbox_records (
+	sandbox_id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL UNIQUE,
+	task_id TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL,
+	mode TEXT NOT NULL,
+	status TEXT NOT NULL,
+	workspace_root TEXT NOT NULL DEFAULT '',
+	artifact_root TEXT NOT NULL DEFAULT '',
+	runtime_binary TEXT NOT NULL DEFAULT '',
+	cleanup_status TEXT NOT NULL DEFAULT 'active',
+	message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	released_at TEXT NOT NULL DEFAULT '',
+	metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sandbox_records_status ON sandbox_records(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sandbox_records_cleanup ON sandbox_records(cleanup_status, updated_at DESC);
+`,
+	},
 }

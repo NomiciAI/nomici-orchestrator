@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
 	"github.com/NomiciAI/nomici-orchestrator/internal/ids"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/trace"
 	"github.com/go-chi/chi/v5"
 )
@@ -29,6 +31,8 @@ type runCreateResponse struct {
 	AgentID         string `json:"agent_id"`
 	GraphSnapshotID string `json:"graph_snapshot_id"`
 	SessionID       string `json:"session_id,omitempty"`
+	SandboxID       string `json:"sandbox_id,omitempty"`
+	SandboxStatus   string `json:"sandbox_status,omitempty"`
 }
 
 type traceEventResponse struct {
@@ -47,7 +51,7 @@ type traceEventResponse struct {
 func runCreateHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil {
+		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil {
 			writeError(response, http.StatusServiceUnavailable, requestID, "runs_unavailable", "Run services are not initialized.", "Restart Gateway.")
 			return
 		}
@@ -73,7 +77,7 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 			writeError(response, http.StatusBadRequest, requestID, "run_not_supported", err.Error(), "Choose a supported graph entrypoint.")
 			return
 		}
-		session, taskIDs, err := createRunLedger(request.Context(), services, snapshot, runRequest, agent.ID)
+		session, sandboxRecord, taskIDs, err := createRunLedger(request.Context(), options, services, snapshot, runRequest, agent.ID)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, requestID, "run_session_failed", "Run session could not be created.", "Check Gateway logs.")
 			return
@@ -103,6 +107,8 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 			AgentID:         agent.ID,
 			GraphSnapshotID: snapshot.SnapshotID,
 			SessionID:       session.SessionID,
+			SandboxID:       sandboxRecord.SandboxID,
+			SandboxStatus:   sandboxRecord.Status,
 		}, nil)
 	}
 }
@@ -110,7 +116,7 @@ func runCreateHandler(options Options, services Services) http.HandlerFunc {
 func runDetailHandler(services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if services.Runs == nil {
+		if services.Runs == nil || services.Sandboxes == nil {
 			writeError(response, http.StatusServiceUnavailable, requestID, "runs_unavailable", "Run session store is not initialized.", "Restart Gateway.")
 			return
 		}
@@ -123,11 +129,20 @@ func runDetailHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "run_load_failed", "Run session could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		writeSuccess(response, requestID, detail, nil)
+		sandboxRecord, err := services.Sandboxes.GetByRun(request.Context(), detail.Session.RunID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			writeError(response, http.StatusInternalServerError, requestID, "sandbox_load_failed", "Sandbox record could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, struct {
+			Session *runpkg.Session `json:"session"`
+			Tasks   []*runpkg.Task  `json:"tasks"`
+			Sandbox *sandbox.Record `json:"sandbox,omitempty"`
+		}{Session: detail.Session, Tasks: detail.Tasks, Sandbox: sandboxRecord}, nil)
 	}
 }
 
-func createRunLedger(ctx context.Context, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string) (*runpkg.Session, []string, error) {
+func createRunLedger(ctx context.Context, options Options, services Services, snapshot *graph.Snapshot, request runpkg.Request, agentID string) (*runpkg.Session, *sandbox.Record, []string, error) {
 	session, err := services.Runs.CreateSession(ctx, runpkg.CreateSessionRequest{
 		RunID:           request.RunID,
 		ProjectID:       snapshot.ProjectID,
@@ -137,7 +152,7 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		Status:          runpkg.SessionStatusRunning,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventRunSessionCreated, "", map[string]any{
 		"session_id":        session.SessionID,
@@ -146,7 +161,7 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 		"source_channel":    session.SourceChannel,
 		"status":            session.Status,
 	}); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	plans := ledgerTaskPlans(snapshot, agentID)
@@ -163,7 +178,7 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 			Status:    status,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		taskIDs = append(taskIDs, task.TaskID)
 		if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventTaskCreated, task.AgentID, map[string]any{
@@ -172,10 +187,34 @@ func createRunLedger(ctx context.Context, services Services, snapshot *graph.Sna
 			"runtime_id": task.RuntimeID,
 			"status":     task.Status,
 		}); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	return session, taskIDs, nil
+	taskID := ""
+	if len(taskIDs) > 0 {
+		taskID = taskIDs[0]
+	}
+	sandboxRecord, err := services.Sandboxes.CreateForRun(ctx, sandbox.CreateRecordRequest{
+		RunID:     request.RunID,
+		TaskID:    taskID,
+		ProjectID: snapshot.ProjectID,
+		Intent:    sandboxIntentFromConfig(options.ConfigPath),
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := appendRunLedgerTrace(ctx, services.Trace, request.RunID, trace.EventSandboxCreated, "", map[string]any{
+		"sandbox_id":     sandboxRecord.SandboxID,
+		"provider":       sandboxRecord.Provider,
+		"mode":           sandboxRecord.Mode,
+		"status":         sandboxRecord.Status,
+		"workspace_root": sandboxRecord.WorkspaceRoot,
+		"artifact_root":  sandboxRecord.ArtifactRoot,
+		"runtime_binary": sandboxRecord.RuntimeBinary,
+	}); err != nil {
+		return nil, nil, nil, err
+	}
+	return session, sandboxRecord, taskIDs, nil
 }
 
 func completeRunLedger(ctx context.Context, services Services, runID string, sessionStatus string, taskStatus string, taskIDs []string) error {
@@ -200,9 +239,30 @@ func completeRunLedger(ctx context.Context, services Services, runID string, ses
 	if err := services.Runs.CompleteSession(ctx, runID, sessionStatus); err != nil {
 		return err
 	}
+	if services.Sandboxes != nil {
+		if err := services.Sandboxes.ReleaseByRun(ctx, runID); err != nil {
+			return err
+		}
+		if err := appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventSandboxReleased, "", map[string]any{
+			"status": "released",
+		}); err != nil {
+			return err
+		}
+	}
 	return appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCompleted, "", map[string]any{
 		"status": sessionStatus,
 	})
+}
+
+func sandboxIntentFromConfig(configPath string) sandbox.Intent {
+	if configPath == "" {
+		configPath = "nomici.yaml"
+	}
+	loaded, err := agentspec.LoadFile(configPath)
+	if err != nil || loaded.Spec == nil {
+		return sandbox.DefaultIntent()
+	}
+	return sandbox.IntentFromDeployment(loaded.Spec.Deployment)
 }
 
 type ledgerTaskPlan struct {

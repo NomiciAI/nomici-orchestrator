@@ -18,6 +18,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
+	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
@@ -115,8 +116,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 		t.Fatalf("decode run create: %v", err)
 	}
 	events := waitForRunEvents(t, trace.NewStore(db), envelope.Data.RunID, trace.EventRunCompleted)
-	if len(events) != 8 {
-		t.Fatalf("expected eight trace events, got %d", len(events))
+	if len(events) != 10 {
+		t.Fatalf("expected ten trace events, got %d", len(events))
 	}
 
 	eventsRequest := httptest.NewRequest(http.MethodGet, "/api/runs/"+envelope.Data.RunID+"/events?after_sequence=2", nil)
@@ -137,8 +138,8 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	if err := json.NewDecoder(eventsResponse.Body).Decode(&eventsEnvelope); err != nil {
 		t.Fatalf("decode events: %v", err)
 	}
-	if len(eventsEnvelope.Data) != 6 {
-		t.Fatalf("expected six events after sequence 2, got %d", len(eventsEnvelope.Data))
+	if len(eventsEnvelope.Data) != 8 {
+		t.Fatalf("expected eight events after sequence 2, got %d", len(eventsEnvelope.Data))
 	}
 	if eventsEnvelope.Data[0].Sequence <= 2 {
 		t.Fatalf("expected sequence filtering, got %+v", eventsEnvelope.Data)
@@ -152,6 +153,9 @@ func TestRunCreateEndpointModelRunAndEvents(t *testing.T) {
 	}
 	if !strings.Contains(detailResponse.Body.String(), `"status":"completed"`) || !strings.Contains(detailResponse.Body.String(), `"agent_id":"product_pm"`) {
 		t.Fatalf("expected completed session detail, got %s", detailResponse.Body.String())
+	}
+	if !strings.Contains(detailResponse.Body.String(), `"sandbox_id":"sandbox_`) || !strings.Contains(detailResponse.Body.String(), `"cleanup_status":"released"`) {
+		t.Fatalf("expected sandbox detail, got %s", detailResponse.Body.String())
 	}
 }
 
@@ -241,6 +245,7 @@ func newRunTestRouter(t *testing.T) (*sql.DB, http.Handler) {
 		Policy:    policy.NewService(db),
 		Context:   sharedcontext.NewStore(db),
 		Runs:      runpkg.NewStore(db),
+		Sandboxes: sandbox.NewStore(db),
 	})
 }
 
