@@ -40,8 +40,11 @@ nomici run product_pm "Plan the first useful task."
 - choosing an LLM provider and a provider-specific model from the live catalog when available
 - choosing basic Web Search and Web Fetch providers
 - installing the `developer-team` starter pack
+- writing a commit-safe `nomici.yaml` project manifest with local provider profile references
 - writing sandbox policy intent to `deployment.sandbox`
 - saving a graph snapshot for Gateway and Console
+
+`nomici.yaml` is the shared project manifest. It should contain packs, agents, tool contracts, and policy intent, but not local provider URLs, raw keys, or personal runtime state. `nomici setup` stores those local provider details in `.nomici/`; optional local AgentSpec overrides belong in ignored `nomici.local.yaml`.
 
 The same flow is scriptable for automation:
 
@@ -99,7 +102,7 @@ nomici provider doctor openai
 
 Provider catalogs are fetched from provider model APIs when available. Local CLI providers and custom endpoints still allow an explicit model id when a model list cannot be discovered.
 
-Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. Web Search and Web Fetch setup writes read-only provider contracts; full mediated tool execution is a later workflow. `nomici doctor` checks that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
+Sandbox modes are `local`, `container`, and `none`. In v0.1 this config is explicit control-plane policy metadata; runtime adapters enforce sandbox capabilities where supported. Web Search and Web Fetch setup writes read-only provider contracts; full mediated tool execution is a later workflow. `nomici doctor` checks that the project manifest stays commit-safe, that sandbox config exists, warns if `container` is selected but Docker, Podman, or Apple `container` is not available, and reports missing env vars for configured providers.
 
 ## Optional: Run A Local Agent Without An API Key
 

@@ -22,10 +22,11 @@ type Project struct {
 }
 
 type Model struct {
-	Kind          string   `yaml:"kind" json:"kind"`
-	BaseURL       string   `yaml:"base_url" json:"base_url"`
+	Profile       string   `yaml:"profile,omitempty" json:"profile,omitempty"`
+	Kind          string   `yaml:"kind,omitempty" json:"kind,omitempty"`
+	BaseURL       string   `yaml:"base_url,omitempty" json:"base_url,omitempty"`
 	APIKeyEnv     string   `yaml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
-	Model         string   `yaml:"model" json:"model"`
+	Model         string   `yaml:"model,omitempty" json:"model,omitempty"`
 	Capabilities  []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 	ContextWindow int      `yaml:"context_window,omitempty" json:"context_window,omitempty"`
 }

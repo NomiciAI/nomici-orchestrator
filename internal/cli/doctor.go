@@ -30,6 +30,7 @@ func newDoctorCommand() *cobra.Command {
 				checkToken(dbPath),
 				checkGateway(gatewayURL),
 				checkAgentSpec(configPath),
+				checkProjectConfigBoundary(configPath),
 				checkSandbox(configPath),
 				checkWebTools(configPath),
 				checkProviders(command, dbPath),
@@ -92,6 +93,36 @@ func checkAgentSpec(configPath string) doctorResult {
 		return doctorResult{Name: "agentspec", Status: "failed", Message: fmt.Sprintf("%d validation error(s)", len(errors))}
 	}
 	return doctorResult{Name: "agentspec", Status: "ok", Message: configPath + " valid"}
+}
+
+func checkProjectConfigBoundary(configPath string) doctorResult {
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return doctorResult{Name: "config_scope", Status: "warning", Message: "project manifest not found"}
+		}
+		return doctorResult{Name: "config_scope", Status: "failed", Message: err.Error()}
+	}
+	loaded, err := agentspec.LoadFile(configPath)
+	if err != nil {
+		return doctorResult{Name: "config_scope", Status: "failed", Message: err.Error()}
+	}
+	var legacy []string
+	for id, model := range loaded.Spec.Models {
+		if strings.TrimSpace(model.Profile) == "" && (strings.TrimSpace(model.BaseURL) != "" || strings.TrimSpace(model.APIKeyEnv) != "") {
+			legacy = append(legacy, id)
+		}
+	}
+	localPath := agentspec.LocalOverridePath(configPath)
+	localStatus := "no local override"
+	if _, err := os.Stat(localPath); err == nil {
+		localStatus = "local override active: " + localPath
+	} else if err != nil && !os.IsNotExist(err) {
+		return doctorResult{Name: "config_scope", Status: "failed", Message: err.Error()}
+	}
+	if len(legacy) > 0 {
+		return doctorResult{Name: "config_scope", Status: "warning", Message: "legacy provider details in project manifest: " + strings.Join(legacy, ", ")}
+	}
+	return doctorResult{Name: "config_scope", Status: "ok", Message: "project manifest is commit-safe; local state is in .nomici/ (" + localStatus + ")"}
 }
 
 func checkSandbox(configPath string) doctorResult {

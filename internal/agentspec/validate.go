@@ -42,8 +42,11 @@ func Validate(loaded *LoadedSpec) []ValidationError {
 
 	for id, model := range spec.Models {
 		path := "models." + id
+		if strings.TrimSpace(model.Profile) != "" {
+			continue
+		}
 		if strings.TrimSpace(model.Kind) == "" {
-			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set kind to openai_compatible, anthropic, gemini, ollama, codex_cli, or claude_code."))
+			errors = append(errors, validationError(loaded, "missing_required", path+".kind", "model kind is required", "Set profile to a local provider profile id, or set kind to openai_compatible, anthropic, gemini, ollama, codex_cli, or claude_code."))
 		} else if !providers.KnownKind(model.Kind) {
 			errors = append(errors, validationError(loaded, "unsupported_model_kind", path+".kind", "model kind "+quote(model.Kind)+" is not implemented", "Run `nomici provider list` and choose a supported adapter kind."))
 		}

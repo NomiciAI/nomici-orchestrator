@@ -3,6 +3,8 @@ package runs
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/clirunner"
 	"github.com/NomiciAI/nomici-orchestrator/internal/graph"
+	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	"github.com/NomiciAI/nomici-orchestrator/internal/secrets"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sharedcontext"
 	"github.com/NomiciAI/nomici-orchestrator/internal/store"
@@ -96,6 +99,63 @@ func TestValidateRejectsCyclicHandoffChain(t *testing.T) {
 	_, _, err := executor.Validate(Request{Snapshot: snapshot, AgentID: "planner", Prompt: "task"})
 	if err == nil || !strings.Contains(err.Error(), "contains a cycle") {
 		t.Fatalf("expected cycle validation error, got %v", err)
+	}
+}
+
+func TestExecuteModelResolvesLocalProfileReference(t *testing.T) {
+	db, configPath := newExecutorTestDB(t)
+	t.Setenv("NOMICI_TEST_API_KEY", "secret-key")
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if got := request.Header.Get("Authorization"); got != "Bearer secret-key" {
+			t.Fatalf("expected bearer auth from local profile, got %q", got)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{
+			"choices": [{"message": {"role": "assistant", "content": "profile resolved"}}],
+			"usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
+		}`))
+	}))
+	defer server.Close()
+	if err := providers.NewStore(db).Save(context.Background(), &providers.Profile{
+		ID:        "local_profile",
+		Name:      "Local profile",
+		Kind:      providers.KindOpenAICompatible,
+		BaseURL:   server.URL,
+		Model:     "test-model",
+		APIKeyEnv: "NOMICI_TEST_API_KEY",
+	}); err != nil {
+		t.Fatalf("save provider profile: %v", err)
+	}
+	snapshot := &graph.Snapshot{
+		SnapshotID:    "graph_profile",
+		SchemaVersion: "0.1",
+		ProjectID:     "test-project",
+		CreatedAt:     time.Now().UTC(),
+		SourceHash:    "sha256:test",
+		IR: graph.IR{
+			Models: map[string]graph.Model{
+				"primary": {ID: "primary", Profile: "local_profile"},
+			},
+			Agents: map[string]graph.Agent{
+				"assistant": {ID: "assistant", Kind: agentspec.AgentKindModel, Model: "primary"},
+			},
+		},
+	}
+
+	result, err := DBExecutor(db, adapters.NewModelAdapter(), secrets.NewResolver(), configPath).Execute(context.Background(), Request{
+		Snapshot: snapshot,
+		AgentID:  "assistant",
+		Prompt:   "hello",
+		RunID:    "run_profile",
+	})
+	if err != nil {
+		t.Fatalf("execute profile-backed model: %v", err)
+	}
+	if result.Status != adapters.StatusCompleted {
+		t.Fatalf("expected completed, got %s", result.Status)
+	}
+	if len(result.Messages) != 1 || result.Messages[0].Content != "profile resolved" {
+		t.Fatalf("unexpected result messages: %+v", result.Messages)
 	}
 }
 

@@ -31,11 +31,12 @@ func Compile(loaded *agentspec.LoadedSpec) (*Snapshot, []agentspec.ValidationErr
 
 	for id, model := range spec.Models {
 		baseURL := model.BaseURL
-		if baseURL == "" {
+		if baseURL == "" && model.Profile == "" {
 			baseURL = providers.DefaultBaseURL(model.Kind)
 		}
 		snapshot.IR.Models[id] = Model{
 			ID:            id,
+			Profile:       model.Profile,
 			Kind:          providers.NormalizeKind(model.Kind),
 			BaseURL:       baseURL,
 			APIKeyEnv:     model.APIKeyEnv,

@@ -13,6 +13,7 @@ Workspace:
 ```text
 project/
   nomici.yaml
+  nomici.local.yaml
   .nomici/
     state.db
     runs/
@@ -33,10 +34,11 @@ Global:
 
 Rules:
 
-- `nomici.yaml` is Git-friendly.
-- `.nomici/` is ignored.
-- raw secrets are not stored in AgentSpec.
-- global provider profiles can be referenced by project config.
+- `nomici.yaml` is the Git-friendly project manifest for packs, agents, graph shape, tool contracts, and policy intent.
+- `nomici.local.yaml` is ignored and may override local model references, tools, deployment, or runtimes for one machine.
+- `.nomici/` is ignored and stores runtime state, provider profile instances, sessions, traces, uploads, artifacts, and Gateway tokens.
+- raw secrets are not stored in AgentSpec or the local profile store.
+- provider profiles are referenced by project config through model profile references, while concrete URLs and auth env-var bindings stay local.
 
 ## SQLite Tables
 

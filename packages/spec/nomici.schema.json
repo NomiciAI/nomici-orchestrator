@@ -27,7 +27,13 @@
     "models": {
       "type": "object",
       "additionalProperties": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "Local provider profile id resolved from ignored local state."
+          }
+        }
       }
     },
     "runtimes": {

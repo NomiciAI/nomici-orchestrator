@@ -153,8 +153,11 @@ func (executor *Executor) executeModel(ctx context.Context, request Request, age
 		return nil, fmt.Errorf("model execution services are not initialized")
 	}
 	model := request.Snapshot.IR.Models[agent.Model]
-	profile := graphModelToProvider(model)
-	if executor.Providers != nil {
+	profile, err := executor.resolveModelProfile(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	if executor.Providers != nil && model.Profile == "" {
 		_ = executor.Providers.Save(ctx, profile)
 	}
 	if err := executor.Trace.Append(ctx, &tracepkg.Event{
@@ -587,6 +590,23 @@ func graphModelToProvider(model graph.Model) *providers.Profile {
 		Capabilities:  capabilities,
 		ContextWindow: model.ContextWindow,
 	}
+}
+
+func (executor *Executor) resolveModelProfile(ctx context.Context, model graph.Model) (*providers.Profile, error) {
+	if strings.TrimSpace(model.Profile) == "" {
+		return graphModelToProvider(model), nil
+	}
+	if executor.Providers == nil {
+		return nil, fmt.Errorf("model %q references local profile %q but provider store is not initialized", model.ID, model.Profile)
+	}
+	profile, err := executor.Providers.Get(ctx, model.Profile)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("model %q references local profile %q, but that profile is not configured; run `nomici setup` or `nomici model setup` in this workspace", model.ID, model.Profile)
+		}
+		return nil, err
+	}
+	return profile, nil
 }
 
 func cliRuntimeForAgent(snapshot *graph.Snapshot, agent graph.Agent) (graph.Runtime, error) {

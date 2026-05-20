@@ -25,7 +25,7 @@ func newRuntimeInspectCommand(configPath *string) *cobra.Command {
 		Short: "Inspect a runtime from nomici.yaml",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			loaded, err := agentspec.LoadFile(*configPath)
+			loaded, err := agentspec.LoadFileWithLocal(*configPath)
 			if err != nil {
 				return err
 			}
