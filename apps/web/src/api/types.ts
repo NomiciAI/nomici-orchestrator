@@ -101,6 +101,7 @@ export type ToolDefinition = {
   allowed_scopes: string[];
   redaction_rules: string[];
   execution: string;
+  execution_status?: "executable" | "configured_only" | "unavailable";
 };
 
 export type SkillDefinition = {
@@ -381,6 +382,7 @@ export type AgentRecord = {
   id: string;
   name?: string;
   description?: string;
+  source?: "built_in" | "project" | "local_override" | string;
   kind: string;
   model?: string;
   runtime?: string;
@@ -414,6 +416,7 @@ export type AgentTestResult = {
   agent_id: string;
   status: string;
   mode: string;
+  truth_label?: string;
   run_id?: string;
   output?: string;
   warnings?: string[];
@@ -447,6 +450,14 @@ export type OrchestrationPreview = {
   graph_snapshot_id?: string;
   entrypoint?: string;
   route_decision: RouteDecision;
+  run?: {
+    run_id: string;
+    status: string;
+    agent_id: string;
+    graph_snapshot_id?: string;
+    session_id?: string;
+    route_decision?: RouteDecision;
+  };
   tasks: Array<{
     agent_id: string;
     runtime_id?: string;

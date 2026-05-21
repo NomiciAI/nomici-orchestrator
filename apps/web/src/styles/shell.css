@@ -269,6 +269,12 @@ h2 {
   color: var(--text);
 }
 
+.button-ghost {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+}
+
 .button-danger {
   border-color: color-mix(in srgb, var(--danger) 44%, transparent);
   background: var(--danger-bg);

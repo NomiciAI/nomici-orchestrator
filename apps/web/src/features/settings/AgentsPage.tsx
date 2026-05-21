@@ -58,6 +58,7 @@ export function AgentsPage({ state }: { state: ConsoleState }) {
         testing={state.settingsMutation === "agent-test"}
         onValidate={() => void state.validateAgentDraft()}
         onTest={() => void state.testAgentDraft()}
+        onCopy={(agent) => void state.copyAgentToProject(agent)}
         onSave={(event) => void state.saveAgent(event)}
       />
     </section>

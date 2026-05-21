@@ -85,6 +85,12 @@ export function ChatPage({ state }: { state: ConsoleState }) {
           </div>
         ) : null}
         <form className="composer" onSubmit={state.sendMessage}>
+          {!state.hasConfiguredModel ? (
+            <div className="inline-warning">
+              Configure a model in Settings or run <code>nomici setup</code>{" "}
+              before sending a chat message.
+            </div>
+          ) : null}
           <textarea
             rows={5}
             value={state.messageText}
@@ -144,6 +150,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
                 state.runStatus === "running" ||
                 (state.runAgentId !== "auto" &&
                   !state.selectedAgent?.supported) ||
+                !state.hasConfiguredModel ||
                 state.messageText.trim() === ""
               }
             >

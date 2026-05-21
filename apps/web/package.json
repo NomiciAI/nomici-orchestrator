@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "fmt": "prettier --write \"index.html\" \"src/**/*.{css,ts,tsx}\"",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && node scripts/check-frontend-boundaries.mjs"
+    "test": "tsc --noEmit && node scripts/check-frontend-boundaries.mjs && node scripts/check-ui-reality.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.9.3",

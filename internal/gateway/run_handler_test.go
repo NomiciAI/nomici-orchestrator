@@ -24,6 +24,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
+	"github.com/NomiciAI/nomici-orchestrator/internal/projectconfig"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
@@ -421,6 +422,13 @@ deployment:
 	if len(resolved) == 0 {
 		t.Fatal("expected blocked action to resolve after approval")
 	}
+	toolCalls, err := toolbroker.NewStore(db).ListBySession(context.Background(), envelope.Data.SessionID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toolCalls) != 1 || toolCalls[0].Status != toolbroker.StatusCompleted {
+		t.Fatalf("expected approved pending call to be reused and completed once, got %+v", toolCalls)
+	}
 }
 
 func TestRunCreateEndpointRolePlanReviewAndArtifacts(t *testing.T) {
@@ -698,6 +706,24 @@ deployment:
 		t.Fatalf("expected orchestration preview, got %d: %s", preview.Code, preview.Body.String())
 	}
 
+	tools := httptest.NewRecorder()
+	router.ServeHTTP(tools, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
+	if tools.Code != http.StatusOK || !strings.Contains(tools.Body.String(), `"execution_status"`) {
+		t.Fatalf("expected tools with execution status, got %d: %s", tools.Code, tools.Body.String())
+	}
+
+	features := httptest.NewRecorder()
+	router.ServeHTTP(features, httptest.NewRequest(http.MethodGet, "/api/features/readiness", nil))
+	if features.Code != http.StatusOK || !strings.Contains(features.Body.String(), `"id":"chat"`) {
+		t.Fatalf("expected feature readiness, got %d: %s", features.Code, features.Body.String())
+	}
+
+	testRun := httptest.NewRecorder()
+	router.ServeHTTP(testRun, httptest.NewRequest(http.MethodPost, "/api/orchestration/test", bytes.NewBufferString(`{"prompt":"test the role flow"}`)))
+	if testRun.Code != http.StatusOK || !strings.Contains(testRun.Body.String(), `"run_id"`) || !strings.Contains(testRun.Body.String(), `"status":"started"`) {
+		t.Fatalf("expected real orchestration test run, got %d: %s", testRun.Code, testRun.Body.String())
+	}
+
 	runResponse := httptest.NewRecorder()
 	router.ServeHTTP(runResponse, httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"verify timeline"}`)))
 	if runResponse.Code != http.StatusOK {
@@ -808,7 +834,14 @@ deployment:
 }
 
 func TestAgentListShowsDefaultTeamWhenProjectHasNoAgents(t *testing.T) {
-	db, router := newRunTestRouter(t)
+	db, options, services := newRunTestServicesWithConfig(t, `version: "0.1"
+project:
+  name: test
+deployment:
+  sandbox:
+    mode: local
+`)
+	router := NewRouter(options, services)
 	if err := providers.NewStore(db).Save(context.Background(), &providers.Profile{
 		ID:      "local_model",
 		Name:    "Local Model",
@@ -823,8 +856,17 @@ func TestAgentListShowsDefaultTeamWhenProjectHasNoAgents(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"id":"product_pm"`) || !strings.Contains(response.Body.String(), `"id":"coder"`) {
+	if !strings.Contains(response.Body.String(), `"id":"product_pm"`) || !strings.Contains(response.Body.String(), `"id":"coder"`) || !strings.Contains(response.Body.String(), `"source":"built_in"`) {
 		t.Fatalf("expected default team agents, got %s", response.Body.String())
+	}
+	copyResponse := httptest.NewRecorder()
+	router.ServeHTTP(copyResponse, httptest.NewRequest(http.MethodPost, "/api/agents/product_pm/copy", bytes.NewBufferString(`{}`)))
+	if copyResponse.Code != http.StatusOK || !strings.Contains(copyResponse.Body.String(), `"source":"project"`) {
+		t.Fatalf("expected built-in agent copied to project, got %d: %s", copyResponse.Code, copyResponse.Body.String())
+	}
+	copied, err := projectconfig.GetAgent(options.ConfigPath, "product_pm")
+	if err != nil || copied.Source != "project" {
+		t.Fatalf("expected copied project agent, got %+v err=%v", copied, err)
 	}
 }
 

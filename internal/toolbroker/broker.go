@@ -162,6 +162,72 @@ func (broker *Broker) Execute(ctx context.Context, request ExecuteRequest) (*Cal
 	return updated, nil
 }
 
+func (broker *Broker) ExecuteApprovedRecord(ctx context.Context, toolCallID string, request ExecuteRequest) (*CallRecord, error) {
+	if broker.Store == nil {
+		return nil, fmt.Errorf("tool broker store is not initialized")
+	}
+	record, err := broker.Store.Get(ctx, toolCallID)
+	if err != nil {
+		return nil, err
+	}
+	if record.Status == StatusCompleted {
+		return record, nil
+	}
+	if record.Status != StatusWaitingApproval {
+		return record, fmt.Errorf("tool call %s is %s, not waiting for approval", toolCallID, record.Status)
+	}
+	if record.ApprovalID != "" && broker.Policy != nil {
+		approval, err := broker.Policy.Get(ctx, record.ApprovalID)
+		if err != nil {
+			return record, fmt.Errorf("load approval %s: %w", record.ApprovalID, err)
+		}
+		if approval.Status != policy.StatusGranted {
+			return record, fmt.Errorf("approval %s is %s", record.ApprovalID, approval.Status)
+		}
+	}
+	definition, err := DefinitionByID(record.ToolID)
+	if err != nil {
+		return record, err
+	}
+	session, err := broker.session(ctx, ExecuteRequest{SessionID: record.SessionID, RunID: record.RunID})
+	if err != nil {
+		return record, err
+	}
+	request.SessionID = record.SessionID
+	request.RunID = record.RunID
+	if request.TaskID == "" {
+		request.TaskID = record.TaskID
+	}
+	if request.ToolID == "" {
+		request.ToolID = record.ToolID
+	}
+	if _, err := broker.Store.MarkRunning(ctx, record.ToolCallID, record.Risk); err != nil {
+		return nil, err
+	}
+	output, artifactRefs, redactions, execErr := broker.executeAllowed(ctx, session, request, definition, record.ToolCallID)
+	if execErr != nil {
+		updated, _ := broker.Store.MarkFailed(ctx, record.ToolCallID, output, execErr.Error(), redactions)
+		_ = broker.appendTrace(ctx, record.RunID, "tool.call.failed", request.AgentID, map[string]any{
+			"tool_call_id":   record.ToolCallID,
+			"tool_id":        definition.ID,
+			"error":          execErr.Error(),
+			"output_preview": sharedcontext.RedactText(output),
+		})
+		return updated, execErr
+	}
+	updated, err := broker.Store.MarkCompleted(ctx, record.ToolCallID, output, artifactRefs, redactions)
+	if err != nil {
+		return nil, err
+	}
+	_ = broker.appendTrace(ctx, record.RunID, "tool.call.completed", request.AgentID, map[string]any{
+		"tool_call_id":   record.ToolCallID,
+		"tool_id":        definition.ID,
+		"output_preview": sharedcontext.RedactText(output),
+		"artifact_refs":  artifactRefs,
+	})
+	return updated, nil
+}
+
 func (broker *Broker) session(ctx context.Context, request ExecuteRequest) (*runpkg.Session, error) {
 	if broker.Runs == nil {
 		if request.SessionID == "" || request.RunID == "" {

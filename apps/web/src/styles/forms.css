@@ -230,6 +230,15 @@
   font-size: 12px;
 }
 
+.inline-warning {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: 8px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  font-size: 12px;
+}
+
 .inline-success {
   padding: 9px 10px;
   border: 1px solid color-mix(in srgb, var(--success) 48%, transparent);

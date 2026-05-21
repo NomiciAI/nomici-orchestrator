@@ -60,7 +60,7 @@ func newSetupCommand() *cobra.Command {
 	options := setupOptions{
 		configPath:      "nomici.yaml",
 		dbPath:          store.DefaultDBPath,
-		packID:          setupPackDeveloperTeam,
+		packID:          setupPackNone,
 		webSearch:       "duckduckgo",
 		webFetch:        "jina_reader",
 		sandboxMode:     sandboxModeLocal,
@@ -70,7 +70,7 @@ func newSetupCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "setup",
 		Short: "Configure a usable Nomici workspace",
-		Long:  "Configure a usable Nomici workspace by creating a model profile, configuring web tools, installing a starter pack, and writing sandbox intent into nomici.yaml.",
+		Long:  "Configure a usable Nomici workspace by creating a model profile, configuring web tools, and writing sandbox intent into nomici.yaml.",
 		RunE: func(command *cobra.Command, args []string) error {
 			return runSetup(command, options)
 		},
@@ -82,7 +82,7 @@ func newSetupCommand() *cobra.Command {
 	command.Flags().StringVar(&options.model, "model", "", "Provider model name")
 	command.Flags().StringVar(&options.baseURL, "base-url", "", "Provider base URL")
 	command.Flags().StringVar(&options.apiKeyEnv, "api-key-env", "", "Environment variable containing the API key")
-	command.Flags().StringVar(&options.packID, "pack", options.packID, "Starter pack to install: developer-team or none")
+	command.Flags().StringVar(&options.packID, "pack", options.packID, "Advanced: install an additional pack after setup: developer-team or none")
 	command.Flags().StringVar(&options.webSearch, "web-search", options.webSearch, "Web search provider: duckduckgo, brave, tavily, or none")
 	command.Flags().StringVar(&options.webSearchKeyEnv, "web-search-api-key-env", "", "Environment variable containing the web search API key")
 	command.Flags().StringVar(&options.webFetch, "web-fetch", options.webFetch, "Web fetch provider: jina-reader, direct-http, or none")
@@ -101,7 +101,7 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 	interactive := !options.yes
 
 	fmt.Fprintln(out, "Welcome to Nomici Setup.")
-	fmt.Fprintln(out, "This wizard configures the first usable model, web tools, starter pack, and sandbox policy for this workspace.")
+	fmt.Fprintln(out, "This wizard configures the first usable model, web tools, and sandbox policy for this workspace.")
 
 	if err := collectProviderOptions(in, out, &options, interactive); err != nil {
 		return err
@@ -109,7 +109,11 @@ func runSetup(command *cobra.Command, options setupOptions) error {
 	if err := collectWebToolOptions(in, out, &options, interactive); err != nil {
 		return err
 	}
-	if err := collectPackOptions(in, out, &options, interactive); err != nil {
+	options.packID = strings.TrimSpace(options.packID)
+	if options.packID == "" {
+		options.packID = setupPackNone
+	}
+	if err := validatePack(options.packID); err != nil {
 		return err
 	}
 	if err := collectSandboxOptions(in, out, &options, interactive); err != nil {
@@ -361,10 +365,10 @@ func collectPackOptions(in *bufio.Reader, out io.Writer, options *setupOptions, 
 	if !interactive {
 		return validatePack(options.packID)
 	}
-	fmt.Fprintln(out, "\nStarter pack")
+	fmt.Fprintln(out, "\nAdvanced pack install")
 	if interactive {
 		choice, err := promptChoice(in, out, "Starter pack", []setupChoice{
-			{ID: setupPackDeveloperTeam, Label: "Developer team", Description: "product_pm entrypoint with architecture subagent"},
+			{ID: setupPackDeveloperTeam, Label: "Developer team", Description: "Persist a project-owned copy of the built-in team"},
 			{ID: setupPackNone, Label: "None", Description: "Only write provider and sandbox config"},
 		}, 0)
 		if err != nil {
@@ -698,7 +702,10 @@ func printSetupSummary(out io.Writer, options setupOptions, profile *providers.P
 	} else {
 		fmt.Fprintln(out, "  Auth:      no API key env required")
 	}
-	fmt.Fprintf(out, "  Pack:      %s\n", options.packID)
+	fmt.Fprintln(out, "  Team:      built-in default team is available in Chat")
+	if options.packID != setupPackNone {
+		fmt.Fprintf(out, "  Pack:      %s\n", options.packID)
+	}
 	fmt.Fprintf(out, "  Web search: %s\n", options.webSearch)
 	fmt.Fprintf(out, "  Web fetch: %s\n", options.webFetch)
 	fmt.Fprintf(out, "  Sandbox:   %s (bash=%t, file_write=%t)\n", options.sandboxMode, options.enableBash && options.sandboxMode != sandboxModeNone, options.enableFileWrite && options.sandboxMode != sandboxModeNone)
@@ -708,9 +715,7 @@ func printSetupSummary(out io.Writer, options setupOptions, profile *providers.P
 	fmt.Fprintln(out, "\nNext steps:")
 	fmt.Fprintln(out, "  nomici doctor")
 	fmt.Fprintf(out, "  nomici dev --config %s\n", options.configPath)
-	if options.packID == setupPackDeveloperTeam {
-		fmt.Fprintln(out, "  nomici run product_pm \"Plan the next local automation task\"")
-	}
+	fmt.Fprintln(out, "  nomici run product_pm \"Plan the next local automation task\"")
 }
 
 func promptChoice(in *bufio.Reader, out io.Writer, label string, choices []setupChoice, defaultIndex int) (setupChoice, error) {

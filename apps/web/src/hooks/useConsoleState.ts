@@ -139,6 +139,7 @@ export function useConsoleState() {
     () => modelConnectionLabel(overview.models),
     [overview.models],
   );
+  const hasConfiguredModel = overview.models.length > 0;
   const tokenUsage = useMemo(
     () => aggregateTokenUsage(traceEvents),
     [traceEvents],
@@ -879,6 +880,30 @@ export function useConsoleState() {
     }
   }
 
+  async function copyAgentToProject(agent: AgentRecord) {
+    setSettingsMutation(`agent-copy:${agent.id}`);
+    setRunError("");
+    setAgentValidation("");
+    try {
+      const copied = await request<AgentRecord>(
+        `/api/agents/${encodeURIComponent(agent.id)}/copy`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      setAgentDraft(copied);
+      setAgentValidation(`${copied.id} copied to project config.`);
+      await loadOverview();
+    } catch (copyError) {
+      setAgentValidation(
+        copyError instanceof Error ? copyError.message : "Agent copy failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   async function saveAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (agentDraft.id.trim() === "") {
@@ -1059,6 +1084,15 @@ export function useConsoleState() {
         },
       );
       setOrchestrationPreview(preview);
+      if (preview.run?.session_id) {
+        setActiveRunId(preview.run.run_id);
+        setActiveSessionId(preview.run.session_id);
+        setActiveRouteDecision(
+          preview.run.route_decision ?? preview.route_decision,
+        );
+        setView("runs");
+        await loadSessionDetail(preview.run.session_id);
+      }
     } catch (testError) {
       setRunError(
         testError instanceof Error
@@ -1140,6 +1174,7 @@ export function useConsoleState() {
     selectedAgent,
     traceEvents,
     activeModelLabel,
+    hasConfiguredModel,
     tokenUsage,
     workspaceTasks,
     workspaceUploads,
@@ -1173,6 +1208,7 @@ export function useConsoleState() {
     draftAgentFromChat,
     exportChat,
     testAgentDraft,
+    copyAgentToProject,
     saveAgent,
     saveSkillDraft,
     toggleSkillEnabled,
