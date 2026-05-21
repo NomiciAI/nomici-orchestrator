@@ -274,8 +274,8 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	}
 	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute, false)
 	if startErr != nil {
-		if startErr.Code == "run_not_supported" && strings.Contains(strings.ToLower(startErr.Message), "agent_id is required") {
-			reply := "I can chat here, but workspace runs need at least one configured agent. Open Settings > Agent Builder to create an agent, or run `nomici setup --pack developer-team` from the project root."
+		if startErr.Code == "model_not_configured" || (startErr.Code == "run_not_supported" && strings.Contains(strings.ToLower(startErr.Message), "agent_id is required")) {
+			reply := "I can start workspace runs after a model provider is configured. Run `nomici setup` once, or add a model in Settings, then send this goal again."
 			assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
 				ChatID:   chatID,
 				Role:     chats.RoleAssistant,
@@ -348,13 +348,13 @@ func chatDirectReply(request *http.Request, services Services, content string, r
 	}
 	profile, err := directReplyProfile(request, services, route)
 	if err != nil || profile == nil {
-		return fallback
+		return modelUnavailableReply()
 	}
 	apiKey := ""
 	if profile.APIKeyEnv != "" {
 		resolved, ok := services.Secrets.ResolveEnv(profile.APIKeyEnv)
 		if !ok {
-			return fallback
+			return fmt.Sprintf("The configured model provider needs `%s` in your local environment before chat can use it. Set the variable or update the model in Settings.", profile.APIKeyEnv)
 		}
 		apiKey = resolved
 	}
@@ -372,14 +372,38 @@ func chatDirectReply(request *http.Request, services Services, content string, r
 		},
 		Options: adapters.InvokeOptions{TimeoutMs: 30000},
 	})
-	if err != nil || result == nil || result.Status != adapters.StatusCompleted || len(result.Messages) == 0 {
-		return fallback
+	if err != nil {
+		return "The configured model provider did not respond. Run `nomici doctor` or check Settings > Models before retrying."
+	}
+	if result == nil {
+		return "The configured model provider returned an empty response. Check Settings > Models before retrying."
+	}
+	if result.Status != adapters.StatusCompleted {
+		return modelFailureReply(result)
+	}
+	if len(result.Messages) == 0 {
+		return "The configured model completed without a chat message. Check the selected model in Settings before retrying."
 	}
 	reply := strings.TrimSpace(result.Messages[len(result.Messages)-1].Content)
 	if reply == "" {
-		return fallback
+		return "The configured model returned an empty chat message. Check the selected model in Settings before retrying."
 	}
 	return reply
+}
+
+func modelUnavailableReply() string {
+	return "No model provider is connected yet. Run `nomici setup`, or add a model in Settings, then chat here normally."
+}
+
+func modelFailureReply(result *adapters.InvokeResult) string {
+	if result != nil && result.Error != nil && strings.TrimSpace(result.Error.Message) != "" {
+		message := strings.Join(strings.Fields(result.Error.Message), " ")
+		if len(message) > 180 {
+			message = message[:177] + "..."
+		}
+		return fmt.Sprintf("The configured model could not answer: %s. Run `nomici doctor` or update the model in Settings.", message)
+	}
+	return "The configured model could not answer. Run `nomici doctor` or update the model in Settings."
 }
 
 func directReplyProfile(request *http.Request, services Services, route *orchestration.RouteDecision) (*providers.Profile, error) {

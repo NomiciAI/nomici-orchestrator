@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/projectconfig"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,10 +17,73 @@ func agentListHandler(options Options, services Services) http.HandlerFunc {
 		requestID := newRequestID()
 		agents, err := projectconfig.ListAgents(options.ConfigPath)
 		if err != nil {
+			defaults := defaultTeamAgentRecords(request, services)
+			if len(defaults) > 0 && (errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file")) {
+				writeSuccess(response, requestID, defaults, []string{"Using the built-in default team until this project saves custom agents."})
+				return
+			}
 			writeProjectConfigError(response, requestID, err)
 			return
 		}
+		if len(agents) == 0 {
+			if defaults := defaultTeamAgentRecords(request, services); len(defaults) > 0 {
+				writeSuccess(response, requestID, defaults, []string{"Using the built-in default team until this project saves custom agents."})
+				return
+			}
+		}
 		writeSuccess(response, requestID, agents, nil)
+	}
+}
+
+func defaultTeamAgentRecords(request *http.Request, services Services) []projectconfig.AgentRecord {
+	if services.Providers == nil {
+		return nil
+	}
+	profiles, err := services.Providers.List(request.Context())
+	if err != nil || len(profiles) == 0 {
+		return nil
+	}
+	modelID := profiles[0].ID
+	agents := defaultTeamAgents(modelID, agentspec.Source{File: "builtin", Path: "default_team"})
+	order := []string{"product_pm", "planner", "researcher", "coder", "reporter"}
+	records := make([]projectconfig.AgentRecord, 0, len(order))
+	for _, id := range order {
+		agent, ok := agents[id]
+		if !ok {
+			continue
+		}
+		records = append(records, projectconfig.AgentRecord{
+			ID:           agent.ID,
+			Name:         defaultTeamAgentName(agent.ID),
+			Description:  "Built-in default team role. Save a copy to customize it for this project.",
+			Kind:         agent.Kind,
+			Model:        agent.Model,
+			Runtime:      agent.Runtime,
+			Role:         agent.Role,
+			Instructions: agent.Instructions,
+			Tools:        agent.Tools,
+			Skills:       agent.Skills,
+			Tags:         []string{"default-team"},
+			Capabilities: agent.Capabilities,
+		})
+	}
+	return records
+}
+
+func defaultTeamAgentName(id string) string {
+	switch id {
+	case "product_pm":
+		return "Product PM"
+	case "planner":
+		return "Planner"
+	case "researcher":
+		return "Researcher"
+	case "coder":
+		return "Coder"
+	case "reporter":
+		return "Reporter"
+	default:
+		return id
 	}
 }
 

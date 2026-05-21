@@ -121,16 +121,21 @@ func Route(prompt string, manualAgentID string, snapshot *graph.Snapshot) RouteD
 		decision.Rationale = "This is general chat and does not need planning, files, tools, or agents."
 		return decision
 	}
-	if wantsImplementation(lower) || wantsResearch(lower) || wantsPlan(lower) {
+	if wantsImplementation(lower) || wantsResearch(lower) || wantsFreshInfo(lower) || wantsPlan(lower) {
 		decision.Complexity = ComplexityLongHorizon
 		decision.Confidence = 0.7
 		decision.Rationale = "The request implies planning, verification, implementation, or research across multiple steps."
 	} else {
 		decision.Complexity = ComplexityMedium
 	}
+	if wantsResearch(lower) || wantsFreshInfo(lower) {
+		decision.RequiredSkills = append(decision.RequiredSkills, "research")
+	}
 	if wantsResearch(lower) {
 		decision.RequiredTools = append(decision.RequiredTools, "read_project")
-		decision.RequiredSkills = append(decision.RequiredSkills, "research")
+	}
+	if wantsFreshInfo(lower) {
+		decision.RequiredTools = append(decision.RequiredTools, "search", "fetch")
 	}
 	if wantsImplementation(lower) {
 		decision.RequiredTools = append(decision.RequiredTools, "read_project", "write_project", "run_checks")
@@ -237,6 +242,7 @@ func defaultAgent(snapshot *graph.Snapshot) string {
 
 func defaultRoleIDs(manifest packs.Manifest, available map[string]packs.PackRole, decision RouteDecision) []string {
 	ids := []string{}
+	lower := strings.ToLower(decision.Goal)
 	appendRole := func(predicate func(packs.PackRole) bool) {
 		for _, role := range manifest.Roles {
 			if _, ok := available[role.ID]; ok && predicate(role) && !contains(ids, role.ID) {
@@ -249,12 +255,12 @@ func defaultRoleIDs(manifest packs.Manifest, available map[string]packs.PackRole
 	appendRole(func(role packs.PackRole) bool {
 		return roleHas(role, "plan") || contains(role.RequiredSkills, "planning")
 	})
-	if wantsResearch(strings.ToLower(decision.Goal)) {
+	if wantsResearch(lower) || wantsFreshInfo(lower) {
 		appendRole(func(role packs.PackRole) bool {
-			return roleHas(role, "research") || contains(role.RequiredSkills, "research") || contains(role.RequiredTools, "read_project")
+			return roleHas(role, "research") || contains(role.RequiredSkills, "research") || contains(role.RequiredTools, "read_project") || contains(role.RequiredTools, "search") || contains(role.RequiredTools, "fetch")
 		})
 	}
-	if wantsImplementation(strings.ToLower(decision.Goal)) {
+	if wantsImplementation(lower) {
 		appendRole(func(role packs.PackRole) bool {
 			return strings.Contains(strings.ToLower(role.ID), "code") || contains(role.RequiredSkills, "coding") || contains(role.RequiredTools, "write_project")
 		})
@@ -313,7 +319,7 @@ func roleScore(role packs.PackRole, decision RouteDecision) float64 {
 	if roleHas(role, "plan") && wantsPlan(lower) {
 		score += 0.2
 	}
-	if (contains(role.RequiredSkills, "research") || contains(role.RequiredTools, "read_project")) && wantsResearch(lower) {
+	if (contains(role.RequiredSkills, "research") || contains(role.RequiredTools, "read_project") || contains(role.RequiredTools, "search") || contains(role.RequiredTools, "fetch")) && (wantsResearch(lower) || wantsFreshInfo(lower)) {
 		score += 0.25
 	}
 	if (contains(role.RequiredSkills, "coding") || contains(role.RequiredTools, "write_project")) && wantsImplementation(lower) {
@@ -371,7 +377,14 @@ func wantsPlan(lower string) bool {
 }
 
 func wantsResearch(lower string) bool {
-	return containsAny(lower, []string{"research", "compare", "investigate", "analyze", "查", "研究", "对比", "分析", "参考"})
+	return containsAny(lower, []string{"research", "compare", "investigate", "analyze", "inspect", "review", "audit", "查", "研究", "对比", "分析", "参考", "审视"})
+}
+
+func wantsFreshInfo(lower string) bool {
+	return containsAny(lower, []string{
+		"price", "quote", "market", "stock", "bitcoin", "crypto",
+		"current", "latest", "实时", "价格", "行情", "最新",
+	}) || containsToken(lower, []string{"btc", "today", "now"})
 }
 
 func wantsImplementation(lower string) bool {
@@ -383,13 +396,27 @@ func wantsMutation(lower string) bool {
 }
 
 func hasWorkspaceIntent(lower string) bool {
-	return wantsImplementation(lower) || wantsResearch(lower) || wantsPlan(lower) || wantsMutation(lower)
+	return wantsImplementation(lower) || wantsResearch(lower) || wantsFreshInfo(lower) || wantsPlan(lower) || wantsMutation(lower)
 }
 
 func containsAny(value string, needles []string) bool {
 	for _, needle := range needles {
 		if strings.Contains(value, needle) {
 			return true
+		}
+	}
+	return false
+}
+
+func containsToken(value string, tokens []string) bool {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+	for _, field := range fields {
+		for _, token := range tokens {
+			if field == token {
+				return true
+			}
 		}
 	}
 	return false

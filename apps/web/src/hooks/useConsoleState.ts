@@ -19,6 +19,7 @@ import {
   type OrchestrationPreview,
   type Overview,
   type ProviderDefinition,
+  type ProviderProfile,
   type RouteDecision,
   type RunSessionDetail,
   type SkillDefinition,
@@ -134,6 +135,10 @@ export function useConsoleState() {
   );
   const selectedAgent = agentOptions.find((agent) => agent.id === runAgentId);
   const traceEvents = runEvents.length > 0 ? runEvents : overview.latest_trace;
+  const activeModelLabel = useMemo(
+    () => modelConnectionLabel(overview.models),
+    [overview.models],
+  );
   const tokenUsage = useMemo(
     () => aggregateTokenUsage(traceEvents),
     [traceEvents],
@@ -1134,6 +1139,7 @@ export function useConsoleState() {
     agentOptions,
     selectedAgent,
     traceEvents,
+    activeModelLabel,
     tokenUsage,
     workspaceTasks,
     workspaceUploads,
@@ -1212,4 +1218,35 @@ function titleCase(value: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function modelConnectionLabel(models: ProviderProfile[]): string {
+  if (!models.length) {
+    return "No model configured";
+  }
+  const model = models[0];
+  const provider = providerLabel(model.kind);
+  if (provider) {
+    return `${provider} / ${model.model || model.name || model.id}`;
+  }
+  return `${model.name || model.id} / ${model.model || model.kind}`;
+}
+
+function providerLabel(kind: string): string {
+  switch (kind) {
+    case "codex_cli":
+      return "Local Codex CLI";
+    case "claude_code":
+      return "Claude Code OAuth";
+    case "ollama":
+      return "Local Ollama";
+    case "anthropic":
+      return "Anthropic";
+    case "gemini":
+      return "Google Gemini";
+    case "openai_compatible":
+      return "OpenAI-compatible";
+    default:
+      return titleCase(kind.replaceAll("_", " "));
+  }
 }
