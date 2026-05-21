@@ -4,6 +4,7 @@ export function AgentBuilderActions({
   testing,
   agentIsInvalid,
   saving,
+  testDisabledReason,
   onValidate,
   onTest,
 }: {
@@ -12,6 +13,7 @@ export function AgentBuilderActions({
   testing: boolean;
   agentIsInvalid: boolean;
   saving: boolean;
+  testDisabledReason?: string;
   onValidate: () => void;
   onTest?: () => void;
 }) {
@@ -36,10 +38,11 @@ export function AgentBuilderActions({
         <button
           className="button button-secondary"
           type="button"
-          disabled={testing || agentIsInvalid}
+          disabled={testing || agentIsInvalid || Boolean(testDisabledReason)}
           onClick={onTest}
+          title={testDisabledReason}
         >
-          {testing ? "Testing" : "Test"}
+          {testing ? "Testing" : testDisabledReason || "Test saved agent"}
         </button>
       ) : null}
       <button
