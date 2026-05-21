@@ -73,8 +73,8 @@ func TestRunCreateEndpointMissingGraph(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d: %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), "graph_not_found") {
-		t.Fatalf("expected graph_not_found, got %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), "model_not_configured") {
+		t.Fatalf("expected model_not_configured, got %s", response.Body.String())
 	}
 }
 
@@ -730,7 +730,7 @@ deployment:
 	}
 }
 
-func TestChatAutoWithoutAgentsReturnsAssistantSetupHelp(t *testing.T) {
+func TestChatAutoWithoutAgentsReturnsAssistantModelSetupHelp(t *testing.T) {
 	db, router := newRunTestRouter(t)
 	if err := graph.NewStore(db).Save(context.Background(), &graph.Snapshot{
 		SnapshotID:    "graph_empty",
@@ -761,8 +761,70 @@ func TestChatAutoWithoutAgentsReturnsAssistantSetupHelp(t *testing.T) {
 	if envelope.Data.Run != nil {
 		t.Fatalf("expected no run when no agents are configured, got %+v", envelope.Data.Run)
 	}
-	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "Agent Builder") {
-		t.Fatalf("expected setup help assistant message, got %+v", envelope.Data.AssistantMessage)
+	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "model provider") {
+		t.Fatalf("expected model setup help assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+}
+
+func TestWorkspaceRunCreatesDefaultTeamWhenGraphMissing(t *testing.T) {
+	db, options, services := newRunTestServicesWithConfig(t, `version: "0.1"
+project:
+  name: default-team-test
+deployment:
+  sandbox:
+    mode: local
+`)
+	if err := providers.NewStore(db).Save(context.Background(), &providers.Profile{
+		ID:      "local_model",
+		Name:    "Local Model",
+		Kind:    providers.KindCodexCLI,
+		BaseURL: providers.DefaultBaseURL(providers.KindCodexCLI),
+		Model:   "gpt-test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, startErr := startWorkspaceRunWithRoute(context.Background(), options, services, "", "inspect this repo and suggest the next product improvement", "chat", map[string]any{}, nil, false)
+	if startErr != nil {
+		t.Fatalf("expected default team run start, got %+v", startErr)
+	}
+	if result.Response.AgentID != "product_pm" {
+		t.Fatalf("expected default entrypoint product_pm, got %q", result.Response.AgentID)
+	}
+	if len(result.Tasks) < 3 {
+		t.Fatalf("expected default team task ledger, got %+v", result.Tasks)
+	}
+	snapshot, err := graph.NewStore(db).Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"product_pm", "planner", "researcher", "reporter"} {
+		if _, ok := snapshot.IR.Agents[id]; !ok {
+			t.Fatalf("expected default team agent %q in snapshot: %+v", id, snapshot.IR.Agents)
+		}
+	}
+	if _, err := packs.NewStore(db).GetInstallation(context.Background(), packs.DeveloperTeamID); err != nil {
+		t.Fatalf("expected default team pack installation metadata: %v", err)
+	}
+}
+
+func TestAgentListShowsDefaultTeamWhenProjectHasNoAgents(t *testing.T) {
+	db, router := newRunTestRouter(t)
+	if err := providers.NewStore(db).Save(context.Background(), &providers.Profile{
+		ID:      "local_model",
+		Name:    "Local Model",
+		Kind:    providers.KindCodexCLI,
+		BaseURL: providers.DefaultBaseURL(providers.KindCodexCLI),
+		Model:   "gpt-test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/agents", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"id":"product_pm"`) || !strings.Contains(response.Body.String(), `"id":"coder"`) {
+		t.Fatalf("expected default team agents, got %s", response.Body.String())
 	}
 }
 
@@ -961,6 +1023,12 @@ deployment:
 
 func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Handler) {
 	t.Helper()
+	db, options, services := newRunTestServicesWithConfig(t, config)
+	return db, NewRouter(options, services)
+}
+
+func newRunTestServicesWithConfig(t *testing.T, config string) (*sql.DB, Options, Services) {
+	t.Helper()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "nomici.yaml")
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
@@ -976,7 +1044,8 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 	}
 	providerStore := providers.NewStore(db)
 	traceStore := trace.NewStore(db)
-	return db, NewRouter(Options{Version: "test", ConfigPath: configPath}, Services{
+	options := Options{Version: "test", ConfigPath: configPath}
+	services := Services{
 		Providers: providerStore,
 		Trace:     traceStore,
 		Secrets:   secrets.NewResolver(),
@@ -994,7 +1063,8 @@ func newRunTestRouterWithConfig(t *testing.T, config string) (*sql.DB, http.Hand
 		Memory:    memory.NewStore(db),
 		Blocked:   blocked.NewStore(db),
 		Locks:     worklocks.NewStore(db),
-	})
+	}
+	return db, options, services
 }
 
 func saveRunTestGraph(t *testing.T, store *graph.Store, baseURL string, edges []graph.Edge) {

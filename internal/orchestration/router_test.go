@@ -20,6 +20,8 @@ func TestRouteDecisionModes(t *testing.T) {
 		{name: "ambiguous", text: "fix", mode: ModeClarify},
 		{name: "implementation", text: "implement the workspace review flow", mode: ModeWorkspaceRun},
 		{name: "research", text: "research and compare provider options", mode: ModeWorkspaceRun},
+		{name: "repo inspection", text: "Inspect this repo and suggest the next product improvement", mode: ModeWorkspaceRun},
+		{name: "fresh price", text: "check BTC price", mode: ModeWorkspaceRun},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -28,6 +30,44 @@ func TestRouteDecisionModes(t *testing.T) {
 				t.Fatalf("expected mode %s, got %+v", test.mode, decision)
 			}
 		})
+	}
+}
+
+func TestFreshInfoRouteRequiresSearchAndFetch(t *testing.T) {
+	decision := Route("check BTC price", "", nil)
+	if decision.Mode != ModeWorkspaceRun {
+		t.Fatalf("expected workspace run, got %+v", decision)
+	}
+	if !contains(decision.RequiredTools, "search") || !contains(decision.RequiredTools, "fetch") {
+		t.Fatalf("expected search and fetch tools, got %+v", decision.RequiredTools)
+	}
+	if !contains(decision.RequiredSkills, "research") {
+		t.Fatalf("expected research skill, got %+v", decision.RequiredSkills)
+	}
+}
+
+func TestFreshInfoRouteSelectsResearcher(t *testing.T) {
+	manifest := packs.DeveloperTeamManifest()
+	snapshot := &graph.Snapshot{IR: graph.IR{Agents: map[string]graph.Agent{
+		"product_pm": {ID: "product_pm"},
+		"planner":    {ID: "planner"},
+		"researcher": {ID: "researcher"},
+		"reporter":   {ID: "reporter"},
+	}}}
+	decision := Route("check BTC price", "", snapshot)
+	match := MatchRoles(manifest, snapshot, "product_pm", decision)
+	got := []string{}
+	for _, role := range match.Roles {
+		got = append(got, role.RoleID)
+	}
+	want := []string{"product_pm", "planner", "researcher", "reporter"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
 	}
 }
 

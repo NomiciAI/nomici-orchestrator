@@ -10,13 +10,16 @@ export function ChatPage({ state }: { state: ConsoleState }) {
     >
       <section className="chat-main">
         <div className="chat-utility-bar">
-          <div>
-            <span>Tokens</span>
-            <strong>{state.tokenUsage.total.toLocaleString()}</strong>
-            <small>
-              input {state.tokenUsage.input.toLocaleString()} / output{" "}
-              {state.tokenUsage.output.toLocaleString()}
-            </small>
+          <div className="model-connection">
+            <span>Model</span>
+            <strong>{state.activeModelLabel}</strong>
+            {state.tokenUsage.total > 0 ? (
+              <small>
+                tokens {state.tokenUsage.total.toLocaleString()} · input{" "}
+                {state.tokenUsage.input.toLocaleString()} / output{" "}
+                {state.tokenUsage.output.toLocaleString()}
+              </small>
+            ) : null}
           </div>
           <div>
             <button
@@ -44,29 +47,6 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             >
               <span>{message.role}</span>
               <p>{message.content}</p>
-              {message.role === "assistant" ? (
-                <div className="message-actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void state.submitMessageFeedback(message.message_id, "up")
-                    }
-                  >
-                    Helpful
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void state.submitMessageFeedback(
-                        message.message_id,
-                        "down",
-                      )
-                    }
-                  >
-                    Not helpful
-                  </button>
-                </div>
-              ) : null}
             </article>
           ))}
           {state.chatDetail ? null : (

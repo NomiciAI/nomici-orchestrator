@@ -39,12 +39,12 @@ nomici run product_pm "Plan the first useful task."
 
 - choosing an LLM provider and a provider-specific model from the live catalog when available
 - choosing basic Web Search and Web Fetch providers
-- installing the `developer-team` starter pack
+- preparing the built-in default team
 - writing a commit-safe `nomici.yaml` project manifest with local provider profile references
 - writing sandbox policy intent to `deployment.sandbox`
-- saving a graph snapshot for Gateway and Console
+- saving or materializing graph metadata for Gateway and Console
 
-`nomici.yaml` is the shared project manifest. It should contain packs, agents, tool contracts, and policy intent, but not local provider URLs, raw keys, or personal runtime state. `nomici setup` stores those local provider details in `.nomici/`; optional local AgentSpec overrides belong in ignored `nomici.local.yaml`.
+`nomici.yaml` is the shared project manifest. It should contain shared agent/team choices, tool contracts, and policy intent, but not local provider URLs, raw keys, or personal runtime state. `nomici setup` stores those local provider details in `.nomici/`; optional local AgentSpec overrides belong in ignored `nomici.local.yaml`. If no explicit team graph exists yet, Gateway can create the default coordinator/planner/researcher/coder/reporter team from the first configured model profile when Chat starts a workspace run.
 
 The same flow is scriptable for automation:
 
@@ -56,7 +56,6 @@ nomici setup \
   --api-key-env OPENAI_API_KEY \
   --web-search duckduckgo \
   --web-fetch jina-reader \
-  --pack developer-team \
   --sandbox local \
   --enable-file-write \
   --yes
@@ -157,7 +156,7 @@ nomici model setup --kind openai_compatible --name gpt --model <model> --api-key
 nomici model test gpt "Say hello from Nomici."
 ```
 
-This lower-level command remains useful for scripts and advanced setups. For a new workspace, prefer `nomici setup` because it also installs a starter pack and configures sandbox policy.
+This lower-level command remains useful for scripts and advanced setups. For a new workspace, prefer `nomici setup` because it also prepares the default team and configures sandbox policy.
 
 You can also test the OpenAI-compatible Gateway surface:
 
@@ -168,17 +167,16 @@ curl -H "Authorization: Bearer $(nomici gateway token show)" \
 nomici down
 ```
 
-## Optional: Install The Developer Team Pack
+## Optional: Inspect The Default Team Pack
 
-After configuring at least one model profile:
+The built-in default team is available without a manual install step. Advanced users can inspect the template before copying or customizing it:
 
 ```bash
-nomici pack install developer-team --model gpt
+nomici pack inspect developer-team
 nomici run product_pm "Draft a tiny implementation plan."
-nomici trace show <run_id>
 ```
 
-`pack install` writes the pack into `nomici.yaml` and saves a graph snapshot for Console. If Console is already open, refresh it after installing the pack.
+Console's Agent and Orchestration views are the preferred way to turn the default team into a project-specific team.
 
 ## Current Limits
 

@@ -133,9 +133,9 @@ func startWorkspaceRunWithRoute(ctx context.Context, options Options, services S
 	if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil || services.Policy == nil || services.Context == nil || services.Runs == nil || services.Sandboxes == nil || services.Artifacts == nil {
 		return nil, &startRunError{Status: http.StatusServiceUnavailable, Code: "runs_unavailable", Message: "Run services are not initialized.", Remediation: "Restart Gateway."}
 	}
-	snapshot, err := services.Graph.Latest(ctx)
-	if err != nil {
-		return nil, &startRunError{Status: http.StatusNotFound, Code: "graph_not_found", Message: "No compiled graph snapshot was found.", Remediation: "Run `nomici graph validate` or install a pack."}
+	snapshot, startErr := latestRunnableSnapshot(ctx, options, services)
+	if startErr != nil {
+		return nil, startErr
 	}
 	agentID = strings.TrimSpace(agentID)
 	orchestrationConfig, _ := projectconfig.GetOrchestration(options.ConfigPath)
@@ -152,6 +152,9 @@ func startWorkspaceRunWithRoute(ctx context.Context, options Options, services S
 	}
 	if agentID == "" {
 		agentID = defaultRunAgent(snapshot)
+	}
+	if routeDecision != nil && strings.TrimSpace(routeDecision.RecommendedAgentID) == "" {
+		routeDecision.RecommendedAgentID = agentID
 	}
 	executor := runExecutor(options, services)
 	runRequest := runpkg.Request{
@@ -199,6 +202,144 @@ func startWorkspaceRunWithRoute(ctx context.Context, options Options, services S
 		Executor: executor,
 		Tasks:    tasks,
 	}, nil
+}
+
+func latestRunnableSnapshot(ctx context.Context, options Options, services Services) (*graph.Snapshot, *startRunError) {
+	snapshot, err := services.Graph.Latest(ctx)
+	if err == nil && snapshotHasRunnableAgents(snapshot) {
+		return snapshot, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) && !strings.Contains(err.Error(), "no rows") {
+		return nil, &startRunError{Status: http.StatusInternalServerError, Code: "graph_load_failed", Message: "Compiled agent graph could not be loaded.", Remediation: "Check Gateway logs."}
+	}
+	generated, genErr := createDefaultTeamSnapshot(ctx, options, services)
+	if genErr != nil {
+		return nil, &startRunError{Status: http.StatusNotFound, Code: "model_not_configured", Message: genErr.Error(), Remediation: "Run `nomici setup` and choose a model provider."}
+	}
+	return generated, nil
+}
+
+func snapshotHasRunnableAgents(snapshot *graph.Snapshot) bool {
+	return snapshot != nil && len(snapshot.IR.Agents) > 0 && len(snapshot.IR.Models) > 0
+}
+
+func createDefaultTeamSnapshot(ctx context.Context, options Options, services Services) (*graph.Snapshot, error) {
+	if services.Providers == nil {
+		return nil, fmt.Errorf("no model provider store is available for the default agent team")
+	}
+	profiles, err := services.Providers.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("no model profile is configured for the default agent team")
+	}
+	profile := profiles[0]
+	now := time.Now().UTC()
+	source := agentspec.Source{File: "builtin", Path: "default_team"}
+	modelID := profile.ID
+	snapshot := &graph.Snapshot{
+		SnapshotID:    ids.New("graph"),
+		SchemaVersion: "0.1",
+		ProjectID:     defaultTeamProjectID(options.ConfigPath),
+		CreatedAt:     now,
+		SourceHash:    "builtin:default-team:" + profile.ID + ":" + profile.Model,
+		IR: graph.IR{
+			Models: map[string]graph.Model{
+				modelID: {
+					ID:            modelID,
+					Profile:       profile.ID,
+					Kind:          profile.Kind,
+					BaseURL:       profile.BaseURL,
+					APIKeyEnv:     profile.APIKeyEnv,
+					Model:         profile.Model,
+					ContextWindow: profile.ContextWindow,
+					Source:        source,
+				},
+			},
+			Runtimes: map[string]graph.Runtime{},
+			Agents:   defaultTeamAgents(modelID, source),
+			Edges:    []graph.Edge{},
+		},
+	}
+	if err := services.Graph.Save(ctx, snapshot); err != nil {
+		return nil, err
+	}
+	if services.Packs != nil {
+		manifest := packs.DeveloperTeamManifest()
+		_ = services.Packs.SaveInstallation(ctx, &packs.Installation{
+			PackID:      manifest.ID,
+			Version:     manifest.Version,
+			Kind:        manifest.Kind,
+			Trust:       manifest.Trust.Level,
+			ConfigPath:  options.ConfigPath,
+			Entrypoints: manifest.Agents.Entrypoints,
+			InstalledAt: now,
+			UpdatedAt:   now,
+		})
+	}
+	return snapshot, nil
+}
+
+func defaultTeamProjectID(configPath string) string {
+	if strings.TrimSpace(configPath) != "" {
+		if loaded, err := agentspec.LoadFileWithLocal(configPath); err == nil && loaded.Spec != nil && strings.TrimSpace(loaded.Spec.Project.Name) != "" {
+			return strings.TrimSpace(loaded.Spec.Project.Name)
+		}
+	}
+	return "nomici-project"
+}
+
+func defaultTeamAgents(modelID string, source agentspec.Source) map[string]graph.Agent {
+	return map[string]graph.Agent{
+		"product_pm": {
+			ID:           "product_pm",
+			Kind:         agentspec.AgentKindGateway,
+			Model:        modelID,
+			Role:         "Coordinate the default agent team and keep each run pointed at a concrete deliverable.",
+			Instructions: "Choose the smallest useful role sequence. Do not claim work happened unless trace, tool calls, or artifacts prove it.",
+			Skills:       []string{"planning"},
+			Source:       source,
+		},
+		"planner": {
+			ID:           "planner",
+			Kind:         agentspec.AgentKindModel,
+			Model:        modelID,
+			Role:         "Turn the user goal into a bounded plan with phases, acceptance criteria, dependencies, and open questions.",
+			Instructions: "Prefer short plans with explicit sequencing and clear blocked states.",
+			Skills:       []string{"planning"},
+			Source:       source,
+		},
+		"researcher": {
+			ID:           "researcher",
+			Kind:         agentspec.AgentKindModel,
+			Model:        modelID,
+			Role:         "Gather and verify project or external facts needed before implementation choices are made.",
+			Instructions: "Use available read/search/fetch tools. Summarize sources, confidence, contradictions, and follow-up checks.",
+			Tools:        []string{"read_project", "search", "fetch"},
+			Skills:       []string{"research"},
+			Source:       source,
+		},
+		"coder": {
+			ID:           "coder",
+			Kind:         agentspec.AgentKindModel,
+			Model:        modelID,
+			Role:         "Implement or verify changes through mediated workspace tools when the plan allows it.",
+			Instructions: "Keep edits scoped, request approvals for mutations, and report verification evidence.",
+			Tools:        []string{"read_project", "write_project", "run_checks"},
+			Skills:       []string{"coding"},
+			Source:       source,
+		},
+		"reporter": {
+			ID:           "reporter",
+			Kind:         agentspec.AgentKindModel,
+			Model:        modelID,
+			Role:         "Turn completed work and evidence into a concise final report.",
+			Instructions: "Report what changed, what was verified, residual risks, and next steps tied to trace or artifacts.",
+			Skills:       []string{"reporting"},
+			Source:       source,
+		},
+	}
 }
 
 func defaultRunAgent(snapshot *graph.Snapshot) string {

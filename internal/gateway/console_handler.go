@@ -176,7 +176,7 @@ func latestGraphHandler(services Services) http.HandlerFunc {
 			writeError(response, http.StatusInternalServerError, requestID, "graph_load_failed", "Latest graph snapshot could not be loaded.", "Check Gateway logs.")
 			return
 		}
-		writeSuccess(response, requestID, snapshot, nil)
+		writeSuccess(response, requestID, sanitizeGraphSnapshot(snapshot), nil)
 	}
 }
 
@@ -272,13 +272,32 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 	var runtimes []consoleRuntimeStatus
 	var agentCount int
 	snapshot, err := latestSnapshot(request, services)
+	if err == nil && !snapshotHasRunnableAgents(snapshot) && len(models) > 0 {
+		if generated, startErr := latestRunnableSnapshot(request.Context(), options, services); startErr == nil {
+			snapshot = generated
+			if refreshed, refreshErr := loadPackStatuses(request, services); refreshErr == nil {
+				packStatuses = refreshed
+			}
+		}
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			warnings = append(warnings, "No compiled graph snapshot yet; run `nomici graph validate`.")
+		if errors.Is(err, sql.ErrNoRows) && len(models) > 0 {
+			if generated, startErr := latestRunnableSnapshot(request.Context(), options, services); startErr == nil {
+				snapshot = generated
+				err = nil
+				if refreshed, refreshErr := loadPackStatuses(request, services); refreshErr == nil {
+					packStatuses = refreshed
+				}
+			} else {
+				warnings = append(warnings, "No agent team is ready yet; configure a model provider in Settings or run `nomici setup`.")
+			}
+		} else if errors.Is(err, sql.ErrNoRows) {
+			warnings = append(warnings, "No agent team is ready yet; configure a model provider in Settings or run `nomici setup`.")
 		} else {
 			return nil, nil, err
 		}
-	} else {
+	}
+	if err == nil {
 		graphSummary = summarizeGraph(snapshot)
 		runtimes = runtimeStatuses(snapshot)
 		agentCount = len(snapshot.IR.Agents)
@@ -314,7 +333,7 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		Tools:            tools,
 		Packs:            packStatuses,
 		Graph:            graphSummary,
-		GraphSnapshot:    snapshot,
+		GraphSnapshot:    sanitizeGraphSnapshot(snapshot),
 		Runtimes:         runtimes,
 		RecentRuns:       limitRuns(runs),
 		RecentSessions:   sessions,
@@ -415,6 +434,56 @@ func sanitizeModelProfiles(models []*providers.Profile) []consoleModelProfile {
 		})
 	}
 	return sanitized
+}
+
+func sanitizeGraphSnapshot(snapshot *graph.Snapshot) *graph.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	clone := *snapshot
+	clone.IR.Models = map[string]graph.Model{}
+	for id, model := range snapshot.IR.Models {
+		model.APIKeyEnv = sharedcontext.RedactText(model.APIKeyEnv)
+		model.Capabilities = append([]string(nil), model.Capabilities...)
+		clone.IR.Models[id] = model
+	}
+	clone.IR.Runtimes = map[string]graph.Runtime{}
+	for id, runtime := range snapshot.IR.Runtimes {
+		runtime.Start.Args = append([]string(nil), runtime.Start.Args...)
+		runtime.Invoke.Args = append([]string(nil), runtime.Invoke.Args...)
+		runtime.EnvFrom = append([]string(nil), runtime.EnvFrom...)
+		if runtime.Env != nil {
+			env := map[string]string{}
+			for key, value := range runtime.Env {
+				env[key] = sharedcontext.RedactText(value)
+			}
+			runtime.Env = env
+		}
+		if runtime.Capabilities != nil {
+			capabilities := map[string]any{}
+			for key, value := range runtime.Capabilities {
+				capabilities[key] = value
+			}
+			runtime.Capabilities = capabilities
+		}
+		clone.IR.Runtimes[id] = runtime
+	}
+	clone.IR.Agents = map[string]graph.Agent{}
+	for id, agent := range snapshot.IR.Agents {
+		agent.Tools = append([]string(nil), agent.Tools...)
+		agent.Skills = append([]string(nil), agent.Skills...)
+		agent.Tags = append([]string(nil), agent.Tags...)
+		if agent.Capabilities != nil {
+			capabilities := map[string]any{}
+			for key, value := range agent.Capabilities {
+				capabilities[key] = value
+			}
+			agent.Capabilities = capabilities
+		}
+		clone.IR.Agents[id] = agent
+	}
+	clone.IR.Edges = append([]graph.Edge(nil), snapshot.IR.Edges...)
+	return &clone
 }
 
 func loadLatestTrace(request *http.Request, services Services, runs []*trace.RunSummary) ([]consoleTraceEvent, error) {
