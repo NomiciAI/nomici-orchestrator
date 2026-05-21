@@ -11,6 +11,7 @@ import { splitCSV, toggleListValue } from "../../lib/lists";
 import { AgentBuilderActions } from "./AgentBuilderActions";
 import { AgentSummaryList } from "./AgentSummaryList";
 import { AgentTestResultPanel } from "./AgentTestResultPanel";
+import { modelOptions, normalizeAgentForCompare } from "./agentCompare";
 
 export function AgentBuilder({
   agents,
@@ -47,23 +48,22 @@ export function AgentBuilder({
   onCopy?: (agent: AgentRecord) => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const graphModelOptions = graphSnapshot
-    ? Object.entries(graphSnapshot.ir.models).map(([id, model]) => ({
-        id,
-        label: `${id} / ${model.model}`,
-      }))
-    : [];
-  const modelOptions = graphModelOptions.length
-    ? graphModelOptions
-    : models.map((model) => ({
-        id: model.id,
-        label: `${model.name || model.id} / ${model.model}`,
-      }));
+  const availableModels = modelOptions(graphSnapshot, models);
   const agentIsInvalid =
     draft.id.trim() === "" ||
     ((draft.kind === "model_agent" || draft.kind === "gateway_agent") &&
       (draft.model ?? "").trim() === "") ||
     (draft.kind === "external_agent" && (draft.runtime ?? "").trim() === "");
+  const savedAgent = agents.find((agent) => agent.id === draft.id);
+  const draftMatchesSaved =
+    savedAgent !== undefined &&
+    JSON.stringify(normalizeAgentForCompare(savedAgent)) ===
+      JSON.stringify(normalizeAgentForCompare(draft));
+  const testDisabledReason = savedAgent
+    ? draftMatchesSaved
+      ? ""
+      : "Save before test"
+    : "Save before test";
   return (
     <section className="panel" aria-label="Agent builder">
       <div className="panel-heading">
@@ -117,7 +117,7 @@ export function AgentBuilder({
               }
             >
               <option value="">Select model profile</option>
-              {modelOptions.map((model) => (
+              {availableModels.map((model) => (
                 <option value={model.id} key={model.id}>
                   {model.label}
                 </option>
@@ -334,6 +334,7 @@ export function AgentBuilder({
           testing={testing}
           agentIsInvalid={agentIsInvalid}
           saving={saving}
+          testDisabledReason={testDisabledReason}
           onValidate={onValidate}
           onTest={onTest}
         />

@@ -310,27 +310,27 @@ func chatSuggestions(detail *chats.Detail) []string {
 	switch {
 	case strings.Contains(text, "agent"):
 		return []string{
-			"Create an agent from this workflow",
-			"Test the current agent setup",
-			"Show the orchestration flow",
+			"Help me design a reusable agent for this workflow",
+			"Explain which agents would handle this",
+			"Show how to customize the role flow",
 		}
 	case strings.Contains(text, "plan") || strings.Contains(text, "implement") || strings.Contains(text, "fix"):
 		return []string{
-			"Turn this into a workspace run",
-			"Review the proposed agent flow",
-			"Show the current run timeline",
+			"Run this as a workspace task",
+			"Explain the selected agent flow",
+			"Summarize the current run state",
 		}
 	case strings.Contains(text, "setup") || strings.Contains(text, "config"):
 		return []string{
-			"Run a provider readiness check",
-			"Show configured models and tools",
-			"Create a starter agent",
+			"Explain my model and tool setup",
+			"Help me configure a model provider",
+			"Show which agents and tools are ready to execute",
 		}
 	default:
 		return []string{
-			"Make this a long-horizon workspace task",
-			"Save this pattern as an agent",
-			"Show suggested next steps",
+			"Turn this into a long-horizon workspace task",
+			"Design an agent for this recurring work",
+			"Suggest concrete next steps",
 		}
 	}
 }
