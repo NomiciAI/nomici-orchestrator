@@ -723,6 +723,16 @@ deployment:
 	if testRun.Code != http.StatusOK || !strings.Contains(testRun.Body.String(), `"run_id"`) || !strings.Contains(testRun.Body.String(), `"status":"started"`) {
 		t.Fatalf("expected real orchestration test run, got %d: %s", testRun.Code, testRun.Body.String())
 	}
+	var testRunEnvelope struct {
+		Data orchestrationPreviewResponse `json:"data"`
+	}
+	if err := json.NewDecoder(testRun.Body).Decode(&testRunEnvelope); err != nil {
+		t.Fatalf("decode orchestration test run: %v", err)
+	}
+	if testRunEnvelope.Data.Run == nil || testRunEnvelope.Data.Run.SessionID == "" {
+		t.Fatalf("expected orchestration test session, got %+v", testRunEnvelope.Data.Run)
+	}
+	waitForSessionStatus(t, runpkg.NewStore(db), testRunEnvelope.Data.Run.SessionID, runpkg.SessionStatusCompleted)
 
 	runResponse := httptest.NewRecorder()
 	router.ServeHTTP(runResponse, httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"verify timeline"}`)))
