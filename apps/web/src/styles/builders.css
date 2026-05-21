@@ -466,6 +466,31 @@
   text-align: left;
 }
 
+.agent-summary-item {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.agent-summary-main {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+}
+
+.list-item .agent-summary-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.truth-label {
+  color: var(--text-muted);
+}
+
 .list-item:last-child {
   border-bottom: 0;
 }

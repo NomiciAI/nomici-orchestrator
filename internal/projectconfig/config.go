@@ -23,6 +23,7 @@ type AgentRecord struct {
 	ID             string         `json:"id"`
 	Name           string         `json:"name,omitempty"`
 	Description    string         `json:"description,omitempty"`
+	Source         string         `json:"source,omitempty"`
 	Kind           string         `json:"kind"`
 	Model          string         `json:"model,omitempty"`
 	Runtime        string         `json:"runtime,omitempty"`
@@ -118,6 +119,24 @@ func UpsertAgent(ctx context.Context, configPath string, dbPath string, record A
 		return nil, err
 	}
 	return compileAndSave(ctx, configPath, dbPath)
+}
+
+func EnsureModelReference(configPath string, modelID string) error {
+	modelID = strings.TrimSpace(modelID)
+	if !validID.MatchString(modelID) {
+		return fmt.Errorf("model id must start with a letter and contain only letters, numbers, underscores, or dashes")
+	}
+	spec, err := loadOrCreate(configPath)
+	if err != nil {
+		return err
+	}
+	if spec.Models == nil {
+		spec.Models = map[string]agentspec.Model{}
+	}
+	if _, ok := spec.Models[modelID]; !ok {
+		spec.Models[modelID] = agentspec.Model{Profile: modelID}
+	}
+	return save(configPath, spec)
 }
 
 func ValidateAgent(record AgentRecord) error {
@@ -305,6 +324,7 @@ func agentRecord(id string, agent agentspec.Agent) AgentRecord {
 		ID:             id,
 		Name:           agent.Name,
 		Description:    agent.Description,
+		Source:         "project",
 		Kind:           agent.Kind,
 		Model:          agent.Model,
 		Runtime:        agent.Runtime,

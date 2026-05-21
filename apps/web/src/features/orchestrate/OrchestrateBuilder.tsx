@@ -324,7 +324,7 @@ export function OrchestrateBuilder({
           disabled={saving || previewing || testing}
           onClick={onPreview}
         >
-          {previewing ? "Previewing" : "Preview"}
+          {previewing ? "Previewing" : "Preview flow"}
         </button>
         <button
           className="button button-secondary"
@@ -332,7 +332,7 @@ export function OrchestrateBuilder({
           disabled={saving || previewing || testing}
           onClick={onTest}
         >
-          {testing ? "Testing" : "Test"}
+          {testing ? "Starting" : "Start test run"}
         </button>
         <button
           className="button"

@@ -27,6 +27,7 @@ export function AgentBuilder({
   testing = false,
   onValidate,
   onTest,
+  onCopy,
   onSave,
 }: {
   agents: AgentRecord[];
@@ -43,6 +44,7 @@ export function AgentBuilder({
   testing?: boolean;
   onValidate: () => void;
   onTest?: () => void;
+  onCopy?: (agent: AgentRecord) => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const graphModelOptions = graphSnapshot
@@ -337,7 +339,7 @@ export function AgentBuilder({
         />
         {testResult ? <AgentTestResultPanel result={testResult} /> : null}
       </form>
-      <AgentSummaryList agents={agents} setDraft={setDraft} />
+      <AgentSummaryList agents={agents} setDraft={setDraft} onCopy={onCopy} />
     </section>
   );
 }
