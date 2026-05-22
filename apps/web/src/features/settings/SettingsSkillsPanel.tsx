@@ -25,18 +25,56 @@ export function SettingsSkillsPanel({ state }: { state: ConsoleState }) {
                     : ""}
                 </small>
               </div>
-              <button
-                className={`switch ${skill.enabled === false ? "" : "switch-on"}`}
-                type="button"
-                disabled={state.settingsMutation.startsWith("skill:")}
-                onClick={() => void state.toggleSkillEnabled(skill)}
-                aria-label={`Toggle ${skill.name || skill.id}`}
-              >
-                <span />
-              </button>
+              <div className="agent-summary-meta">
+                <button
+                  className={`switch ${skill.enabled === false ? "" : "switch-on"}`}
+                  type="button"
+                  disabled={state.settingsMutation.startsWith("skill")}
+                  onClick={() => void state.toggleSkillEnabled(skill)}
+                  aria-label={`Toggle ${skill.name || skill.id}`}
+                >
+                  <span />
+                </button>
+                {skill.source !== "builtin" ? (
+                  <button
+                    className="button button-ghost"
+                    type="button"
+                    disabled={state.settingsMutation.startsWith("skill")}
+                    onClick={() => void state.deleteSkill(skill)}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
+      </section>
+      <section className="panel" aria-label="Import skill">
+        <div className="panel-heading">
+          <h2>Import skill directory</h2>
+          <span className="tag">local</span>
+        </div>
+        <form className="builder-form" onSubmit={state.importSkill}>
+          <label>
+            <span>Directory path</span>
+            <input
+              value={state.skillImportPath}
+              onChange={(event) => state.setSkillImportPath(event.target.value)}
+              placeholder="/path/to/skill-directory"
+            />
+          </label>
+          <button
+            className="button button-secondary"
+            type="submit"
+            disabled={
+              state.settingsMutation === "skill-import" ||
+              state.skillImportPath.trim() === ""
+            }
+          >
+            {state.settingsMutation === "skill-import" ? "Importing" : "Import"}
+          </button>
+        </form>
       </section>
       <section className="panel" aria-label="Create skill">
         <div className="panel-heading">

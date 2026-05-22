@@ -167,12 +167,13 @@ curl -H "Authorization: Bearer $(nomici gateway token show)" \
 nomici down
 ```
 
-## Optional: Inspect The Default Team Pack
+## Optional: Inspect The Default Team
 
-The built-in default team is available without a manual install step. Advanced users can inspect the template before copying or customizing it:
+The built-in default team is available without a manual install step. Advanced users can inspect the team before copying or customizing it:
 
 ```bash
-nomici pack inspect developer-team
+nomici agent list
+nomici orchestrate show
 nomici run product_pm "Draft a tiny implementation plan."
 ```
 

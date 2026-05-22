@@ -4,10 +4,14 @@ export function AgentSummaryList({
   agents,
   setDraft,
   onCopy,
+  onSetEnabled,
+  onDelete,
 }: {
   agents: AgentRecord[];
   setDraft: (next: AgentRecord) => void;
   onCopy?: (agent: AgentRecord) => void;
+  onSetEnabled?: (agent: AgentRecord, enabled: boolean) => void;
+  onDelete?: (agent: AgentRecord) => void;
 }) {
   return (
     <div className="stack">
@@ -33,6 +37,24 @@ export function AgentSummaryList({
                 onClick={() => onCopy(agent)}
               >
                 Copy to project
+              </button>
+            ) : null}
+            {agent.source !== "built_in" && onSetEnabled ? (
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={() => onSetEnabled(agent, agent.disabled === true)}
+              >
+                {agent.disabled ? "Enable" : "Disable"}
+              </button>
+            ) : null}
+            {agent.source !== "built_in" && onDelete ? (
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={() => onDelete(agent)}
+              >
+                Delete
               </button>
             ) : null}
           </div>

@@ -27,6 +27,10 @@ type skillPatchRequest struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+type skillImportRequest struct {
+	Path string `json:"path"`
+}
+
 func skillListHandler(options Options) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		writeSuccess(response, newRequestID(), skills.List(options.ConfigPath), nil)
@@ -68,6 +72,32 @@ func skillCreateHandler(options Options) http.HandlerFunc {
 	}
 }
 
+func skillImportHandler(options Options) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		var body skillImportRequest
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "invalid_request", "Request body must be JSON.", "Send path to a local skill directory.")
+			return
+		}
+		definition, err := skills.LoadDirectory(body.Path)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "skill_import_failed", err.Error(), "Choose a local directory with skill metadata or briefing content.")
+			return
+		}
+		if err := projectconfig.UpsertSkill(options.ConfigPath, definition); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "skill_save_failed", err.Error(), "Fix the imported skill metadata and retry.")
+			return
+		}
+		saved, err := skills.Get(options.ConfigPath, definition.ID)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "skill_load_failed", "Skill was imported but could not be reloaded.", "Refresh skills.")
+			return
+		}
+		writeSuccess(response, requestID, saved, nil)
+	}
+}
+
 func skillDetailHandler(options Options) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
@@ -103,5 +133,17 @@ func skillPatchHandler(options Options) http.HandlerFunc {
 			return
 		}
 		writeSuccess(response, requestID, definition, nil)
+	}
+}
+
+func skillDeleteHandler(options Options) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		id := chi.URLParam(request, "skill_id")
+		if err := projectconfig.DeleteSkill(options.ConfigPath, id); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "skill_delete_failed", err.Error(), "Only project skills can be deleted; disable built-in skills instead.")
+			return
+		}
+		writeSuccess(response, requestID, map[string]string{"status": "deleted"}, nil)
 	}
 }

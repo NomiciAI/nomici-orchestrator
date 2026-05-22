@@ -17,40 +17,20 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
     sessionDetail,
     traceEvents,
     workspaceTasks: tasks,
-    workspaceUploads: uploads,
-    workspaceArtifacts: artifacts,
-    workspaceToolCalls: toolCalls,
-    overview,
-    memoryProposals,
-    memoryItems,
-    artifactContent,
-    artifactRevisions,
-    artifactMutation,
     planArtifact: currentPlanArtifact,
     sessionNeedsPlanReview,
     planRevision,
     setPlanRevision,
-    uploadFile,
-    setUploadFile,
     workspaceError,
     workspaceMutation,
-    mutatingApproval,
-    mutatingMemory,
     clarificationAnswer,
     setClarificationAnswer,
     approvePlan,
     revisePlan,
-    uploadInput,
     cancelSession,
-    resolveApproval,
-    resolveMemory,
-    deleteMemoryItem,
     submitClarification,
     resolveBlockedAction,
-    inspectArtifact,
-    downloadArtifact,
   } = state;
-  const approvals = overview.pending_approvals;
   const planArtifact = sessionNeedsPlanReview ? currentPlanArtifact : undefined;
   const latestOutput = humanOutput(traceEvents);
   const decision =
@@ -58,6 +38,10 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
   const openBlockedActions = (sessionDetail?.blocked_actions ?? []).filter(
     (action) => action.status === "open",
   );
+  const currentTask =
+    tasks.find((task) => task.status === "running") ??
+    tasks.find((task) => task.status === "blocked") ??
+    tasks.find((task) => task.status === "pending" || task.status === "queued");
   return (
     <section className="run-workspace" aria-label="Current workspace">
       <div className="run-header">
@@ -78,6 +62,19 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
           {sessionDetail?.session.status || runStatus}
         </span>
       </div>
+
+      {sessionDetail ? (
+        <div className="workspace-status-banner">
+          <strong>{currentTask ? taskRoleLabel(currentTask) : "Run state"}</strong>
+          <span>
+            {openBlockedActions[0]?.required_action ||
+              openBlockedActions[0]?.title ||
+              currentTask?.blocked_reason ||
+              currentTask?.metadata?.summary ||
+              sessionDetail.session.status}
+          </span>
+        </div>
+      ) : null}
 
       {decision ? (
         <div className="route-decision">

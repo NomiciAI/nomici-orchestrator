@@ -48,7 +48,8 @@ nomici provider list
 nomici provider models openai --search gpt
 nomici provider doctor openai
 nomici pack list
-nomici pack inspect developer-team
+nomici agent list
+nomici orchestrate preview --prompt "Inspect the current team flow"
 nomici spec validate --config nomici.yaml
 nomici graph export --config nomici.yaml --format json
 nomici runtime inspect implementer_cli --config nomici.yaml
@@ -89,7 +90,7 @@ nomici trace show <run_id>
 nomici down
 ```
 
-`nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici pack install`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
+`nomici setup` is the recommended first-run path. It keeps the existing `nomici model setup`, `nomici up`, and `nomici doctor` commands as scriptable building blocks, but wraps the common path in one guided flow:
 
 ```text
 LLM provider -> live model catalog -> web search/fetch -> default team -> sandbox policy -> commit-safe nomici.yaml -> nomici dev
@@ -99,7 +100,7 @@ The setup command writes the project manifest, web search/fetch contracts, and s
 
 Provider setup stores only secret references such as `OPENAI_API_KEY` in project/provider config; raw API keys are not stored in `nomici.yaml` or the local SQLite profile store. In the interactive setup wizard, pasting a raw provider key is supported: Nomici saves it to local ignored `.nomici/secrets.env` and records only the env-var reference. `.nomici/` and `nomici.local.yaml` are local-only; `nomici.local.yaml` can override local tools, deployment, runtimes, and model references without changing the shared project manifest.
 
-Nomici includes a default team template with a `product_pm` coordinator plus planner, researcher, coder, and reporter roles. Once a model profile exists, Gateway can materialize that team automatically for the first workspace run; users do not need to hand-write YAML before Chat works. The same team metadata is exposed as an inspectable pack for advanced users who want to copy, customize, or replace it.
+Nomici includes a default team template with a `product_pm` coordinator plus planner, researcher, coder, and reporter roles. Once a model profile exists, Gateway can materialize that team automatically for the first workspace run; users do not need to hand-write YAML before Chat works. The same team metadata is exposed in Agent Studio and Orchestration Studio for users who want to copy, customize, or replace it.
 
 `nomici dev` starts the local Gateway, validates the configured graph, starts configured local processes, and opens Console. Console is served by Gateway and defaults to Chat. Each chat can start a workspace run, while Orchestrate and Settings expose route decisions, role flow, task ledger records, workspace roots, uploads, artifacts and revisions, tool calls, the review queue, plan review actions, trace events, approvals, memory proposals, provider/model catalog status, agent builder controls, orchestration builder controls, and tool/skill selection. It does not read local files or receive raw secret values outside Gateway-mediated APIs. API calls require the local Gateway token; run `nomici gateway token show` from the same project directory that started Gateway and paste it into the Console when prompted.
 
