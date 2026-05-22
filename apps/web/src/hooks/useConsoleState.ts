@@ -13,6 +13,8 @@ import {
   type ChatDetail,
   type ChatMessageResponse,
   type ChatThread,
+  type ContextUsageItem,
+  type FeatureReadiness,
   type MemoryItem,
   type MemoryProposal,
   type OrchestrationConfig,
@@ -53,6 +55,9 @@ export function useConsoleState() {
   const [providerCatalog, setProviderCatalog] = useState<ProviderDefinition[]>(
     [],
   );
+  const [featureReadiness, setFeatureReadiness] = useState<
+    FeatureReadiness[]
+  >([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<SkillDefinition[]>([]);
   const [agents, setAgents] = useState<AgentRecord[]>([]);
@@ -96,6 +101,10 @@ export function useConsoleState() {
   const [reviewQueue, setReviewQueue] = useState<BlockedAction[]>([]);
   const [sessionTimeline, setSessionTimeline] = useState<TimelineItem[]>([]);
   const [sessionTodos, setSessionTodos] = useState<TodoItem[]>([]);
+  const [sessionApprovals, setSessionApprovals] = useState<Approval[]>([]);
+  const [sessionContextUsage, setSessionContextUsage] = useState<
+    ContextUsageItem[]
+  >([]);
   const [mutatingMemory, setMutatingMemory] = useState("");
   const [artifactContent, setArtifactContent] =
     useState<ArtifactContent | null>(null);
@@ -125,6 +134,7 @@ export function useConsoleState() {
     briefing: "",
     enabled: true,
   });
+  const [skillImportPath, setSkillImportPath] = useState("");
   const [settingsMutation, setSettingsMutation] = useState("");
   const [agentValidation, setAgentValidation] = useState("");
 
@@ -165,8 +175,14 @@ export function useConsoleState() {
   const hasWorkspaceActivity =
     activeRunId !== "" ||
     activeSessionId !== "" ||
-    sessionDetail !== null ||
-    activeRouteDecision?.mode === "workspace_run";
+    sessionDetail !== null;
+  const readinessById = useMemo(() => {
+    const next = new Map<string, FeatureReadiness>();
+    featureReadiness.forEach((item) => next.set(item.id, item));
+    return next;
+  }, [featureReadiness]);
+  const featureWorks = (id: string) => readinessById.get(id)?.status === "works";
+  const featureReason = (id: string) => readinessById.get(id)?.reason ?? "";
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -221,6 +237,7 @@ export function useConsoleState() {
         nextMemory,
         nextMemoryItems,
         nextReviewQueue,
+        nextReadiness,
       ] = await Promise.all([
         request<ChatThread[]>("/api/chats?limit=50", {}, nextToken),
         request<ProviderDefinition[]>("/api/provider-catalog", {}, nextToken),
@@ -248,6 +265,11 @@ export function useConsoleState() {
           {},
           nextToken,
         ).catch(() => []),
+        request<FeatureReadiness[]>(
+          "/api/features/readiness",
+          {},
+          nextToken,
+        ).catch(() => []),
       ]);
       setChats(nextChats ?? []);
       setProviderCatalog(catalog ?? []);
@@ -259,6 +281,7 @@ export function useConsoleState() {
       setMemoryProposals(nextMemory ?? []);
       setMemoryItems(nextMemoryItems ?? []);
       setReviewQueue(nextReviewQueue ?? []);
+      setFeatureReadiness(nextReadiness ?? []);
       setStatus("ready");
     } catch (loadError) {
       const message =
@@ -321,6 +344,8 @@ export function useConsoleState() {
       setSessionDetail(null);
       setRunEvents([]);
       setRunStatus("idle");
+      setSessionApprovals([]);
+      setSessionContextUsage([]);
       setActiveRouteDecision(latestRouteDecision(detail.messages));
     }
   }
@@ -340,6 +365,8 @@ export function useConsoleState() {
     setChatSuggestions([]);
     setSessionTimeline([]);
     setSessionTodos([]);
+    setSessionApprovals([]);
+    setSessionContextUsage([]);
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -372,7 +399,25 @@ export function useConsoleState() {
       });
       setActiveRouteDecision(response.route_decision ?? null);
       setMessageText("");
-      if (response.run) {
+      if (response.provider_error) {
+        const provider = response.provider_error.provider_id
+          ? ` (${response.provider_error.provider_id}${response.provider_error.model_id ? ` / ${response.provider_error.model_id}` : ""})`
+          : "";
+        setRunStatus("idle");
+        setRunError(
+          `${response.provider_error.message}${provider}${
+            response.provider_error.remediation
+              ? ` ${response.provider_error.remediation}`
+              : ""
+          }`,
+        );
+        setActiveRunId("");
+        setActiveSessionId("");
+        setSessionDetail(null);
+        setRunEvents([]);
+        setSessionApprovals([]);
+        setSessionContextUsage([]);
+      } else if (response.run) {
         setActiveRunId(response.run.run_id);
         setActiveSessionId(response.run.session_id ?? "");
         setRunStatus("running");
@@ -385,6 +430,8 @@ export function useConsoleState() {
         setSessionDetail(null);
         setRunEvents([]);
         setRunStatus("idle");
+        setSessionApprovals([]);
+        setSessionContextUsage([]);
       }
       await loadChatsAndActive(response.message.chat_id);
     } catch (startError) {
@@ -417,16 +464,24 @@ export function useConsoleState() {
     );
     setSessionDetail(detail);
     setActiveRouteDecision(detail.session.metadata?.route_decision ?? null);
-    const [timeline, todos] = await Promise.all([
+    const [timeline, todos, approvals, contextUsage] = await Promise.all([
       request<TimelineItem[]>(
         `/api/sessions/${encodeURIComponent(sessionId)}/timeline`,
       ).catch(() => []),
       request<TodoItem[]>(
         `/api/sessions/${encodeURIComponent(sessionId)}/todos`,
       ).catch(() => []),
+      request<Approval[]>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/approvals?status=pending`,
+      ).catch(() => []),
+      request<ContextUsageItem[]>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/context-usage`,
+      ).catch(() => []),
     ]);
     setSessionTimeline(timeline ?? []);
     setSessionTodos(todos ?? []);
+    setSessionApprovals(approvals ?? []);
+    setSessionContextUsage(contextUsage ?? []);
   }
 
   async function loadChatSuggestions(chatID: string) {
@@ -573,6 +628,9 @@ export function useConsoleState() {
         }
       }
       await loadOverview();
+      if (activeSessionId) {
+        await loadSessionDetail(activeSessionId);
+      }
     } finally {
       setMutatingApproval("");
     }
@@ -870,7 +928,11 @@ export function useConsoleState() {
         },
       );
       setAgentTestResult(result);
-      setAgentValidation(result.status || "tested");
+      setAgentValidation(
+        result.mode === "executed"
+          ? result.status || "tested"
+          : `Diagnostic only: ${result.truth_label || result.mode}`,
+      );
     } catch (testError) {
       setAgentValidation(
         testError instanceof Error ? testError.message : "Agent test failed",
@@ -898,6 +960,52 @@ export function useConsoleState() {
     } catch (copyError) {
       setAgentValidation(
         copyError instanceof Error ? copyError.message : "Agent copy failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function setAgentEnabled(agent: AgentRecord, enabled: boolean) {
+    setSettingsMutation(`agent-${enabled ? "enable" : "disable"}:${agent.id}`);
+    setAgentValidation("");
+    try {
+      const updated = await request<AgentRecord>(
+        `/api/agents/${encodeURIComponent(agent.id)}/${enabled ? "enable" : "disable"}`,
+        { method: "POST" },
+      );
+      if (agentDraft.id === agent.id) {
+        setAgentDraft(updated);
+      }
+      await loadOverview();
+    } catch (agentError) {
+      setAgentValidation(
+        agentError instanceof Error
+          ? agentError.message
+          : "Agent status could not be updated",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function deleteAgent(agent: AgentRecord) {
+    setSettingsMutation(`agent-delete:${agent.id}`);
+    setAgentValidation("");
+    try {
+      await request<{ status: string }>(
+        `/api/agents/${encodeURIComponent(agent.id)}`,
+        { method: "DELETE" },
+      );
+      if (agentDraft.id === agent.id) {
+        resetAgentDraft();
+      }
+      await loadOverview();
+    } catch (agentError) {
+      setAgentValidation(
+        agentError instanceof Error
+          ? agentError.message
+          : "Agent could not be deleted",
       );
     } finally {
       setSettingsMutation("");
@@ -1018,6 +1126,48 @@ export function useConsoleState() {
     }
   }
 
+  async function deleteSkill(skill: SkillDefinition) {
+    setSettingsMutation(`skill-delete:${skill.id}`);
+    setRunError("");
+    try {
+      await request<{ status: string }>(
+        `/api/skills/${encodeURIComponent(skill.id)}`,
+        { method: "DELETE" },
+      );
+      await loadOverview();
+    } catch (deleteError) {
+      setRunError(
+        deleteError instanceof Error ? deleteError.message : "Skill delete failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
+  async function importSkill(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (skillImportPath.trim() === "") {
+      setRunError("Skill directory path is required.");
+      return;
+    }
+    setSettingsMutation("skill-import");
+    setRunError("");
+    try {
+      await request<SkillDefinition>("/api/skills/import", {
+        method: "POST",
+        body: JSON.stringify({ path: skillImportPath.trim() }),
+      });
+      setSkillImportPath("");
+      await loadOverview();
+    } catch (importError) {
+      setRunError(
+        importError instanceof Error ? importError.message : "Skill import failed",
+      );
+    } finally {
+      setSettingsMutation("");
+    }
+  }
+
   async function saveOrchestration(next: OrchestrationConfig) {
     setSettingsMutation("orchestration");
     setRunError("");
@@ -1113,6 +1263,9 @@ export function useConsoleState() {
     view,
     setView,
     overview,
+    featureReadiness,
+    featureWorks,
+    featureReason,
     providerCatalog,
     toolCatalog,
     skillCatalog,
@@ -1160,6 +1313,8 @@ export function useConsoleState() {
     reviewQueue,
     sessionTimeline,
     sessionTodos,
+    sessionApprovals,
+    sessionContextUsage,
     mutatingMemory,
     artifactContent,
     artifactRevisions,
@@ -1168,6 +1323,8 @@ export function useConsoleState() {
     setAgentDraft,
     skillDraft,
     setSkillDraft,
+    skillImportPath,
+    setSkillImportPath,
     settingsMutation,
     agentValidation,
     agentOptions,
@@ -1209,9 +1366,13 @@ export function useConsoleState() {
     exportChat,
     testAgentDraft,
     copyAgentToProject,
+    setAgentEnabled,
+    deleteAgent,
     saveAgent,
     saveSkillDraft,
     toggleSkillEnabled,
+    deleteSkill,
+    importSkill,
     saveOrchestration,
     previewOrchestration,
     testOrchestration,

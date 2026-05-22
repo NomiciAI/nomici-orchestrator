@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	artifactpkg "github.com/NomiciAI/nomici-orchestrator/internal/artifacts"
 	blockedpkg "github.com/NomiciAI/nomici-orchestrator/internal/blocked"
@@ -212,6 +213,78 @@ func sessionBlockedActionsHandler(services Services) http.HandlerFunc {
 			return
 		}
 		writeSuccess(response, requestID, actions, nil)
+	}
+}
+
+func sessionApprovalsHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Policy == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "approvals_unavailable", "Run approval services are not initialized.", "Restart Gateway.")
+			return
+		}
+		detail, err := services.Runs.GetBySession(request.Context(), chi.URLParam(request, "session_id"))
+		if err != nil {
+			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		approvals, err := services.Policy.ListByRun(request.Context(), detail.Session.RunID, request.URL.Query().Get("status"))
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "approvals_failed", "Session approvals could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		writeSuccess(response, requestID, approvals, nil)
+	}
+}
+
+type sessionContextUsageItem struct {
+	EventID    string   `json:"event_id"`
+	TaskID     string   `json:"task_id,omitempty"`
+	AgentID    string   `json:"agent_id,omitempty"`
+	ContextIDs []string `json:"context_ids,omitempty"`
+	Summary    string   `json:"summary,omitempty"`
+	Time       string   `json:"time"`
+}
+
+func sessionContextUsageHandler(services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		if services.Runs == nil || services.Trace == nil {
+			writeError(response, http.StatusServiceUnavailable, requestID, "context_usage_unavailable", "Run context services are not initialized.", "Restart Gateway.")
+			return
+		}
+		detail, err := services.Runs.GetBySession(request.Context(), chi.URLParam(request, "session_id"))
+		if err != nil {
+			writeSessionLookupError(response, requestID, err)
+			return
+		}
+		events, err := services.Trace.ListByRun(request.Context(), detail.Session.RunID)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, requestID, "context_usage_failed", "Context usage could not be loaded.", "Check Gateway logs.")
+			return
+		}
+		items := []sessionContextUsageItem{}
+		for _, event := range events {
+			if event.Type != "memory.context.loaded" {
+				continue
+			}
+			var payload struct {
+				TaskID     string   `json:"task_id"`
+				AgentID    string   `json:"agent_id"`
+				ContextIDs []string `json:"context_ids"`
+				Summary    string   `json:"summary"`
+			}
+			_ = json.Unmarshal(event.Payload, &payload)
+			items = append(items, sessionContextUsageItem{
+				EventID:    event.EventID,
+				TaskID:     payload.TaskID,
+				AgentID:    payload.AgentID,
+				ContextIDs: payload.ContextIDs,
+				Summary:    payload.Summary,
+				Time:       event.Time.Format(time.RFC3339Nano),
+			})
+		}
+		writeSuccess(response, requestID, items, nil)
 	}
 }
 

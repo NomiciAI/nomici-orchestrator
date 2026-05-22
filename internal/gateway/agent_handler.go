@@ -210,11 +210,33 @@ func agentUpdateHandler(options Options, services Services) http.HandlerFunc {
 func agentDeleteHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if _, err := projectconfig.DeleteAgent(request.Context(), options.ConfigPath, options.DBPath, chi.URLParam(request, "agent_id")); err != nil {
+		agentID := chi.URLParam(request, "agent_id")
+		if _, builtIn, _ := resolveAgentRecord(request, options, services, agentID); builtIn {
+			writeError(response, http.StatusConflict, requestID, "built_in_agent_readonly", "Built-in agents cannot be deleted.", "Copy the agent to the project before editing or deleting it.")
+			return
+		}
+		if _, err := projectconfig.DeleteAgent(request.Context(), options.ConfigPath, options.DBPath, agentID); err != nil {
 			writeProjectConfigError(response, requestID, err)
 			return
 		}
 		writeSuccess(response, requestID, map[string]string{"status": "deleted"}, nil)
+	}
+}
+
+func agentEnableHandler(options Options, enabled bool) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		agentID := chi.URLParam(request, "agent_id")
+		if _, err := projectconfig.SetAgentEnabled(request.Context(), options.ConfigPath, options.DBPath, agentID, enabled); err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		agent, err := projectconfig.GetAgent(options.ConfigPath, agentID)
+		if err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		writeSuccess(response, requestID, agent, nil)
 	}
 }
 

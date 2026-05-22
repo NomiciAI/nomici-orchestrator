@@ -35,7 +35,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
               type="button"
               onClick={state.draftAgentFromChat}
             >
-              Save as agent
+              Draft agent from chat
             </button>
           </div>
         </div>
@@ -47,6 +47,14 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             >
               <span>{message.role}</span>
               <p>{message.content}</p>
+              {message.metadata?.assistant_source ? (
+                <small>
+                  source: {message.metadata.assistant_source}
+                  {message.metadata.model_profile_id
+                    ? ` / ${message.metadata.model_profile_id}`
+                    : ""}
+                </small>
+              ) : null}
             </article>
           ))}
           {state.chatDetail ? null : (

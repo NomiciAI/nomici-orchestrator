@@ -638,8 +638,11 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	if envelope.Data.RouteDecision == nil || envelope.Data.RouteDecision.Mode != orchestration.ModeDirectReply {
 		t.Fatalf("expected direct route decision, got %+v", envelope.Data.RouteDecision)
 	}
-	if envelope.Data.AssistantMessage == nil || envelope.Data.AssistantMessage.Role != chats.RoleAssistant {
-		t.Fatalf("expected assistant message, got %+v", envelope.Data.AssistantMessage)
+	if envelope.Data.AssistantMessage != nil {
+		t.Fatalf("expected no fake assistant message without a configured model, got %+v", envelope.Data.AssistantMessage)
+	}
+	if envelope.Data.AssistantSource != "system_error" || envelope.Data.ProviderError == nil {
+		t.Fatalf("expected provider error for direct chat without model, got %+v", envelope.Data)
 	}
 	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
 	if err != nil {
@@ -656,9 +659,47 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	}
 
 	feedbackResponse := httptest.NewRecorder()
-	router.ServeHTTP(feedbackResponse, httptest.NewRequest(http.MethodPost, "/api/chats/"+envelope.Data.Message.ChatID+"/feedback", bytes.NewBufferString(`{"message_id":"`+envelope.Data.AssistantMessage.MessageID+`","score":"up"}`)))
+	router.ServeHTTP(feedbackResponse, httptest.NewRequest(http.MethodPost, "/api/chats/"+envelope.Data.Message.ChatID+"/feedback", bytes.NewBufferString(`{"message_id":"`+envelope.Data.Message.MessageID+`","score":"up"}`)))
 	if feedbackResponse.Code != http.StatusOK || !strings.Contains(feedbackResponse.Body.String(), `"score":"up"`) {
 		t.Fatalf("expected feedback upsert, got %d: %s", feedbackResponse.Code, feedbackResponse.Body.String())
+	}
+}
+
+func TestChatDirectReplyUsesConfiguredModel(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"hello from model"}}]}`))
+	}))
+	defer providerServer.Close()
+	db, router := newRunTestRouter(t)
+	saveRunTestGraph(t, graph.NewStore(db), providerServer.URL, nil)
+
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"hey"}`)))
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var envelope struct {
+		Data chatMessageResponse `json:"data"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Run != nil {
+		t.Fatalf("expected direct reply without run, got %+v", envelope.Data.Run)
+	}
+	if envelope.Data.ProviderError != nil || envelope.Data.AssistantSource != "model" {
+		t.Fatalf("expected model-sourced assistant reply, got %+v", envelope.Data)
+	}
+	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "hello from model") {
+		t.Fatalf("expected model assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no run sessions, got %+v", sessions)
 	}
 }
 
@@ -766,7 +807,7 @@ deployment:
 	}
 }
 
-func TestChatAutoWithoutAgentsReturnsAssistantModelSetupHelp(t *testing.T) {
+func TestChatAutoWithoutAgentsReturnsProviderErrorWithoutFakeAssistant(t *testing.T) {
 	db, router := newRunTestRouter(t)
 	if err := graph.NewStore(db).Save(context.Background(), &graph.Snapshot{
 		SnapshotID:    "graph_empty",
@@ -797,8 +838,11 @@ func TestChatAutoWithoutAgentsReturnsAssistantModelSetupHelp(t *testing.T) {
 	if envelope.Data.Run != nil {
 		t.Fatalf("expected no run when no agents are configured, got %+v", envelope.Data.Run)
 	}
-	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "model provider") {
-		t.Fatalf("expected model setup help assistant message, got %+v", envelope.Data.AssistantMessage)
+	if envelope.Data.AssistantMessage != nil {
+		t.Fatalf("expected no fake assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+	if envelope.Data.AssistantSource != "system_error" || envelope.Data.ProviderError == nil || !strings.Contains(envelope.Data.ProviderError.Message, "model") {
+		t.Fatalf("expected provider error response, got %+v", envelope.Data)
 	}
 }
 

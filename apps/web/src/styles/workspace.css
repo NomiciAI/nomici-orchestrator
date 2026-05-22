@@ -210,6 +210,25 @@
   border-bottom: 1px solid var(--border);
 }
 
+.workspace-status-banner {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.workspace-status-banner strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.workspace-status-banner span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .route-decision {
   display: grid;
   gap: 10px;

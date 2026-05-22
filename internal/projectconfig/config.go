@@ -37,6 +37,7 @@ type AgentRecord struct {
 	Permissions    map[string]any `json:"permissions,omitempty"`
 	RuntimeProfile map[string]any `json:"runtime_profile,omitempty"`
 	ApprovalPolicy string         `json:"approval_policy,omitempty"`
+	Disabled       bool           `json:"disabled,omitempty"`
 }
 
 type OrchestrationConfig struct {
@@ -68,8 +69,11 @@ func ListAgents(configPath string) ([]AgentRecord, error) {
 	}
 	sort.Strings(ids)
 	records := make([]AgentRecord, 0, len(ids))
+	disabled := disabledRoleSet(orchestrationConfig(loaded.Spec).DisabledRoles)
 	for _, id := range ids {
-		records = append(records, agentRecord(id, loaded.Spec.Agents[id]))
+		record := agentRecord(id, loaded.Spec.Agents[id])
+		record.Disabled = disabled[id]
+		records = append(records, record)
 	}
 	return records, nil
 }
@@ -84,6 +88,7 @@ func GetAgent(configPath string, id string) (*AgentRecord, error) {
 		return nil, fmt.Errorf("agent %q was not found", id)
 	}
 	record := agentRecord(id, agent)
+	record.Disabled = disabledRoleSet(orchestrationConfig(loaded.Spec).DisabledRoles)[id]
 	return &record, nil
 }
 
@@ -168,6 +173,41 @@ func DeleteAgent(ctx context.Context, configPath string, dbPath string, id strin
 	return compileAndSave(ctx, configPath, dbPath)
 }
 
+func SetAgentEnabled(ctx context.Context, configPath string, dbPath string, id string, enabled bool) (*graph.Snapshot, error) {
+	id = strings.TrimSpace(id)
+	if !validID.MatchString(id) {
+		return nil, fmt.Errorf("agent id must start with a letter and contain only letters, numbers, underscores, or dashes")
+	}
+	spec, err := loadOrCreate(configPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := spec.Agents[id]; !ok {
+		return nil, fmt.Errorf("agent %q was not found", id)
+	}
+	config := orchestrationConfig(spec)
+	if len(config.RoleOrder) == 0 {
+		for agentID := range spec.Agents {
+			config.RoleOrder = append(config.RoleOrder, agentID)
+		}
+		sort.Strings(config.RoleOrder)
+	}
+	if enabled {
+		config.DisabledRoles = removeString(config.DisabledRoles, id)
+	} else if !containsString(config.DisabledRoles, id) {
+		config.DisabledRoles = append(config.DisabledRoles, id)
+		sort.Strings(config.DisabledRoles)
+	}
+	if spec.Extensions == nil {
+		spec.Extensions = map[string]any{}
+	}
+	spec.Extensions["orchestration"] = normalizeOrchestration(config)
+	if err := save(configPath, spec); err != nil {
+		return nil, err
+	}
+	return compileAndSave(ctx, configPath, dbPath)
+}
+
 func UpsertSkill(configPath string, definition skills.Definition) error {
 	if !validID.MatchString(strings.TrimSpace(definition.ID)) {
 		return fmt.Errorf("skill id must start with a letter and contain only letters, numbers, underscores, or dashes")
@@ -212,6 +252,31 @@ func SetSkillEnabled(configPath string, id string, enabled bool) error {
 	current.Enabled = false
 	current.Source = ""
 	byID[id] = current
+	writeExtensionSkills(spec, byID)
+	return save(configPath, spec)
+}
+
+func DeleteSkill(configPath string, id string) error {
+	id = strings.TrimSpace(id)
+	if !validID.MatchString(id) {
+		return fmt.Errorf("skill id must start with a letter and contain only letters, numbers, underscores, or dashes")
+	}
+	current, err := skills.Get(configPath, id)
+	if err != nil {
+		return err
+	}
+	if current.Source == "builtin" {
+		return fmt.Errorf("built-in skill %q cannot be deleted; disable it instead", id)
+	}
+	spec, err := loadOrCreate(configPath)
+	if err != nil {
+		return err
+	}
+	byID := extensionSkillMap(spec)
+	if _, ok := byID[id]; !ok {
+		return fmt.Errorf("skill %q was not found in project config", id)
+	}
+	delete(byID, id)
 	writeExtensionSkills(spec, byID)
 	return save(configPath, spec)
 }
@@ -412,6 +477,17 @@ func writeExtensionSkills(spec *agentspec.Spec, byID map[string]skills.Definitio
 	spec.Extensions["skills"] = definitions
 }
 
+func disabledRoleSet(values []string) map[string]bool {
+	result := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result[value] = true
+		}
+	}
+	return result
+}
+
 func normalizeOrchestration(config OrchestrationConfig) OrchestrationConfig {
 	config.Entrypoint = strings.TrimSpace(config.Entrypoint)
 	config.RoleOrder = cleanList(config.RoleOrder)
@@ -467,6 +543,25 @@ func cleanList(values []string) []string {
 		}
 		seen[value] = true
 		result = append(result, value)
+	}
+	return result
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(values []string, target string) []string {
+	result := values[:0]
+	for _, value := range values {
+		if value != target {
+			result = append(result, value)
+		}
 	}
 	return result
 }
