@@ -77,6 +77,10 @@
   margin: 48px auto 0;
 }
 
+.auth-status-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .auth-banner div {
   min-width: 0;
   display: grid;
