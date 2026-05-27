@@ -14,6 +14,8 @@ export function OrchestratePage({ state }: { state: ConsoleState }) {
         saving={state.settingsMutation === "orchestration"}
         previewing={state.settingsMutation === "orchestration-preview"}
         testing={state.settingsMutation === "orchestration-test"}
+        canTestRun={state.featureWorks("orchestration_test_run")}
+        testUnavailableReason={state.featureReason("orchestration_test_run")}
         onPreview={() => void state.previewOrchestration()}
         onTest={() => void state.testOrchestration()}
         onSave={(next) => void state.saveOrchestration(next)}
@@ -63,6 +65,7 @@ export function OrchestratePage({ state }: { state: ConsoleState }) {
               onClick={() => {
                 state.setActiveRunId(action.run_id);
                 state.setActiveSessionId(action.session_id);
+                state.setView("runs");
                 void state.loadSessionDetail(action.session_id);
               }}
             >

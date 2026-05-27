@@ -8,7 +8,8 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
     workspaceUploads: uploads,
     workspaceArtifacts: artifacts,
     workspaceToolCalls: toolCalls,
-    overview,
+    sessionApprovals: approvals,
+    sessionContextUsage,
     memoryProposals,
     memoryItems,
     artifactContent,
@@ -26,11 +27,20 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
     inspectArtifact,
     downloadArtifact,
   } = state;
-  const approvals = overview.pending_approvals;
+  const showUploads = Boolean(sessionDetail);
+  const showArtifacts = artifacts.length > 0 || artifactContent !== null;
+  const showEvents = traceEvents.length > 0;
+  const showTools = toolCalls.length > 0;
+  const showApprovals = approvals.length > 0;
+  const showMemory =
+    memoryProposals.length > 0 ||
+    memoryItems.length > 0 ||
+    sessionContextUsage.length > 0;
 
   return (
     <div className="workspace-lists">
-      <div>
+      {showUploads ? (
+        <div>
         <div className="mini-heading">
           <strong>Uploads</strong>
           <span>{uploads.length}</span>
@@ -55,8 +65,10 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             <strong>{upload.status}</strong>
           </div>
         ))}
-      </div>
-      <div>
+        </div>
+      ) : null}
+      {showArtifacts ? (
+        <div>
         <div className="mini-heading">
           <strong>Artifacts</strong>
           <span>{artifacts.length}</span>
@@ -79,14 +91,16 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
               >
                 Preview
               </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={artifactMutation !== "" || !artifact.path}
-                onClick={() => downloadArtifact(artifact)}
-              >
-                Download
-              </button>
+              {artifact.path ? (
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => downloadArtifact(artifact)}
+                  disabled={artifactMutation !== ""}
+                >
+                  Download
+                </button>
+              ) : null}
             </div>
           </div>
         ))}
@@ -122,8 +136,10 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             ) : null}
           </div>
         ) : null}
-      </div>
-      <div>
+        </div>
+      ) : null}
+      {showEvents ? (
+        <div>
         <div className="mini-heading">
           <strong>Events</strong>
           <span>{traceEvents.length}</span>
@@ -134,8 +150,10 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             <strong>{eventOutput(event) || formatTime(event.time)}</strong>
           </div>
         ))}
-      </div>
-      <div>
+        </div>
+      ) : null}
+      {showTools ? (
+        <div>
         <div className="mini-heading">
           <strong>Tool calls</strong>
           <span>{toolCalls.length}</span>
@@ -152,8 +170,10 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             ) : null}
           </div>
         ))}
-      </div>
-      <div>
+        </div>
+      ) : null}
+      {showApprovals ? (
+        <div>
         <div className="mini-heading">
           <strong>Approvals</strong>
           <span>{approvals.length}</span>
@@ -182,12 +202,25 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             </div>
           </div>
         ))}
-      </div>
-      <div>
+        </div>
+      ) : null}
+      {showMemory ? (
+        <div>
         <div className="mini-heading">
           <strong>Memory</strong>
-          <span>{memoryProposals.length + memoryItems.length}</span>
+          <span>
+            {memoryProposals.length +
+              memoryItems.length +
+              sessionContextUsage.length}
+          </span>
         </div>
+        {sessionContextUsage.slice(0, 3).map((item) => (
+          <div className="event-row passive-row" key={item.event_id}>
+            <span>{item.agent_id || item.task_id || "context"}</span>
+            <strong>{item.context_ids?.join(", ") || "used memory"}</strong>
+            {item.summary ? <small>{item.summary}</small> : null}
+          </div>
+        ))}
         {memoryProposals.slice(0, 3).map((proposal) => (
           <div className="approval-card" key={proposal.proposal_id}>
             <strong>{proposal.title}</strong>
@@ -230,7 +263,8 @@ export function WorkspaceLists({ state }: { state: ConsoleState }) {
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

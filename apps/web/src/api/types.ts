@@ -104,6 +104,13 @@ export type ToolDefinition = {
   execution_status?: "executable" | "configured_only" | "unavailable";
 };
 
+export type FeatureReadiness = {
+  id: string;
+  label: string;
+  status: "works" | "diagnostic" | "hidden";
+  reason?: string;
+};
+
 export type SkillDefinition = {
   id: string;
   name: string;
@@ -267,6 +274,15 @@ export type RunSessionDetail = {
   blocked_actions?: BlockedAction[];
 };
 
+export type ContextUsageItem = {
+  event_id: string;
+  task_id?: string;
+  agent_id?: string;
+  context_ids?: string[];
+  summary?: string;
+  time: string;
+};
+
 export type TimelineItem = {
   id: string;
   kind: string;
@@ -347,6 +363,8 @@ export type ChatMessage = {
   created_at: string;
   metadata?: {
     route_decision?: RouteDecision;
+    assistant_source?: "model" | "clarification" | "system_error" | string;
+    model_profile_id?: string;
   };
 };
 
@@ -358,6 +376,15 @@ export type ChatDetail = {
 export type ChatMessageResponse = {
   message: ChatMessage;
   assistant_message?: ChatMessage;
+  assistant_source?: "model" | "clarification" | "system_error" | string;
+  model_profile_id?: string;
+  provider_error?: {
+    code: string;
+    message: string;
+    remediation?: string;
+    provider_id?: string;
+    model_id?: string;
+  };
   route_decision?: RouteDecision;
   clarification?: string;
   run?: {
@@ -395,6 +422,7 @@ export type AgentRecord = {
   approval_policy?: string;
   permissions?: Record<string, unknown>;
   runtime_profile?: Record<string, unknown>;
+  disabled?: boolean;
 };
 
 export type AgentTemplate = {

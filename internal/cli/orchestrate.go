@@ -1,7 +1,12 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
@@ -13,15 +18,18 @@ import (
 func newOrchestrateCommand() *cobra.Command {
 	var configPath string
 	var dbPath string
+	var gatewayURL string
 	command := &cobra.Command{
 		Use:   "orchestrate",
 		Short: "Inspect and edit the default role flow",
 	}
 	command.PersistentFlags().StringVar(&configPath, "config", "nomici.yaml", "AgentSpec config path")
 	command.PersistentFlags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
+	command.PersistentFlags().StringVar(&gatewayURL, "gateway-url", defaultGatewayURL, "Nomici Gateway URL")
 	command.AddCommand(newOrchestrateShowCommand(&configPath))
 	command.AddCommand(newOrchestratePreviewCommand(&configPath))
-	command.AddCommand(newOrchestrateTestCommand(&configPath))
+	command.AddCommand(newOrchestrateValidateCommand(&configPath))
+	command.AddCommand(newOrchestrateTestCommand(&gatewayURL, &dbPath))
 	command.AddCommand(newOrchestrateSetEntrypointCommand(&configPath, &dbPath))
 	command.AddCommand(newOrchestrateRoleCommand(&configPath, &dbPath))
 	return command
@@ -86,9 +94,9 @@ func newOrchestratePreviewCommand(configPath *string) *cobra.Command {
 	return command
 }
 
-func newOrchestrateTestCommand(configPath *string) *cobra.Command {
+func newOrchestrateValidateCommand(configPath *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "test",
+		Use:   "validate",
 		Short: "Validate that the current orchestration flow has runnable roles",
 		RunE: func(command *cobra.Command, args []string) error {
 			snapshot, err := compileGraphFromConfig(*configPath, command)
@@ -118,6 +126,95 @@ func newOrchestrateTestCommand(configPath *string) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newOrchestrateTestCommand(gatewayURL *string, dbPath *string) *cobra.Command {
+	var prompt string
+	command := &cobra.Command{
+		Use:   "test",
+		Short: "Start a real orchestration test session through Gateway",
+		RunE: func(command *cobra.Command, args []string) error {
+			if strings.TrimSpace(prompt) == "" {
+				prompt = "Run a short orchestration test and report the selected roles."
+			}
+			if envURL := os.Getenv("NOMICI_GATEWAY_URL"); envURL != "" && *gatewayURL == defaultGatewayURL {
+				*gatewayURL = envURL
+			}
+			result, err := postOrchestrationTest(command, *gatewayURL, *dbPath, prompt)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Status:     %s\n", result.Status)
+			if result.GraphSnapshotID != "" {
+				fmt.Fprintf(command.OutOrStdout(), "Graph:      %s\n", result.GraphSnapshotID)
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Entrypoint: %s\n", emptyDash(result.Entrypoint))
+			if result.Run != nil {
+				fmt.Fprintf(command.OutOrStdout(), "Run ID:     %s\n", result.Run.RunID)
+				fmt.Fprintf(command.OutOrStdout(), "Session:    %s\n", result.Run.SessionID)
+			}
+			fmt.Fprintf(command.OutOrStdout(), "Tasks:      %d\n", len(result.Tasks))
+			return nil
+		},
+	}
+	command.Flags().StringVar(&prompt, "prompt", "", "Prompt to run in the test session")
+	return command
+}
+
+func postOrchestrationTest(command *cobra.Command, gatewayURL string, dbPath string, prompt string) (*orchestrationTestResult, error) {
+	baseURL, err := url.Parse(gatewayURL)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(map[string]string{"prompt": prompt})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := baseURL.ResolveReference(&url.URL{Path: "/api/orchestration/test"})
+	request, err := http.NewRequestWithContext(command.Context(), http.MethodPost, endpoint.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if err := addGatewayAuth(request, dbPath); err != nil {
+		return nil, err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("Gateway is not reachable. Remediation: run `nomici dev` or `nomici gateway start`: %w", err)
+	}
+	defer response.Body.Close()
+	var envelope struct {
+		Data  orchestrationTestResult `json:"data"`
+		Error *struct {
+			Code        string `json:"code"`
+			Message     string `json:"message"`
+			Remediation string `json:"remediation"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode Gateway response: %w", err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if envelope.Error != nil {
+			return nil, fmt.Errorf("%s. Remediation: %s", envelope.Error.Message, envelope.Error.Remediation)
+		}
+		return nil, fmt.Errorf("Gateway returned HTTP %d", response.StatusCode)
+	}
+	return &envelope.Data, nil
+}
+
+type orchestrationTestResult struct {
+	Status          string `json:"status"`
+	GraphSnapshotID string `json:"graph_snapshot_id"`
+	Entrypoint      string `json:"entrypoint"`
+	Run             *struct {
+		RunID     string `json:"run_id"`
+		SessionID string `json:"session_id"`
+	} `json:"run"`
+	Tasks []struct {
+		AgentID string `json:"agent_id"`
+	} `json:"tasks"`
 }
 
 func newOrchestrateSetEntrypointCommand(configPath *string, dbPath *string) *cobra.Command {
