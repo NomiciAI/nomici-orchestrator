@@ -29,16 +29,17 @@ const (
 )
 
 type Definition struct {
-	ID             string         `json:"id"`
-	Description    string         `json:"description"`
-	Auth           string         `json:"auth"`
-	NetworkRisk    string         `json:"network_risk"`
-	FilesystemRisk string         `json:"filesystem_risk"`
-	MutationRisk   string         `json:"mutation_risk"`
-	AllowedScopes  []string       `json:"allowed_scopes"`
-	RedactionRules []string       `json:"redaction_rules"`
-	Execution      string         `json:"execution"`
-	Parameters     map[string]any `json:"parameters,omitempty"`
+	ID              string         `json:"id"`
+	Description     string         `json:"description"`
+	Auth            string         `json:"auth"`
+	NetworkRisk     string         `json:"network_risk"`
+	FilesystemRisk  string         `json:"filesystem_risk"`
+	MutationRisk    string         `json:"mutation_risk"`
+	AllowedScopes   []string       `json:"allowed_scopes"`
+	RedactionRules  []string       `json:"redaction_rules"`
+	Execution       string         `json:"execution"`
+	ExecutionStatus string         `json:"execution_status,omitempty"`
+	Parameters      map[string]any `json:"parameters,omitempty"`
 }
 
 type CallRecord struct {

@@ -5,18 +5,26 @@ export function SettingsToolsPanel({ state }: { state: ConsoleState }) {
     <section className="panel" aria-label="Tool contracts">
       <div className="panel-heading">
         <h2>Tools</h2>
-        <span className="tag">{state.overview.tools.length}</span>
+        <span className="tag">{state.toolCatalog.length}</span>
       </div>
       <div className="stack">
-        {state.overview.tools.map((tool) => (
+        {state.toolCatalog.map((tool) => (
           <div className="list-item" key={tool.id}>
             <div>
               <strong>{tool.id}</strong>
               <span>
-                {tool.provider} / {tool.mode} / {tool.execution}
+                {tool.execution} / {tool.auth} / {tool.mutation_risk}
               </span>
             </div>
-            <span className="pill pill-green">{tool.status}</span>
+            <span
+              className={
+                tool.execution_status === "executable"
+                  ? "pill pill-green"
+                  : "pill"
+              }
+            >
+              {tool.execution_status || "diagnostic"}
+            </span>
           </div>
         ))}
       </div>

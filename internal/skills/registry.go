@@ -58,6 +58,64 @@ func Get(configPath string, id string) (Definition, error) {
 	return Definition{}, fmt.Errorf("skill %q was not found", id)
 }
 
+func LoadDirectory(path string) (Definition, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return Definition{}, fmt.Errorf("skill directory path is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return Definition{}, err
+	}
+	if !info.IsDir() {
+		return Definition{}, fmt.Errorf("%s is not a directory", path)
+	}
+	var definition Definition
+	for _, name := range []string{"skill.yaml", "skill.yml", "skill.json"} {
+		payload, err := os.ReadFile(filepath.Join(path, name))
+		if err != nil {
+			continue
+		}
+		switch filepath.Ext(name) {
+		case ".json":
+			if err := json.Unmarshal(payload, &definition); err != nil {
+				return Definition{}, fmt.Errorf("parse %s: %w", name, err)
+			}
+		default:
+			if err := yaml.Unmarshal(payload, &definition); err != nil {
+				return Definition{}, fmt.Errorf("parse %s: %w", name, err)
+			}
+		}
+		break
+	}
+	if strings.TrimSpace(definition.ID) == "" {
+		definition.ID = strings.ToLower(strings.NewReplacer(" ", "-", "_", "-").Replace(filepath.Base(path)))
+	}
+	if strings.TrimSpace(definition.Name) == "" {
+		definition.Name = definition.ID
+	}
+	if strings.TrimSpace(definition.Briefing) == "" {
+		for _, name := range []string{"SKILL.md", "README.md"} {
+			payload, err := os.ReadFile(filepath.Join(path, name))
+			if err != nil {
+				continue
+			}
+			text := strings.TrimSpace(string(payload))
+			if len(text) > 6000 {
+				text = text[:6000] + "\n... truncated"
+			}
+			definition.Briefing = text
+			break
+		}
+	}
+	if strings.TrimSpace(definition.Briefing) == "" && len(definition.Files) == 0 {
+		return Definition{}, fmt.Errorf("skill directory must contain skill.yaml, skill.json, SKILL.md, README.md, or briefing files")
+	}
+	definition.Source = "project"
+	definition.Enabled = !definition.Disabled
+	return normalize(definition), nil
+}
+
 func Briefings(configPath string, ids []string) []string {
 	briefings := []string{}
 	seen := map[string]bool{}

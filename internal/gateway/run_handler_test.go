@@ -24,6 +24,7 @@ import (
 	"github.com/NomiciAI/nomici-orchestrator/internal/orchestration"
 	"github.com/NomiciAI/nomici-orchestrator/internal/packs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/policy"
+	"github.com/NomiciAI/nomici-orchestrator/internal/projectconfig"
 	"github.com/NomiciAI/nomici-orchestrator/internal/providers"
 	runpkg "github.com/NomiciAI/nomici-orchestrator/internal/runs"
 	"github.com/NomiciAI/nomici-orchestrator/internal/sandbox"
@@ -421,6 +422,13 @@ deployment:
 	if len(resolved) == 0 {
 		t.Fatal("expected blocked action to resolve after approval")
 	}
+	toolCalls, err := toolbroker.NewStore(db).ListBySession(context.Background(), envelope.Data.SessionID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toolCalls) != 1 || toolCalls[0].Status != toolbroker.StatusCompleted {
+		t.Fatalf("expected approved pending call to be reused and completed once, got %+v", toolCalls)
+	}
 }
 
 func TestRunCreateEndpointRolePlanReviewAndArtifacts(t *testing.T) {
@@ -630,8 +638,11 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	if envelope.Data.RouteDecision == nil || envelope.Data.RouteDecision.Mode != orchestration.ModeDirectReply {
 		t.Fatalf("expected direct route decision, got %+v", envelope.Data.RouteDecision)
 	}
-	if envelope.Data.AssistantMessage == nil || envelope.Data.AssistantMessage.Role != chats.RoleAssistant {
-		t.Fatalf("expected assistant message, got %+v", envelope.Data.AssistantMessage)
+	if envelope.Data.AssistantMessage != nil {
+		t.Fatalf("expected no fake assistant message without a configured model, got %+v", envelope.Data.AssistantMessage)
+	}
+	if envelope.Data.AssistantSource != "system_error" || envelope.Data.ProviderError == nil {
+		t.Fatalf("expected provider error for direct chat without model, got %+v", envelope.Data)
 	}
 	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
 	if err != nil {
@@ -648,9 +659,47 @@ func TestChatDirectReplyDoesNotCreateRun(t *testing.T) {
 	}
 
 	feedbackResponse := httptest.NewRecorder()
-	router.ServeHTTP(feedbackResponse, httptest.NewRequest(http.MethodPost, "/api/chats/"+envelope.Data.Message.ChatID+"/feedback", bytes.NewBufferString(`{"message_id":"`+envelope.Data.AssistantMessage.MessageID+`","score":"up"}`)))
+	router.ServeHTTP(feedbackResponse, httptest.NewRequest(http.MethodPost, "/api/chats/"+envelope.Data.Message.ChatID+"/feedback", bytes.NewBufferString(`{"message_id":"`+envelope.Data.Message.MessageID+`","score":"up"}`)))
 	if feedbackResponse.Code != http.StatusOK || !strings.Contains(feedbackResponse.Body.String(), `"score":"up"`) {
 		t.Fatalf("expected feedback upsert, got %d: %s", feedbackResponse.Code, feedbackResponse.Body.String())
+	}
+}
+
+func TestChatDirectReplyUsesConfiguredModel(t *testing.T) {
+	t.Setenv("NOMICI_TEST_API_KEY", "sk-test-secret")
+	providerServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"hello from model"}}]}`))
+	}))
+	defer providerServer.Close()
+	db, router := newRunTestRouter(t)
+	saveRunTestGraph(t, graph.NewStore(db), providerServer.URL, nil)
+
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/chats", bytes.NewBufferString(`{"prompt":"hey"}`)))
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected chat create 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var envelope struct {
+		Data chatMessageResponse `json:"data"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Run != nil {
+		t.Fatalf("expected direct reply without run, got %+v", envelope.Data.Run)
+	}
+	if envelope.Data.ProviderError != nil || envelope.Data.AssistantSource != "model" {
+		t.Fatalf("expected model-sourced assistant reply, got %+v", envelope.Data)
+	}
+	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "hello from model") {
+		t.Fatalf("expected model assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+	sessions, err := runpkg.NewStore(db).ListSessions(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no run sessions, got %+v", sessions)
 	}
 }
 
@@ -698,6 +747,34 @@ deployment:
 		t.Fatalf("expected orchestration preview, got %d: %s", preview.Code, preview.Body.String())
 	}
 
+	tools := httptest.NewRecorder()
+	router.ServeHTTP(tools, httptest.NewRequest(http.MethodGet, "/api/tools", nil))
+	if tools.Code != http.StatusOK || !strings.Contains(tools.Body.String(), `"execution_status"`) {
+		t.Fatalf("expected tools with execution status, got %d: %s", tools.Code, tools.Body.String())
+	}
+
+	features := httptest.NewRecorder()
+	router.ServeHTTP(features, httptest.NewRequest(http.MethodGet, "/api/features/readiness", nil))
+	if features.Code != http.StatusOK || !strings.Contains(features.Body.String(), `"id":"chat"`) {
+		t.Fatalf("expected feature readiness, got %d: %s", features.Code, features.Body.String())
+	}
+
+	testRun := httptest.NewRecorder()
+	router.ServeHTTP(testRun, httptest.NewRequest(http.MethodPost, "/api/orchestration/test", bytes.NewBufferString(`{"prompt":"test the role flow"}`)))
+	if testRun.Code != http.StatusOK || !strings.Contains(testRun.Body.String(), `"run_id"`) || !strings.Contains(testRun.Body.String(), `"status":"started"`) {
+		t.Fatalf("expected real orchestration test run, got %d: %s", testRun.Code, testRun.Body.String())
+	}
+	var testRunEnvelope struct {
+		Data orchestrationPreviewResponse `json:"data"`
+	}
+	if err := json.NewDecoder(testRun.Body).Decode(&testRunEnvelope); err != nil {
+		t.Fatalf("decode orchestration test run: %v", err)
+	}
+	if testRunEnvelope.Data.Run == nil || testRunEnvelope.Data.Run.SessionID == "" {
+		t.Fatalf("expected orchestration test session, got %+v", testRunEnvelope.Data.Run)
+	}
+	waitForSessionStatus(t, runpkg.NewStore(db), testRunEnvelope.Data.Run.SessionID, runpkg.SessionStatusCompleted)
+
 	runResponse := httptest.NewRecorder()
 	router.ServeHTTP(runResponse, httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewBufferString(`{"agent_id":"product_pm","prompt":"verify timeline"}`)))
 	if runResponse.Code != http.StatusOK {
@@ -730,7 +807,7 @@ deployment:
 	}
 }
 
-func TestChatAutoWithoutAgentsReturnsAssistantModelSetupHelp(t *testing.T) {
+func TestChatAutoWithoutAgentsReturnsProviderErrorWithoutFakeAssistant(t *testing.T) {
 	db, router := newRunTestRouter(t)
 	if err := graph.NewStore(db).Save(context.Background(), &graph.Snapshot{
 		SnapshotID:    "graph_empty",
@@ -761,8 +838,11 @@ func TestChatAutoWithoutAgentsReturnsAssistantModelSetupHelp(t *testing.T) {
 	if envelope.Data.Run != nil {
 		t.Fatalf("expected no run when no agents are configured, got %+v", envelope.Data.Run)
 	}
-	if envelope.Data.AssistantMessage == nil || !strings.Contains(envelope.Data.AssistantMessage.Content, "model provider") {
-		t.Fatalf("expected model setup help assistant message, got %+v", envelope.Data.AssistantMessage)
+	if envelope.Data.AssistantMessage != nil {
+		t.Fatalf("expected no fake assistant message, got %+v", envelope.Data.AssistantMessage)
+	}
+	if envelope.Data.AssistantSource != "system_error" || envelope.Data.ProviderError == nil || !strings.Contains(envelope.Data.ProviderError.Message, "model") {
+		t.Fatalf("expected provider error response, got %+v", envelope.Data)
 	}
 }
 
@@ -808,7 +888,14 @@ deployment:
 }
 
 func TestAgentListShowsDefaultTeamWhenProjectHasNoAgents(t *testing.T) {
-	db, router := newRunTestRouter(t)
+	db, options, services := newRunTestServicesWithConfig(t, `version: "0.1"
+project:
+  name: test
+deployment:
+  sandbox:
+    mode: local
+`)
+	router := NewRouter(options, services)
 	if err := providers.NewStore(db).Save(context.Background(), &providers.Profile{
 		ID:      "local_model",
 		Name:    "Local Model",
@@ -823,8 +910,17 @@ func TestAgentListShowsDefaultTeamWhenProjectHasNoAgents(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"id":"product_pm"`) || !strings.Contains(response.Body.String(), `"id":"coder"`) {
+	if !strings.Contains(response.Body.String(), `"id":"product_pm"`) || !strings.Contains(response.Body.String(), `"id":"coder"`) || !strings.Contains(response.Body.String(), `"source":"built_in"`) {
 		t.Fatalf("expected default team agents, got %s", response.Body.String())
+	}
+	copyResponse := httptest.NewRecorder()
+	router.ServeHTTP(copyResponse, httptest.NewRequest(http.MethodPost, "/api/agents/product_pm/copy", bytes.NewBufferString(`{}`)))
+	if copyResponse.Code != http.StatusOK || !strings.Contains(copyResponse.Body.String(), `"source":"project"`) {
+		t.Fatalf("expected built-in agent copied to project, got %d: %s", copyResponse.Code, copyResponse.Body.String())
+	}
+	copied, err := projectconfig.GetAgent(options.ConfigPath, "product_pm")
+	if err != nil || copied.Source != "project" {
+		t.Fatalf("expected copied project agent, got %+v err=%v", copied, err)
 	}
 }
 

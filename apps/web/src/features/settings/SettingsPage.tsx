@@ -4,18 +4,20 @@ import { SettingsMemoryPanel } from "./SettingsMemoryPanel";
 import { SettingsModelPanel } from "./SettingsModelPanel";
 import { SettingsSkillsPanel } from "./SettingsSkillsPanel";
 import { SettingsToolsPanel } from "./SettingsToolsPanel";
+import { SettingsDiagnosticsPanel } from "./SettingsDiagnosticsPanel";
 
-type SettingsSection = "models" | "tools" | "skills" | "memory";
+type SettingsSection = "models" | "tools" | "skills" | "memory" | "diagnostics";
 
 const sections: Array<{ id: SettingsSection; label: string; hint: string }> = [
   { id: "models", label: "Models", hint: "Providers and profiles" },
   { id: "tools", label: "Tools", hint: "Broker contracts" },
   { id: "skills", label: "Skills", hint: "Reusable instructions" },
   { id: "memory", label: "Memory", hint: "Reusable context" },
+  { id: "diagnostics", label: "Diagnostics", hint: "Readiness gates" },
 ];
 
 export function SettingsPage({ state }: { state: ConsoleState }) {
-  const [section, setSection] = useState<SettingsSection>("skills");
+  const [section, setSection] = useState<SettingsSection>("models");
   return (
     <section className="settings-layout" aria-label="Settings">
       <aside className="settings-nav">
@@ -40,6 +42,9 @@ export function SettingsPage({ state }: { state: ConsoleState }) {
         {section === "tools" ? <SettingsToolsPanel state={state} /> : null}
         {section === "skills" ? <SettingsSkillsPanel state={state} /> : null}
         {section === "memory" ? <SettingsMemoryPanel state={state} /> : null}
+        {section === "diagnostics" ? (
+          <SettingsDiagnosticsPanel state={state} />
+        ) : null}
       </div>
     </section>
   );

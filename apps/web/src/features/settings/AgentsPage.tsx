@@ -56,8 +56,15 @@ export function AgentsPage({ state }: { state: ConsoleState }) {
         validation={state.agentValidation}
         testResult={state.agentTestResult}
         testing={state.settingsMutation === "agent-test"}
+        canTest={state.featureWorks("agents")}
+        testUnavailableReason={state.featureReason("agents")}
         onValidate={() => void state.validateAgentDraft()}
         onTest={() => void state.testAgentDraft()}
+        onCopy={(agent) => void state.copyAgentToProject(agent)}
+        onSetEnabled={(agent, enabled) =>
+          void state.setAgentEnabled(agent, enabled)
+        }
+        onDelete={(agent) => void state.deleteAgent(agent)}
         onSave={(event) => void state.saveAgent(event)}
       />
     </section>

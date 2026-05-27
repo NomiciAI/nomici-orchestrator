@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
+	"github.com/NomiciAI/nomici-orchestrator/internal/agentspec"
 	"github.com/NomiciAI/nomici-orchestrator/internal/toolbroker"
 	"github.com/go-chi/chi/v5"
 )
 
-func toolListHandler() http.HandlerFunc {
+func toolListHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		writeSuccess(response, newRequestID(), toolbroker.Definitions(), nil)
+		writeSuccess(response, newRequestID(), toolDefinitionsWithStatus(options, services), nil)
 	}
 }
 
-func toolDetailHandler() http.HandlerFunc {
+func toolDetailHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		definition, err := toolbroker.DefinitionByID(chi.URLParam(request, "tool_id"))
@@ -24,8 +26,79 @@ func toolDetailHandler() http.HandlerFunc {
 			writeError(response, http.StatusNotFound, requestID, "tool_not_found", "Tool was not found.", "Refresh tool registry.")
 			return
 		}
+		definition.ExecutionStatus = toolExecutionStatus(options, services, definition.ID)
 		writeSuccess(response, requestID, definition, nil)
 	}
+}
+
+func toolDefinitionsWithStatus(options Options, services Services) []toolbroker.Definition {
+	definitions := toolbroker.Definitions()
+	for index := range definitions {
+		definitions[index].ExecutionStatus = toolExecutionStatus(options, services, definitions[index].ID)
+	}
+	return definitions
+}
+
+func toolExecutionStatus(options Options, services Services, toolID string) string {
+	switch toolID {
+	case toolbroker.ToolSearch:
+		provider := configuredToolProvider(options.ConfigPath, "web_search")
+		switch provider {
+		case "", "duckduckgo":
+			return "executable"
+		case "none":
+			return "unavailable"
+		default:
+			return "configured_only"
+		}
+	case toolbroker.ToolFetch:
+		provider := configuredToolProvider(options.ConfigPath, "web_fetch")
+		switch provider {
+		case "", "jina_reader", "direct_http":
+			return "executable"
+		case "none":
+			return "unavailable"
+		default:
+			return "configured_only"
+		}
+	}
+	intent, err := sandboxIntentFromConfig(options.ConfigPath)
+	if err != nil || intent.Mode == "" || intent.Mode == "none" {
+		return "unavailable"
+	}
+	if services.Sandboxes == nil {
+		return "configured_only"
+	}
+	switch toolID {
+	case toolbroker.ToolWriteFile, toolbroker.ToolReplaceFile, toolbroker.ToolPresentArtifact:
+		if intent.FileWriteEnabled {
+			return "executable"
+		}
+		return "configured_only"
+	case toolbroker.ToolBash:
+		if intent.BashEnabled {
+			return "executable"
+		}
+		return "configured_only"
+	default:
+		return "executable"
+	}
+}
+
+func configuredToolProvider(configPath string, toolID string) string {
+	if configPath == "" {
+		configPath = "nomici.yaml"
+	}
+	loaded, err := agentspec.LoadFileWithLocal(configPath)
+	if err != nil || loaded.Spec == nil || loaded.Spec.Tools == nil {
+		return ""
+	}
+	config := loaded.Spec.Tools[toolID]
+	provider, _ := config["provider"].(string)
+	if provider == "" {
+		provider, _ = config["kind"].(string)
+	}
+	return strings.TrimSpace(strings.ToLower(strings.ReplaceAll(provider, "-", "_")))
 }
 
 func sessionToolCallsHandler(services Services) http.HandlerFunc {

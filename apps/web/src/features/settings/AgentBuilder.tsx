@@ -7,10 +7,12 @@ import type {
   SkillDefinition,
   ToolDefinition,
 } from "../../api/types";
-import { splitCSV, toggleListValue } from "../../lib/lists";
+import { splitCSV } from "../../lib/lists";
 import { AgentBuilderActions } from "./AgentBuilderActions";
+import { AgentGrantSelectors } from "./AgentGrantSelectors";
 import { AgentSummaryList } from "./AgentSummaryList";
 import { AgentTestResultPanel } from "./AgentTestResultPanel";
+import { modelOptions, normalizeAgentForCompare } from "./agentCompare";
 
 export function AgentBuilder({
   agents,
@@ -25,8 +27,13 @@ export function AgentBuilder({
   validation,
   testResult,
   testing = false,
+  canTest = true,
+  testUnavailableReason = "",
   onValidate,
   onTest,
+  onCopy,
+  onSetEnabled,
+  onDelete,
   onSave,
 }: {
   agents: AgentRecord[];
@@ -41,27 +48,33 @@ export function AgentBuilder({
   validation: string;
   testResult?: AgentTestResult | null;
   testing?: boolean;
+  canTest?: boolean;
+  testUnavailableReason?: string;
   onValidate: () => void;
   onTest?: () => void;
+  onCopy?: (agent: AgentRecord) => void;
+  onSetEnabled?: (agent: AgentRecord, enabled: boolean) => void;
+  onDelete?: (agent: AgentRecord) => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const graphModelOptions = graphSnapshot
-    ? Object.entries(graphSnapshot.ir.models).map(([id, model]) => ({
-        id,
-        label: `${id} / ${model.model}`,
-      }))
-    : [];
-  const modelOptions = graphModelOptions.length
-    ? graphModelOptions
-    : models.map((model) => ({
-        id: model.id,
-        label: `${model.name || model.id} / ${model.model}`,
-      }));
+  const availableModels = modelOptions(graphSnapshot, models);
   const agentIsInvalid =
     draft.id.trim() === "" ||
     ((draft.kind === "model_agent" || draft.kind === "gateway_agent") &&
       (draft.model ?? "").trim() === "") ||
     (draft.kind === "external_agent" && (draft.runtime ?? "").trim() === "");
+  const savedAgent = agents.find((agent) => agent.id === draft.id);
+  const draftMatchesSaved =
+    savedAgent !== undefined &&
+    JSON.stringify(normalizeAgentForCompare(savedAgent)) ===
+      JSON.stringify(normalizeAgentForCompare(draft));
+  const testDisabledReason = !canTest
+    ? testUnavailableReason || "Agent execution is not ready"
+    : savedAgent
+      ? draftMatchesSaved
+        ? ""
+        : "Save before test"
+      : "Save before test";
   return (
     <section className="panel" aria-label="Agent builder">
       <div className="panel-heading">
@@ -115,7 +128,7 @@ export function AgentBuilder({
               }
             >
               <option value="">Select model profile</option>
-              {modelOptions.map((model) => (
+              {availableModels.map((model) => (
                 <option value={model.id} key={model.id}>
                   {model.label}
                 </option>
@@ -278,66 +291,34 @@ export function AgentBuilder({
             />
           </label>
         </div>
-        <div className="selection-panel">
-          <div className="mini-heading no-border">
-            <strong>Tools</strong>
-            <span>{draft.tools?.length ?? 0} selected</span>
-          </div>
-          <div className="checkbox-grid">
-            {toolCatalog.map((tool) => (
-              <label key={tool.id}>
-                <input
-                  type="checkbox"
-                  checked={draft.tools?.includes(tool.id) ?? false}
-                  onChange={() =>
-                    setDraft({
-                      ...draft,
-                      tools: toggleListValue(draft.tools ?? [], tool.id),
-                    })
-                  }
-                />
-                <span>{tool.id}</span>
-                <small>{tool.mutation_risk}</small>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div className="selection-panel">
-          <div className="mini-heading no-border">
-            <strong>Skills</strong>
-            <span>{draft.skills?.length ?? 0} selected</span>
-          </div>
-          <div className="checkbox-grid">
-            {skillCatalog.map((skill) => (
-              <label key={skill.id}>
-                <input
-                  type="checkbox"
-                  checked={draft.skills?.includes(skill.id) ?? false}
-                  onChange={() =>
-                    setDraft({
-                      ...draft,
-                      skills: toggleListValue(draft.skills ?? [], skill.id),
-                    })
-                  }
-                />
-                <span>{skill.name || skill.id}</span>
-                <small>{skill.risk || "low"}</small>
-              </label>
-            ))}
-          </div>
-        </div>
+        <AgentGrantSelectors
+          draft={draft}
+          setDraft={setDraft}
+          toolCatalog={toolCatalog}
+          skillCatalog={skillCatalog}
+        />
         <AgentBuilderActions
           validation={validation}
           validating={validating}
           testing={testing}
           agentIsInvalid={agentIsInvalid}
           saving={saving}
+          testDisabledReason={testDisabledReason}
           onValidate={onValidate}
-          onTest={onTest}
+          onTest={canTest ? onTest : undefined}
         />
+        {!canTest && testUnavailableReason ? (
+          <div className="inline-warning">{testUnavailableReason}</div>
+        ) : null}
         {testResult ? <AgentTestResultPanel result={testResult} /> : null}
       </form>
-      <AgentSummaryList agents={agents} setDraft={setDraft} />
+      <AgentSummaryList
+        agents={agents}
+        setDraft={setDraft}
+        onCopy={onCopy}
+        onSetEnabled={onSetEnabled}
+        onDelete={onDelete}
+      />
     </section>
   );
 }
