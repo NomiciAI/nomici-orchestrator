@@ -138,7 +138,7 @@ export function useConsoleState() {
   const [settingsMutation, setSettingsMutation] = useState("");
   const [agentValidation, setAgentValidation] = useState("");
 
-  const isAuthenticated = status !== "auth";
+  const isAuthenticated = status === "ready";
   const agentOptions = useMemo(
     () => buildAgentOptions(overview.graph_snapshot),
     [overview.graph_snapshot],
@@ -287,6 +287,9 @@ export function useConsoleState() {
       const message =
         loadError instanceof Error ? loadError.message : "Gateway unavailable";
       if (message.includes("token")) {
+        window.localStorage.removeItem("nomici.gateway.token");
+        setGatewayToken("");
+        setTokenInput("");
         setStatus("auth");
       } else {
         setStatus("failed");
