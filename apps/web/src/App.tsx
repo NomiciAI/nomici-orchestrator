@@ -126,6 +126,18 @@ export function App() {
           </div>
         </header>
 
+        {state.status === "loading" ? (
+          <div className="auth-banner auth-screen auth-status-card">
+            <div>
+              <strong>Connecting to Gateway</strong>
+              <span>
+                Nomici is loading the local Console state. If this does not
+                change, restart `nomici dev` and refresh this page.
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         {state.status === "auth" ? (
           <form
             className="auth-banner auth-screen"
@@ -153,7 +165,20 @@ export function App() {
           </form>
         ) : null}
         {state.status === "failed" ? (
-          <div className="banner banner-error">{state.error}</div>
+          <div className="auth-banner auth-screen auth-status-card">
+            <div>
+              <strong>Gateway unavailable</strong>
+              <span>{state.error}</span>
+              <code>nomici dev</code>
+            </div>
+            <button
+              className="button"
+              type="button"
+              onClick={() => void state.loadOverview()}
+            >
+              Retry
+            </button>
+          </div>
         ) : null}
         {state.warnings.map((warning) => (
           <div className="banner" key={warning}>

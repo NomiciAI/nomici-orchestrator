@@ -35,7 +35,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
               type="button"
               onClick={state.draftAgentFromChat}
             >
-              Save as agent
+              Draft agent from chat
             </button>
           </div>
         </div>
@@ -47,6 +47,14 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             >
               <span>{message.role}</span>
               <p>{message.content}</p>
+              {message.metadata?.assistant_source ? (
+                <small>
+                  source: {message.metadata.assistant_source}
+                  {message.metadata.model_profile_id
+                    ? ` / ${message.metadata.model_profile_id}`
+                    : ""}
+                </small>
+              ) : null}
             </article>
           ))}
           {state.chatDetail ? null : (
@@ -85,6 +93,12 @@ export function ChatPage({ state }: { state: ConsoleState }) {
           </div>
         ) : null}
         <form className="composer" onSubmit={state.sendMessage}>
+          {!state.hasConfiguredModel ? (
+            <div className="inline-warning">
+              Configure a model in Settings or run <code>nomici setup</code>{" "}
+              before sending a chat message.
+            </div>
+          ) : null}
           <textarea
             rows={5}
             value={state.messageText}
@@ -144,6 +158,7 @@ export function ChatPage({ state }: { state: ConsoleState }) {
                 state.runStatus === "running" ||
                 (state.runAgentId !== "auto" &&
                   !state.selectedAgent?.supported) ||
+                !state.hasConfiguredModel ||
                 state.messageText.trim() === ""
               }
             >

@@ -171,6 +171,43 @@ FROM approvals`
 	return approvals, nil
 }
 
+func (service *Service) ListByRun(ctx context.Context, runID string, status string) ([]*Approval, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil, fmt.Errorf("run_id is required")
+	}
+	query := `
+SELECT approval_id, run_id, action_id, action_type, action_fingerprint,
+	status, risk, scope, summary, subject_json, requested_by_agent, runtime_id,
+	reason, requested_at, resolved_at, consumed_at, bound_run_id
+FROM approvals
+WHERE run_id = ?`
+	args := []any{runID}
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY requested_at DESC"
+	rows, err := service.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list run approvals: %w", err)
+	}
+	defer rows.Close()
+
+	var approvals []*Approval
+	for rows.Next() {
+		approval, err := scanApproval(rows)
+		if err != nil {
+			return nil, err
+		}
+		approvals = append(approvals, approval)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list run approvals: %w", err)
+	}
+	return approvals, nil
+}
+
 func (service *Service) findUsableGrant(ctx context.Context, fingerprint string, runID string) (*Approval, error) {
 	rows, err := service.db.QueryContext(ctx, `
 SELECT approval_id, run_id, action_id, action_type, action_fingerprint,

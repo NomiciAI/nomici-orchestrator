@@ -39,13 +39,14 @@ type agentTestRequest struct {
 }
 
 type agentTestResponse struct {
-	AgentID   string   `json:"agent_id"`
-	Status    string   `json:"status"`
-	Mode      string   `json:"mode"`
-	RunID     string   `json:"run_id,omitempty"`
-	Output    string   `json:"output,omitempty"`
-	Warnings  []string `json:"warnings,omitempty"`
-	TraceHint string   `json:"trace_hint,omitempty"`
+	AgentID    string   `json:"agent_id"`
+	Status     string   `json:"status"`
+	Mode       string   `json:"mode"`
+	TruthLabel string   `json:"truth_label,omitempty"`
+	RunID      string   `json:"run_id,omitempty"`
+	Output     string   `json:"output,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
+	TraceHint  string   `json:"trace_hint,omitempty"`
 }
 
 type orchestrationPreviewRequest struct {
@@ -59,6 +60,7 @@ type orchestrationPreviewResponse struct {
 	Entrypoint      string                      `json:"entrypoint,omitempty"`
 	RouteDecision   orchestration.RouteDecision `json:"route_decision"`
 	Tasks           []orchestrationPreviewTask  `json:"tasks"`
+	Run             *runCreateResponse          `json:"run,omitempty"`
 	Warnings        []string                    `json:"warnings,omitempty"`
 }
 
@@ -128,7 +130,7 @@ func agentTestHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
 		agentID := chi.URLParam(request, "agent_id")
-		agent, err := projectconfig.GetAgent(options.ConfigPath, agentID)
+		agent, _, err := resolveAgentRecord(request, options, services, agentID)
 		if err != nil {
 			writeProjectConfigError(response, requestID, err)
 			return
@@ -148,22 +150,23 @@ func agentTestHandler(options Options, services Services) http.HandlerFunc {
 		if strings.TrimSpace(body.Prompt) == "" {
 			body.Prompt = "Reply with one concise sentence confirming this agent is ready."
 		}
-		if !execute || agent.Kind == agentspec.AgentKindExternal {
-			mode := "validation_only"
-			warnings := []string{}
-			if agent.Kind == agentspec.AgentKindExternal {
-				warnings = append(warnings, "External agents are validated here; run them from Chat or CLI to exercise their command runtime.")
-			}
-			writeSuccess(response, requestID, agentTestResponse{AgentID: agentID, Status: "valid", Mode: mode, Warnings: warnings}, nil)
+		if !execute {
+			writeSuccess(response, requestID, agentTestResponse{
+				AgentID:    agentID,
+				Status:     "valid",
+				Mode:       "validation_only",
+				TruthLabel: "validation_only_no_execution",
+				Warnings:   []string{"Validation checked the saved agent shape only. Enable execution to call the configured runtime."},
+			}, nil)
 			return
 		}
 		if services.Graph == nil || services.Trace == nil || services.Secrets == nil || services.Adapter == nil {
-			writeSuccess(response, requestID, agentTestResponse{AgentID: agentID, Status: "valid", Mode: "validation_only", Warnings: []string{"Runtime services are not available, so the test stopped after validation."}}, nil)
+			writeSuccess(response, requestID, agentTestResponse{AgentID: agentID, Status: "valid", Mode: "validation_only", TruthLabel: "validation_only_missing_runtime_services", Warnings: []string{"Runtime services are not available, so the test stopped after validation."}}, nil)
 			return
 		}
-		snapshot, err := services.Graph.Latest(request.Context())
-		if err != nil {
-			writeSuccess(response, requestID, agentTestResponse{AgentID: agentID, Status: "valid", Mode: "validation_only", Warnings: []string{"No compiled graph snapshot is available. Save or validate the graph, then test execution."}}, nil)
+		snapshot, startErr := latestRunnableSnapshot(request.Context(), options, services)
+		if startErr != nil {
+			writeSuccess(response, requestID, agentTestResponse{AgentID: agentID, Status: "valid", Mode: "validation_only", TruthLabel: "validation_only_graph_or_model_missing", Warnings: []string{startErr.Message}}, nil)
 			return
 		}
 		result, err := runExecutor(options, services).Execute(request.Context(), runs.Request{
@@ -176,12 +179,13 @@ func agentTestHandler(options Options, services Services) http.HandlerFunc {
 			return
 		}
 		writeSuccess(response, requestID, agentTestResponse{
-			AgentID:   agentID,
-			Status:    result.Status,
-			Mode:      "executed",
-			RunID:     result.RunID,
-			Output:    agentTestOutput(result),
-			TraceHint: "Open Runs to inspect the test trace.",
+			AgentID:    agentID,
+			Status:     result.Status,
+			Mode:       "executed",
+			TruthLabel: "executed_via_run_runtime",
+			RunID:      result.RunID,
+			Output:     agentTestOutput(result),
+			TraceHint:  "Open Runs to inspect the test trace.",
 		}, nil)
 	}
 }
@@ -214,18 +218,26 @@ func orchestrationTestHandler(options Options, services Services) http.HandlerFu
 			writeError(response, http.StatusBadRequest, requestID, "orchestration_test_failed", err.Error(), "Fix the graph or orchestration settings and retry.")
 			return
 		}
-		status := "valid"
-		warnings := append([]string{}, preview.Warnings...)
-		if preview.Entrypoint == "" {
-			status = "invalid"
-			warnings = append(warnings, "No entrypoint could be selected.")
+		if preview.Entrypoint == "" || len(preview.Tasks) == 0 {
+			preview.Status = "invalid"
+			preview.Warnings = append(preview.Warnings, "No executable role tasks were produced.")
+			writeSuccess(response, requestID, preview, nil)
+			return
 		}
-		if len(preview.Tasks) == 0 {
-			status = "invalid"
-			warnings = append(warnings, "No executable role tasks were produced.")
+		prompt := strings.TrimSpace(body.Prompt)
+		if prompt == "" {
+			prompt = "Run a short orchestration test and report the selected roles."
 		}
-		preview.Status = status
-		preview.Warnings = warnings
+		decision := preview.RouteDecision
+		started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, body.AgentID, prompt, "orchestration_test", map[string]any{
+			"orchestration_test": true,
+		}, &decision, true)
+		if startErr != nil {
+			writeError(response, startErr.Status, requestID, startErr.Code, startErr.Message, startErr.Remediation)
+			return
+		}
+		preview.Status = "started"
+		preview.Run = &started.Response
 		writeSuccess(response, requestID, preview, nil)
 	}
 }
@@ -330,9 +342,9 @@ func buildOrchestrationPreview(ctx context.Context, options Options, services Se
 	if services.Graph == nil {
 		return nil, errors.New("graph store is not initialized")
 	}
-	snapshot, err := services.Graph.Latest(ctx)
-	if err != nil {
-		return nil, err
+	snapshot, startErr := latestRunnableSnapshot(ctx, options, services)
+	if startErr != nil {
+		return nil, errors.New(startErr.Message)
 	}
 	prompt := strings.TrimSpace(body.Prompt)
 	if prompt == "" {

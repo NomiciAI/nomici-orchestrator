@@ -77,6 +77,10 @@
   margin: 48px auto 0;
 }
 
+.auth-status-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .auth-banner div {
   min-width: 0;
   display: grid;
@@ -227,6 +231,15 @@
   border-radius: 8px;
   color: var(--danger);
   background: var(--danger-bg);
+  font-size: 12px;
+}
+
+.inline-warning {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: 8px;
+  color: var(--warning);
+  background: var(--warning-bg);
   font-size: 12px;
 }
 

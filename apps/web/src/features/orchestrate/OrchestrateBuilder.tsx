@@ -12,6 +12,8 @@ export function OrchestrateBuilder({
   saving,
   previewing,
   testing,
+  canTestRun = true,
+  testUnavailableReason = "",
   onPreview,
   onTest,
   onSave,
@@ -24,6 +26,8 @@ export function OrchestrateBuilder({
   saving: boolean;
   previewing: boolean;
   testing: boolean;
+  canTestRun?: boolean;
+  testUnavailableReason?: string;
   onPreview: () => void;
   onTest: () => void;
   onSave: (next: OrchestrationConfig) => void;
@@ -320,19 +324,15 @@ export function OrchestrateBuilder({
       <div className="builder-actions">
         <button
           className="button button-secondary"
-          type="button"
-          disabled={saving || previewing || testing}
-          onClick={onPreview}
+          type="button" disabled={saving || previewing || testing} onClick={onPreview}
         >
-          {previewing ? "Previewing" : "Preview"}
+          {previewing ? "Previewing" : "Preview flow"}
         </button>
         <button
           className="button button-secondary"
-          type="button"
-          disabled={saving || previewing || testing}
-          onClick={onTest}
+          type="button" disabled={saving || previewing || testing || !canTestRun} onClick={onTest} title={canTestRun ? "" : testUnavailableReason}
         >
-          {testing ? "Testing" : "Test"}
+          {testing ? "Starting" : "Start test run"}
         </button>
         <button
           className="button"

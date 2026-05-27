@@ -8,9 +8,14 @@ export function OrchestrationPreviewSummary({
   return (
     <div className="config-preview">
       <div className="mini-heading">
-        <strong>Harness preview</strong>
+        <strong>{preview.run ? "Test run" : "Flow preview"}</strong>
         <span>{preview.status}</span>
       </div>
+      {preview.run ? (
+        <p className="builder-note">
+          Started real session {preview.run.session_id || preview.run.run_id}.
+        </p>
+      ) : null}
       <div className="graph-preview">
         {(preview.tasks ?? [])
           .map((task) => task.role_id || task.agent_id)

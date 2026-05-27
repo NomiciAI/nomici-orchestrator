@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -56,6 +57,7 @@ func defaultTeamAgentRecords(request *http.Request, services Services) []project
 			ID:           agent.ID,
 			Name:         defaultTeamAgentName(agent.ID),
 			Description:  "Built-in default team role. Save a copy to customize it for this project.",
+			Source:       "built_in",
 			Kind:         agent.Kind,
 			Model:        agent.Model,
 			Runtime:      agent.Runtime,
@@ -68,6 +70,20 @@ func defaultTeamAgentRecords(request *http.Request, services Services) []project
 		})
 	}
 	return records
+}
+
+func resolveAgentRecord(request *http.Request, options Options, services Services, agentID string) (*projectconfig.AgentRecord, bool, error) {
+	agent, err := projectconfig.GetAgent(options.ConfigPath, agentID)
+	if err == nil {
+		return agent, false, nil
+	}
+	for _, record := range defaultTeamAgentRecords(request, services) {
+		if record.ID == agentID {
+			copy := record
+			return &copy, true, nil
+		}
+	}
+	return nil, false, err
 }
 
 func defaultTeamAgentName(id string) string {
@@ -111,12 +127,54 @@ func agentCreateHandler(options Options, services Services) http.HandlerFunc {
 func agentDetailHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		agent, err := projectconfig.GetAgent(options.ConfigPath, chi.URLParam(request, "agent_id"))
+		agent, _, err := resolveAgentRecord(request, options, services, chi.URLParam(request, "agent_id"))
 		if err != nil {
 			writeProjectConfigError(response, requestID, err)
 			return
 		}
 		writeSuccess(response, requestID, agent, nil)
+	}
+}
+
+func agentCopyHandler(options Options, services Services) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		agentID := chi.URLParam(request, "agent_id")
+		agent, builtIn, err := resolveAgentRecord(request, options, services, agentID)
+		if err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		if !builtIn {
+			writeError(response, http.StatusConflict, requestID, "agent_already_project_owned", "Agent is already saved in this project.", "Edit the project agent directly.")
+			return
+		}
+		var body struct {
+			ID string `json:"id"`
+		}
+		if request.Body != nil {
+			_ = json.NewDecoder(request.Body).Decode(&body)
+		}
+		if strings.TrimSpace(body.ID) != "" {
+			agent.ID = strings.TrimSpace(body.ID)
+		}
+		agent.Source = ""
+		if strings.TrimSpace(agent.Model) != "" {
+			if err := projectconfig.EnsureModelReference(options.ConfigPath, agent.Model); err != nil {
+				writeError(response, http.StatusBadRequest, requestID, "agent_copy_failed", err.Error(), "Fix the model profile and retry.")
+				return
+			}
+		}
+		if _, err := projectconfig.UpsertAgent(request.Context(), options.ConfigPath, options.DBPath, *agent); err != nil {
+			writeError(response, http.StatusBadRequest, requestID, "agent_copy_failed", err.Error(), "Fix the target agent id and retry.")
+			return
+		}
+		copied, err := projectconfig.GetAgent(options.ConfigPath, agent.ID)
+		if err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		writeSuccess(response, requestID, copied, []string{fmt.Sprintf("Copied %s into project config.", agentID)})
 	}
 }
 
@@ -152,11 +210,33 @@ func agentUpdateHandler(options Options, services Services) http.HandlerFunc {
 func agentDeleteHandler(options Options, services Services) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		requestID := newRequestID()
-		if _, err := projectconfig.DeleteAgent(request.Context(), options.ConfigPath, options.DBPath, chi.URLParam(request, "agent_id")); err != nil {
+		agentID := chi.URLParam(request, "agent_id")
+		if _, builtIn, _ := resolveAgentRecord(request, options, services, agentID); builtIn {
+			writeError(response, http.StatusConflict, requestID, "built_in_agent_readonly", "Built-in agents cannot be deleted.", "Copy the agent to the project before editing or deleting it.")
+			return
+		}
+		if _, err := projectconfig.DeleteAgent(request.Context(), options.ConfigPath, options.DBPath, agentID); err != nil {
 			writeProjectConfigError(response, requestID, err)
 			return
 		}
 		writeSuccess(response, requestID, map[string]string{"status": "deleted"}, nil)
+	}
+}
+
+func agentEnableHandler(options Options, enabled bool) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		requestID := newRequestID()
+		agentID := chi.URLParam(request, "agent_id")
+		if _, err := projectconfig.SetAgentEnabled(request.Context(), options.ConfigPath, options.DBPath, agentID, enabled); err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		agent, err := projectconfig.GetAgent(options.ConfigPath, agentID)
+		if err != nil {
+			writeProjectConfigError(response, requestID, err)
+			return
+		}
+		writeSuccess(response, requestID, agent, nil)
 	}
 }
 

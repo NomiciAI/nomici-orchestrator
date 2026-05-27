@@ -44,6 +44,24 @@ type chatMessageResponse struct {
 	Run              *runCreateResponse           `json:"run,omitempty"`
 	RouteDecision    *orchestration.RouteDecision `json:"route_decision,omitempty"`
 	Clarification    string                       `json:"clarification,omitempty"`
+	AssistantSource  string                       `json:"assistant_source,omitempty"`
+	ModelProfileID   string                       `json:"model_profile_id,omitempty"`
+	ProviderError    *chatProviderError           `json:"provider_error,omitempty"`
+}
+
+type chatProviderError struct {
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Remediation string `json:"remediation,omitempty"`
+	ProviderID  string `json:"provider_id,omitempty"`
+	ModelID     string `json:"model_id,omitempty"`
+}
+
+type directChatResult struct {
+	Content        string
+	Source         string
+	ModelProfileID string
+	ProviderError  *chatProviderError
 }
 
 func chatListHandler(services Services) http.HandlerFunc {
@@ -261,31 +279,47 @@ func addChatMessageAndMaybeRun(request *http.Request, options Options, services 
 	}
 	if snapshotRoute.Mode != orchestration.ModeWorkspaceRun {
 		reply := chatDirectReply(request, services, content, snapshotRoute)
+		if reply.ProviderError != nil {
+			return &chatMessageResponse{
+				Message:         message,
+				RouteDecision:   snapshotRoute,
+				Clarification:   snapshotRoute.Clarification,
+				AssistantSource: reply.Source,
+				ModelProfileID:  reply.ModelProfileID,
+				ProviderError:   reply.ProviderError,
+			}, nil
+		}
 		assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
 			ChatID:   chatID,
 			Role:     chats.RoleAssistant,
-			Content:  reply,
-			Metadata: routeMetadata(snapshotRoute),
+			Content:  reply.Content,
+			Metadata: routeMetadataWithSource(snapshotRoute, reply.Source, reply.ModelProfileID),
 		})
 		if err != nil {
 			return nil, &startRunError{Status: http.StatusInternalServerError, Code: "chat_message_failed", Message: "Chat response could not be saved.", Remediation: "Check Gateway logs."}
 		}
-		return &chatMessageResponse{Message: message, AssistantMessage: assistantMessage, RouteDecision: snapshotRoute, Clarification: snapshotRoute.Clarification}, nil
+		return &chatMessageResponse{
+			Message:          message,
+			AssistantMessage: assistantMessage,
+			RouteDecision:    snapshotRoute,
+			Clarification:    snapshotRoute.Clarification,
+			AssistantSource:  reply.Source,
+			ModelProfileID:   reply.ModelProfileID,
+		}, nil
 	}
 	started, startErr := startWorkspaceRunWithRoute(request.Context(), options, services, manualAgentID, content, "chat", map[string]any{"chat_id": chatID, "message_id": message.MessageID}, snapshotRoute, false)
 	if startErr != nil {
 		if startErr.Code == "model_not_configured" || (startErr.Code == "run_not_supported" && strings.Contains(strings.ToLower(startErr.Message), "agent_id is required")) {
-			reply := "I can start workspace runs after a model provider is configured. Run `nomici setup` once, or add a model in Settings, then send this goal again."
-			assistantMessage, err := services.Chats.AddMessage(request.Context(), &chats.Message{
-				ChatID:   chatID,
-				Role:     chats.RoleAssistant,
-				Content:  reply,
-				Metadata: routeMetadata(snapshotRoute),
-			})
-			if err != nil {
-				return nil, &startRunError{Status: http.StatusInternalServerError, Code: "chat_message_failed", Message: "Chat response could not be saved.", Remediation: "Check Gateway logs."}
-			}
-			return &chatMessageResponse{Message: message, AssistantMessage: assistantMessage, RouteDecision: snapshotRoute}, nil
+			return &chatMessageResponse{
+				Message:         message,
+				RouteDecision:   snapshotRoute,
+				AssistantSource: "system_error",
+				ProviderError: &chatProviderError{
+					Code:        startErr.Code,
+					Message:     startErr.Message,
+					Remediation: startErr.Remediation,
+				},
+			}, nil
 		}
 		return nil, startErr
 	}
@@ -310,32 +344,32 @@ func chatSuggestions(detail *chats.Detail) []string {
 	switch {
 	case strings.Contains(text, "agent"):
 		return []string{
-			"Create an agent from this workflow",
-			"Test the current agent setup",
-			"Show the orchestration flow",
+			"Help me design a reusable agent for this workflow",
+			"Explain which agents would handle this",
+			"Show how to customize the role flow",
 		}
 	case strings.Contains(text, "plan") || strings.Contains(text, "implement") || strings.Contains(text, "fix"):
 		return []string{
-			"Turn this into a workspace run",
-			"Review the proposed agent flow",
-			"Show the current run timeline",
+			"Run this as a workspace task",
+			"Explain the selected agent flow",
+			"Summarize the current run state",
 		}
 	case strings.Contains(text, "setup") || strings.Contains(text, "config"):
 		return []string{
-			"Run a provider readiness check",
-			"Show configured models and tools",
-			"Create a starter agent",
+			"Explain my model and tool setup",
+			"Help me configure a model provider",
+			"Show which agents and tools are ready to execute",
 		}
 	default:
 		return []string{
-			"Make this a long-horizon workspace task",
-			"Save this pattern as an agent",
-			"Show suggested next steps",
+			"Turn this into a long-horizon workspace task",
+			"Design an agent for this recurring work",
+			"Suggest concrete next steps",
 		}
 	}
 }
 
-func chatDirectReply(request *http.Request, services Services, content string, route *orchestration.RouteDecision) string {
+func chatDirectReply(request *http.Request, services Services, content string, route *orchestration.RouteDecision) directChatResult {
 	fallback := ""
 	if route != nil {
 		fallback = orchestration.DirectReply(*route)
@@ -343,18 +377,45 @@ func chatDirectReply(request *http.Request, services Services, content string, r
 	if fallback == "" {
 		fallback = "I can help here in chat. Ask a normal question, or describe a larger goal and I’ll open a workspace when it needs planning, files, tools, or agents."
 	}
-	if route == nil || route.Mode != orchestration.ModeDirectReply || services.Adapter == nil || services.Secrets == nil {
-		return fallback
+	if route == nil || route.Mode != orchestration.ModeDirectReply {
+		return directChatResult{Content: fallback, Source: "clarification"}
+	}
+	if services.Adapter == nil || services.Secrets == nil {
+		return directChatResult{
+			Source: "system_error",
+			ProviderError: &chatProviderError{
+				Code:        "model_runtime_unavailable",
+				Message:     "The model runtime is not available in Gateway.",
+				Remediation: "Restart Gateway or run `nomici doctor`.",
+			},
+		}
 	}
 	profile, err := directReplyProfile(request, services, route)
 	if err != nil || profile == nil {
-		return modelUnavailableReply()
+		return directChatResult{
+			Source: "system_error",
+			ProviderError: &chatProviderError{
+				Code:        "model_not_configured",
+				Message:     "No model provider is connected.",
+				Remediation: "Run `nomici setup`, or add a model in Settings.",
+			},
+		}
 	}
 	apiKey := ""
 	if profile.APIKeyEnv != "" {
 		resolved, ok := services.Secrets.ResolveEnv(profile.APIKeyEnv)
 		if !ok {
-			return fmt.Sprintf("The configured model provider needs `%s` in your local environment before chat can use it. Set the variable or update the model in Settings.", profile.APIKeyEnv)
+			return directChatResult{
+				Source:         "system_error",
+				ModelProfileID: profile.ID,
+				ProviderError: &chatProviderError{
+					Code:        "model_auth_missing",
+					Message:     fmt.Sprintf("The selected model provider needs environment variable `%s`.", profile.APIKeyEnv),
+					Remediation: "Set the variable locally or update the model in Settings.",
+					ProviderID:  profile.Kind,
+					ModelID:     profile.Model,
+				},
+			}
 		}
 		apiKey = resolved
 	}
@@ -373,37 +434,46 @@ func chatDirectReply(request *http.Request, services Services, content string, r
 		Options: adapters.InvokeOptions{TimeoutMs: 30000},
 	})
 	if err != nil {
-		return "The configured model provider did not respond. Run `nomici doctor` or check Settings > Models before retrying."
+		return directChatResult{Source: "system_error", ModelProfileID: profile.ID, ProviderError: modelProviderError("model_invoke_failed", "The configured model provider did not respond.", "Run `nomici doctor` or check Settings > Models before retrying.", profile)}
 	}
 	if result == nil {
-		return "The configured model provider returned an empty response. Check Settings > Models before retrying."
+		return directChatResult{Source: "system_error", ModelProfileID: profile.ID, ProviderError: modelProviderError("model_empty_response", "The configured model provider returned an empty response.", "Check Settings > Models before retrying.", profile)}
 	}
 	if result.Status != adapters.StatusCompleted {
-		return modelFailureReply(result)
+		return directChatResult{Source: "system_error", ModelProfileID: profile.ID, ProviderError: modelFailureError(result, profile)}
 	}
 	if len(result.Messages) == 0 {
-		return "The configured model completed without a chat message. Check the selected model in Settings before retrying."
+		return directChatResult{Source: "system_error", ModelProfileID: profile.ID, ProviderError: modelProviderError("model_missing_message", "The configured model completed without a chat message.", "Check the selected model in Settings before retrying.", profile)}
 	}
 	reply := strings.TrimSpace(result.Messages[len(result.Messages)-1].Content)
 	if reply == "" {
-		return "The configured model returned an empty chat message. Check the selected model in Settings before retrying."
+		return directChatResult{Source: "system_error", ModelProfileID: profile.ID, ProviderError: modelProviderError("model_empty_message", "The configured model returned an empty chat message.", "Check the selected model in Settings before retrying.", profile)}
 	}
-	return reply
+	return directChatResult{Content: reply, Source: "model", ModelProfileID: profile.ID}
 }
 
-func modelUnavailableReply() string {
-	return "No model provider is connected yet. Run `nomici setup`, or add a model in Settings, then chat here normally."
-}
-
-func modelFailureReply(result *adapters.InvokeResult) string {
+func modelFailureError(result *adapters.InvokeResult, profile *providers.Profile) *chatProviderError {
 	if result != nil && result.Error != nil && strings.TrimSpace(result.Error.Message) != "" {
 		message := strings.Join(strings.Fields(result.Error.Message), " ")
 		if len(message) > 180 {
 			message = message[:177] + "..."
 		}
-		return fmt.Sprintf("The configured model could not answer: %s. Run `nomici doctor` or update the model in Settings.", message)
+		return modelProviderError(result.Error.Code, "The configured model could not answer: "+message, "Run `nomici doctor` or update the model in Settings.", profile)
 	}
-	return "The configured model could not answer. Run `nomici doctor` or update the model in Settings."
+	return modelProviderError("model_failed", "The configured model could not answer.", "Run `nomici doctor` or update the model in Settings.", profile)
+}
+
+func modelProviderError(code string, message string, remediation string, profile *providers.Profile) *chatProviderError {
+	err := &chatProviderError{
+		Code:        code,
+		Message:     message,
+		Remediation: remediation,
+	}
+	if profile != nil {
+		err.ProviderID = profile.Kind
+		err.ModelID = profile.Model
+	}
+	return err
 }
 
 func directReplyProfile(request *http.Request, services Services, route *orchestration.RouteDecision) (*providers.Profile, error) {
@@ -462,10 +532,25 @@ func recentChatContext(request *http.Request, services Services, chatID string, 
 }
 
 func routeMetadata(route *orchestration.RouteDecision) json.RawMessage {
+	return routeMetadataWithSource(route, "", "")
+}
+
+func routeMetadataWithSource(route *orchestration.RouteDecision, assistantSource string, modelProfileID string) json.RawMessage {
+	payloadMap := map[string]any{}
 	if route == nil {
-		return json.RawMessage("{}")
+		if assistantSource == "" && modelProfileID == "" {
+			return json.RawMessage("{}")
+		}
+	} else {
+		payloadMap["route_decision"] = route
 	}
-	payload, err := json.Marshal(map[string]any{"route_decision": route})
+	if assistantSource != "" {
+		payloadMap["assistant_source"] = assistantSource
+	}
+	if modelProfileID != "" {
+		payloadMap["model_profile_id"] = modelProfileID
+	}
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		return json.RawMessage("{}")
 	}

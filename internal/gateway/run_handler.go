@@ -1419,6 +1419,7 @@ func executeTaskWithToolLoop(ctx context.Context, options Options, services Serv
 			})
 			if record != nil && record.Status == toolbroker.StatusWaitingApproval {
 				pendingPrompt := appendToolObservations(currentPrompt, roundObservations)
+				call.ID = record.ToolCallID
 				pendingJSON, _ := json.Marshal([]modelToolCall{call})
 				_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
 					"summary":                "Waiting for approval to run " + toolID + ".",
@@ -1531,15 +1532,23 @@ func executePendingModelToolCalls(ctx context.Context, options Options, services
 			observations = append(observations, fmt.Sprintf("Tool %q was skipped because it is not available.", call.ToolID))
 			continue
 		}
-		record, err := broker.Execute(ctx, toolbroker.ExecuteRequest{
+		request := toolbroker.ExecuteRequest{
 			SessionID: session.SessionID,
 			RunID:     session.RunID,
 			TaskID:    task.TaskID,
 			AgentID:   task.AgentID,
 			ToolID:    toolID,
 			Input:     call.Input,
-		})
+		}
+		var record *toolbroker.CallRecord
+		var err error
+		if strings.HasPrefix(call.ID, "toolcall_") {
+			record, err = broker.ExecuteApprovedRecord(ctx, call.ID, request)
+		} else {
+			record, err = broker.Execute(ctx, request)
+		}
 		if record != nil && record.Status == toolbroker.StatusWaitingApproval {
+			call.ID = record.ToolCallID
 			pendingJSON, _ := json.Marshal([]modelToolCall{call})
 			_ = updateTaskMetadata(ctx, services.Runs, task, map[string]any{
 				"tool_loop_pending_json": string(pendingJSON),

@@ -21,19 +21,18 @@ import (
 const consoleRunLimit = 8
 
 type consoleOverview struct {
-	Gateway          consoleGatewayStatus    `json:"gateway"`
-	Counts           consoleCounts           `json:"counts"`
-	Models           []consoleModelProfile   `json:"models"`
-	Tools            []consoleToolStatus     `json:"tools"`
-	Packs            []consolePackStatus     `json:"packs"`
-	Graph            *consoleGraphSummary    `json:"graph,omitempty"`
-	GraphSnapshot    *graph.Snapshot         `json:"graph_snapshot,omitempty"`
-	Runtimes         []consoleRuntimeStatus  `json:"runtimes"`
-	RecentRuns       []*trace.RunSummary     `json:"recent_runs"`
-	RecentSessions   []*runpkg.Session       `json:"recent_sessions"`
-	LatestTrace      []consoleTraceEvent     `json:"latest_trace"`
-	PendingApprovals []*policy.Approval      `json:"pending_approvals"`
-	Unavailable      []consoleUnavailableAPI `json:"unavailable"`
+	Gateway          consoleGatewayStatus   `json:"gateway"`
+	Counts           consoleCounts          `json:"counts"`
+	Models           []consoleModelProfile  `json:"models"`
+	Tools            []consoleToolStatus    `json:"tools"`
+	Packs            []consolePackStatus    `json:"packs"`
+	Graph            *consoleGraphSummary   `json:"graph,omitempty"`
+	GraphSnapshot    *graph.Snapshot        `json:"graph_snapshot,omitempty"`
+	Runtimes         []consoleRuntimeStatus `json:"runtimes"`
+	RecentRuns       []*trace.RunSummary    `json:"recent_runs"`
+	RecentSessions   []*runpkg.Session      `json:"recent_sessions"`
+	LatestTrace      []consoleTraceEvent    `json:"latest_trace"`
+	PendingApprovals []*policy.Approval     `json:"pending_approvals"`
 }
 
 type consoleGatewayStatus struct {
@@ -116,12 +115,6 @@ type consoleTraceEvent struct {
 	Payload    json.RawMessage `json:"payload"`
 	Redactions []string        `json:"redactions"`
 	Metadata   json.RawMessage `json:"metadata,omitempty"`
-}
-
-type consoleUnavailableAPI struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Reason string `json:"reason"`
 }
 
 func consoleOverviewHandler(options Options, services Services) http.HandlerFunc {
@@ -339,12 +332,6 @@ func buildConsoleOverview(request *http.Request, options Options, services Servi
 		RecentSessions:   sessions,
 		LatestTrace:      latestTrace,
 		PendingApprovals: pendingApprovals,
-		Unavailable: []consoleUnavailableAPI{
-			{Name: "Canvas editing", Status: "deferred", Reason: "Gate 8 is read-only."},
-			{Name: "Console provider setup", Status: "deferred", Reason: "Use `nomici setup` for bootstrap."},
-			{Name: "Parallel execution", Status: "deferred", Reason: "Sequential role execution remains the safe default."},
-			{Name: "Runtime lifecycle controls", Status: "deferred", Reason: "Runtime reconciler is not implemented yet."},
-		},
 	}, warnings, nil
 }
 
