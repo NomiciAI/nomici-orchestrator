@@ -46,6 +46,8 @@ func NewRouter(options Options, services Services) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Get("/api/health", healthHandler(options))
+	router.Post("/api/auth/bootstrap", bootstrapAuthHandler(options))
+	router.Post("/api/auth/reconnect", localReconnectAuthHandler(options))
 	router.Group(func(api chi.Router) {
 		if options.AuthToken != "" {
 			api.Use(bearerAuthMiddleware(options.AuthToken))

@@ -1093,9 +1093,6 @@ func saveRoleContextSnapshot(ctx context.Context, services Services, session *ru
 }
 
 func completeSessionLifecycle(ctx context.Context, services Services, runID string, sessionStatus string) error {
-	if err := services.Runs.CompleteSession(ctx, runID, sessionStatus); err != nil {
-		return err
-	}
 	if services.Sandboxes != nil {
 		if err := services.Sandboxes.ReleaseByRun(ctx, runID); err != nil {
 			return err
@@ -1111,9 +1108,12 @@ func completeSessionLifecycle(ctx context.Context, services Services, runID stri
 			return err
 		}
 	}
-	return appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCompleted, "", map[string]any{
+	if err := appendRunLedgerTrace(ctx, services.Trace, runID, trace.EventRunSessionCompleted, "", map[string]any{
 		"status": sessionStatus,
-	})
+	}); err != nil {
+		return err
+	}
+	return services.Runs.CompleteSession(ctx, runID, sessionStatus)
 }
 
 func createSessionMemoryProposal(ctx context.Context, services Services, runID string) error {

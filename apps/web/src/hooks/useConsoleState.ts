@@ -217,6 +217,11 @@ export function useConsoleState() {
   });
 
   async function loadOverview(nextToken = gatewayToken) {
+    const bootstrapToken = readBootstrapTokenFromLocation();
+    if (bootstrapToken !== "" && nextToken === gatewayToken) {
+      await redeemBootstrapToken(bootstrapToken);
+      return;
+    }
     setStatus("loading");
     setError("");
     try {
@@ -298,6 +303,40 @@ export function useConsoleState() {
     }
   }
 
+  async function redeemBootstrapToken(bootstrapToken: string) {
+    setStatus("loading");
+    setError("");
+    try {
+      const response = await gatewayRequest<{ gateway_token: string }>(
+        "/api/auth/bootstrap",
+        {
+          method: "POST",
+          body: JSON.stringify({ token: bootstrapToken }),
+        },
+      );
+      const nextToken = response.gateway_token.trim();
+      if (nextToken === "") {
+        throw new Error("Gateway returned an empty bootstrap token response");
+      }
+      window.localStorage.setItem("nomici.gateway.token", nextToken);
+      setGatewayToken(nextToken);
+      setTokenInput(nextToken);
+      clearBootstrapTokenFromLocation();
+      await loadOverview(nextToken);
+    } catch (bootstrapError) {
+      clearBootstrapTokenFromLocation();
+      window.localStorage.removeItem("nomici.gateway.token");
+      setGatewayToken("");
+      setTokenInput("");
+      setStatus("auth");
+      setError(
+        bootstrapError instanceof Error
+          ? bootstrapError.message
+          : "Gateway bootstrap failed",
+      );
+    }
+  }
+
   async function request<T>(
     path: string,
     init: RequestInit = {},
@@ -321,6 +360,35 @@ export function useConsoleState() {
     }
     setGatewayToken(nextToken);
     await loadOverview(nextToken);
+  }
+
+  async function reconnectLocalGateway() {
+    setStatus("loading");
+    setError("");
+    try {
+      const response = await gatewayRequest<{ gateway_token: string }>(
+        "/api/auth/reconnect",
+        { method: "POST" },
+      );
+      const nextToken = response.gateway_token.trim();
+      if (nextToken === "") {
+        throw new Error("Gateway returned an empty reconnect response");
+      }
+      window.localStorage.setItem("nomici.gateway.token", nextToken);
+      setGatewayToken(nextToken);
+      setTokenInput(nextToken);
+      await loadOverview(nextToken);
+    } catch (reconnectError) {
+      window.localStorage.removeItem("nomici.gateway.token");
+      setGatewayToken("");
+      setTokenInput("");
+      setStatus("auth");
+      setError(
+        reconnectError instanceof Error
+          ? reconnectError.message
+          : "Local Gateway reconnect failed",
+      );
+    }
   }
 
   async function selectChat(chatID: string) {
@@ -1345,6 +1413,7 @@ export function useConsoleState() {
     hasWorkspaceActivity,
     loadOverview,
     submitToken,
+    reconnectLocalGateway,
     selectChat,
     startNewChat,
     sendMessage,
@@ -1383,6 +1452,24 @@ export function useConsoleState() {
 }
 
 export type ConsoleState = ReturnType<typeof useConsoleState>;
+
+function readBootstrapTokenFromLocation(): string {
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hashToken = new URLSearchParams(hash).get("bootstrap_token");
+  if (hashToken) {
+    return hashToken;
+  }
+  return new URLSearchParams(window.location.search).get("bootstrap_token") ?? "";
+}
+
+function clearBootstrapTokenFromLocation() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("bootstrap_token");
+  url.hash = "";
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
 
 function aggregateTokenUsage(events: TraceEvent[]): TokenUsage {
   return events.reduce(
