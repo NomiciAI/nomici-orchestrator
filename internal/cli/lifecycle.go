@@ -67,7 +67,11 @@ func newDevCommand(version string) *cobra.Command {
 			if noOpen {
 				return nil
 			}
-			if err := openBrowser(consoleURL); err != nil {
+			openURL, err := authenticatedConsoleURL(consoleURL, dbPath)
+			if err != nil {
+				return err
+			}
+			if err := openBrowser(openURL); err != nil {
 				fmt.Fprintf(command.OutOrStdout(), "open\twarning\t%s\n", err)
 				fmt.Fprintf(command.OutOrStdout(), "console\t%s\n", consoleURL)
 				return nil
@@ -103,7 +107,7 @@ func startLocalWorkspace(command *cobra.Command, version string, options localSt
 		return err
 	}
 	fmt.Fprintf(command.OutOrStdout(), "gateway\t%s\tpid=%d\tlog=%s\n", gatewayState.Status, gatewayState.PID, gatewayState.LogPath)
-	fmt.Fprintf(command.OutOrStdout(), "console\thttp://%s:%d\ttoken-command=%q\n", options.Host, options.Port, gatewayTokenCommand(options.DBPath))
+	fmt.Fprintf(command.OutOrStdout(), "console\thttp://%s:%d\topen-command=%q\n", options.Host, options.Port, fmt.Sprintf("nomici gateway open --db-path %s", options.DBPath))
 
 	loaded, exists, err := loadSpecIfExists(options.ConfigPath)
 	if err != nil {
