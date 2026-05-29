@@ -7,14 +7,16 @@ export type AgentOption = {
 };
 
 export function buildAgentOptions(snapshot?: GraphSnapshot): AgentOption[] {
-  if (!snapshot) {
+  if (!snapshot?.ir) {
     return [];
   }
-  return Object.keys(snapshot.ir.agents)
+  const agents = snapshot.ir.agents ?? {};
+  const edges = snapshot.ir.edges ?? [];
+  return Object.keys(agents)
     .sort()
     .map((id) => {
-      const agent = snapshot.ir.agents[id];
-      const outgoing = snapshot.ir.edges.filter((edge) => edge.from === id);
+      const agent = agents[id];
+      const outgoing = edges.filter((edge) => edge.from === id);
       if (agent.kind === "gateway_agent" || agent.kind === "model_agent") {
         if (outgoing.length > 0) {
           return {
@@ -57,10 +59,13 @@ function checkHandoffChain(
   snapshot: GraphSnapshot,
   startAgentId: string,
 ): { supported: boolean; reason: string } {
+  const agents = snapshot.ir.agents ?? {};
+  const edges = snapshot.ir.edges ?? [];
+  const runtimes = snapshot.ir.runtimes ?? {};
   const visited = new Set<string>([startAgentId]);
   let current = startAgentId;
   for (;;) {
-    const outgoing = snapshot.ir.edges.filter((edge) => edge.from === current);
+    const outgoing = edges.filter((edge) => edge.from === current);
     if (outgoing.length === 0) {
       return { supported: true, reason: "" };
     }
@@ -74,9 +79,9 @@ function checkHandoffChain(
     if (edge.mode !== "handoff") {
       return { supported: false, reason: "only handoff chains are executable" };
     }
-    const target = snapshot.ir.agents[edge.to];
+    const target = agents[edge.to];
     const targetRuntime = target?.runtime
-      ? snapshot.ir.runtimes?.[target.runtime]
+      ? runtimes[target.runtime]
       : undefined;
     if (
       target?.kind !== "external_agent" ||
