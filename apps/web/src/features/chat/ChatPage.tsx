@@ -9,37 +9,6 @@ export function ChatPage({ state }: { state: ConsoleState }) {
       aria-label="Chat workspace"
     >
       <section className="chat-main">
-        <div className="chat-utility-bar">
-          <div className="model-connection">
-            <span>Model</span>
-            <strong>{state.activeModelLabel}</strong>
-            {state.tokenUsage.total > 0 ? (
-              <small>
-                tokens {state.tokenUsage.total.toLocaleString()} · input{" "}
-                {state.tokenUsage.input.toLocaleString()} / output{" "}
-                {state.tokenUsage.output.toLocaleString()}
-              </small>
-            ) : null}
-          </div>
-          {state.chatDetail ? (
-            <div className="chat-actions">
-              <button
-                className="button button-ghost"
-                type="button"
-                onClick={state.exportChat}
-              >
-                Export
-              </button>
-              <button
-                className="button button-ghost"
-                type="button"
-                onClick={state.draftAgentFromChat}
-              >
-                Draft agent from chat
-              </button>
-            </div>
-          ) : null}
-        </div>
         <div className="chat-transcript">
           {(state.chatDetail?.messages ?? []).map((message) => (
             <article
@@ -165,6 +134,37 @@ export function ChatPage({ state }: { state: ConsoleState }) {
             >
               {state.runStatus === "starting" ? "Starting" : "Send"}
             </button>
+          </div>
+          <div className="composer-support">
+            <div className="model-connection">
+              <span>Using</span>
+              <strong>{state.activeModelLabel}</strong>
+              {state.tokenUsage.total > 0 ? (
+                <small>
+                  tokens {state.tokenUsage.total.toLocaleString()} · input{" "}
+                  {state.tokenUsage.input.toLocaleString()} / output{" "}
+                  {state.tokenUsage.output.toLocaleString()}
+                </small>
+              ) : null}
+            </div>
+            {state.chatDetail ? (
+              <div className="chat-actions">
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  onClick={state.exportChat}
+                >
+                  Export
+                </button>
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  onClick={state.draftAgentFromChat}
+                >
+                  Draft agent from chat
+                </button>
+              </div>
+            ) : null}
           </div>
           {state.runError ? (
             <div className="inline-error">{state.runError}</div>
