@@ -21,23 +21,24 @@ export function ChatPage({ state }: { state: ConsoleState }) {
               </small>
             ) : null}
           </div>
-          <div>
-            <button
-              className="button button-secondary"
-              type="button"
-              disabled={!state.chatDetail}
-              onClick={state.exportChat}
-            >
-              Export
-            </button>
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={state.draftAgentFromChat}
-            >
-              Draft agent from chat
-            </button>
-          </div>
+          {state.chatDetail ? (
+            <div className="chat-actions">
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={state.exportChat}
+              >
+                Export
+              </button>
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={state.draftAgentFromChat}
+              >
+                Draft agent from chat
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="chat-transcript">
           {(state.chatDetail?.messages ?? []).map((message) => (
