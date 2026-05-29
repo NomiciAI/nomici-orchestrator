@@ -5,7 +5,7 @@ import { WorkspacePanel } from "../workspace/WorkspacePanel";
 export function ChatPage({ state }: { state: ConsoleState }) {
   return (
     <section
-      className={`chat-layout ${state.hasWorkspaceActivity ? "" : "chat-layout-simple"}`}
+      className={`chat-layout ${state.showChatWorkspace ? "" : "chat-layout-simple"}`}
       aria-label="Chat workspace"
     >
       <section className="chat-main">
@@ -171,7 +171,9 @@ export function ChatPage({ state }: { state: ConsoleState }) {
           ) : null}
         </form>
       </section>
-      {state.hasWorkspaceActivity ? <WorkspacePanel state={state} /> : null}
+      {state.showChatWorkspace ? (
+        <WorkspacePanel state={state} compact />
+      ) : null}
     </section>
   );
 }

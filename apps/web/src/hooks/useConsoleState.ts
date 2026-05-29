@@ -172,10 +172,27 @@ export function useConsoleState() {
   );
   const sessionNeedsPlanReview =
     sessionDetail?.session.status === "plan_review" && planArtifact;
+  const openBlockedActionCount =
+    sessionDetail?.blocked_actions?.filter((action) => action.status === "open")
+      .length ?? 0;
   const hasWorkspaceActivity =
     activeRunId !== "" ||
     activeSessionId !== "" ||
     sessionDetail !== null;
+  const hasVisibleWorkspaceWork =
+    workspaceArtifacts.length > 0 ||
+    workspaceToolCalls.length > 0 ||
+    sessionApprovals.length > 0 ||
+    sessionContextUsage.length > 0;
+  const hasActionableWorkspace =
+    openBlockedActionCount > 0 ||
+    sessionDetail?.session.status === "running" ||
+    sessionDetail?.session.status === "plan_review" ||
+    sessionDetail?.session.status === "blocked" ||
+    sessionDetail?.session.status === "needs_clarification";
+  const showChatWorkspace =
+    view === "chat" &&
+    Boolean(sessionDetail && (hasActionableWorkspace || hasVisibleWorkspaceWork));
   const readinessById = useMemo(() => {
     const next = new Map<string, FeatureReadiness>();
     featureReadiness.forEach((item) => next.set(item.id, item));
@@ -534,6 +551,16 @@ export function useConsoleState() {
       `/api/sessions/${encodeURIComponent(sessionId)}`,
     );
     setSessionDetail(detail);
+    if (detail.session.status === "completed") {
+      setRunStatus("completed");
+    } else if (
+      detail.session.status === "failed" ||
+      detail.session.status === "cancelled"
+    ) {
+      setRunStatus("failed");
+    } else {
+      setRunStatus("running");
+    }
     setActiveRouteDecision(detail.session.metadata?.route_decision ?? null);
     const [timeline, todos, approvals, contextUsage] = await Promise.all([
       request<TimelineItem[]>(
@@ -1411,6 +1438,7 @@ export function useConsoleState() {
     planArtifact,
     sessionNeedsPlanReview,
     hasWorkspaceActivity,
+    showChatWorkspace,
     loadOverview,
     submitToken,
     reconnectLocalGateway,

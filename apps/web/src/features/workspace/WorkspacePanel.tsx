@@ -1,15 +1,21 @@
 import type { ConsoleState } from "../../hooks/useChatWorkspace";
-import {
-  eventOutput,
-  formatTime,
-  humanOutput,
-  taskRoleLabel,
-  taskTone,
-} from "../../lib/format";
+import { humanOutput, taskRoleLabel } from "../../lib/format";
 import { RoleTimeline } from "./RoleTimeline";
+import {
+  RouteDecisionPanel,
+  TaskLedger,
+  WorkspaceDetails,
+  WorkspaceRoots,
+} from "./WorkspaceInternals";
 import { WorkspaceLists } from "./WorkspaceLists";
 
-export function WorkspacePanel({ state }: { state: ConsoleState }) {
+export function WorkspacePanel({
+  state,
+  compact = false,
+}: {
+  state: ConsoleState;
+  compact?: boolean;
+}) {
   const {
     activeRunId,
     runStatus,
@@ -42,6 +48,15 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
     tasks.find((task) => task.status === "running") ??
     tasks.find((task) => task.status === "blocked") ??
     tasks.find((task) => task.status === "pending" || task.status === "queued");
+  const hasLatestOutput = latestOutput.trim() !== "";
+  const hasRunInternals =
+    Boolean(decision) ||
+    tasks.length > 0 ||
+    Boolean(sessionDetail?.sandbox) ||
+    state.workspaceUploads.length > 0 ||
+    state.workspaceArtifacts.length > 0 ||
+    state.workspaceToolCalls.length > 0 ||
+    state.sessionApprovals.length > 0;
   return (
     <section className="run-workspace" aria-label="Current workspace">
       <div className="run-header">
@@ -76,52 +91,7 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
         </div>
       ) : null}
 
-      {decision ? (
-        <div className="route-decision">
-          <div className="mini-heading no-border">
-            <strong>Route decision</strong>
-            <span>{decision.mode}</span>
-          </div>
-          <div className="route-grid">
-            <span>Complexity</span>
-            <strong>{decision.complexity}</strong>
-            <span>Agent</span>
-            <strong>{decision.recommended_agent_id || "auto"}</strong>
-            <span>Plan review</span>
-            <strong>{decision.needs_plan_review ? "required" : "auto"}</strong>
-            <span>Risk</span>
-            <strong>{decision.risk || "medium"}</strong>
-            <span>Confidence</span>
-            <strong>
-              {decision.confidence
-                ? `${Math.round(decision.confidence * 100)}%`
-                : "heuristic"}
-            </strong>
-          </div>
-          {decision.rationale ? <p>{decision.rationale}</p> : null}
-          {decision.required_tools?.length ? (
-            <div className="chip-row">
-              {decision.required_tools.map((tool) => (
-                <span className="chip" key={tool}>
-                  {tool}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {decision.required_skills?.length ? (
-            <div className="chip-row">
-              {decision.required_skills.map((skill) => (
-                <span className="chip" key={skill}>
-                  {skill}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {decision.missing_inputs?.length ? (
-            <p>Missing: {decision.missing_inputs.join(", ")}</p>
-          ) : null}
-        </div>
-      ) : null}
+      {!compact && decision ? <RouteDecisionPanel decision={decision} /> : null}
 
       {openBlockedActions.length > 0 ? (
         <div className="blocked-panel">
@@ -205,60 +175,23 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
 
       {tasks.length > 0 ? <RoleTimeline tasks={tasks} /> : null}
 
-      <div className="task-ledger">
-        <div className="mini-heading">
-          <strong>Task ledger</strong>
-          <span>{tasks.length}</span>
-        </div>
-        {tasks.map((task) => (
-          <div className="ledger-row" key={task.task_id}>
-            <div>
-              <strong>{taskRoleLabel(task)}</strong>
-              <span>
-                {task.metadata?.summary ||
-                  task.metadata?.purpose ||
-                  task.blocked_reason ||
-                  "pending"}
-              </span>
-              <small>
-                {task.started_at ? formatTime(task.started_at) : "-"} /{" "}
-                {task.completed_at
-                  ? formatTime(task.completed_at)
-                  : task.updated_at
-                    ? formatTime(task.updated_at)
-                    : "-"}
-                {task.artifact_refs?.length
-                  ? ` / artifacts ${task.artifact_refs.length}`
-                  : ""}
-                {task.metadata?.selection_reason
-                  ? ` / ${task.metadata.selection_reason}`
-                  : ""}
-              </small>
-            </div>
-            <span className={`pill ${taskTone(task.status)}`}>
-              {task.status}
-            </span>
-          </div>
-        ))}
-        {tasks.length === 0 ? (
-          <p className="empty compact-empty">
-            Task records appear when a run starts.
-          </p>
-        ) : null}
-        {sessionDetail?.sandbox ? (
-          <div className="workspace-roots">
-            <span>Workspace</span>
-            <code>{sessionDetail.sandbox.workspace_root || "-"}</code>
-            <span>Artifacts</span>
-            <code>{sessionDetail.sandbox.artifact_root || "-"}</code>
-            <span>Sandbox</span>
-            <code>
-              {sessionDetail.sandbox.provider} /{" "}
-              {sessionDetail.sandbox.cleanup_status}
-            </code>
-          </div>
-        ) : null}
-      </div>
+      {compact && hasRunInternals ? (
+        <WorkspaceDetails
+          state={state}
+          decision={decision}
+          tasks={tasks}
+          sessionDetail={sessionDetail}
+        />
+      ) : null}
+
+      {!compact ? (
+        <>
+          <TaskLedger tasks={tasks} />
+          {sessionDetail?.sandbox ? (
+            <WorkspaceRoots sandbox={sessionDetail.sandbox} />
+          ) : null}
+        </>
+      ) : null}
 
       {planArtifact ? (
         <div className="plan-review">
@@ -295,12 +228,14 @@ export function WorkspacePanel({ state }: { state: ConsoleState }) {
         </div>
       ) : null}
 
-      <div className="workspace-output">
-        <span>Latest output</span>
-        <p>{latestOutput || "Output appears here once the run starts."}</p>
-      </div>
+      {hasLatestOutput || !compact ? (
+        <div className="workspace-output">
+          <span>Latest output</span>
+          <p>{latestOutput || "Output appears here once the run starts."}</p>
+        </div>
+      ) : null}
 
-      <WorkspaceLists state={state} />
+      {!compact ? <WorkspaceLists state={state} /> : null}
 
       {workspaceError ? (
         <div className="inline-error panel-inline">{workspaceError}</div>

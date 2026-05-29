@@ -210,6 +210,33 @@
   border-bottom: 1px solid var(--border);
 }
 
+.workspace-details {
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-details summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.workspace-details summary:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.workspace-details .route-decision,
+.workspace-details .task-ledger,
+.workspace-details .workspace-roots,
+.workspace-details .workspace-lists {
+  border-top: 1px solid var(--border);
+}
+
 .workspace-status-banner {
   display: grid;
   gap: 4px;
