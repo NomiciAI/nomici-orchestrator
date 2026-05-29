@@ -8,9 +8,78 @@
       href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Crect width="32" height="32" rx="7" fill="%23182128"/%3E%3Cpath d="M8 21V9h3l10 13V9h3v14h-3L11 10v13H8z" fill="%23f7faf9"/%3E%3C/svg%3E'
     />
     <title>Nomici Console</title>
+    <style>
+      :root {
+        color: rgba(255, 255, 255, 0.9);
+        background: #050607;
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        background: #050607;
+      }
+
+      .boot-screen {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+
+      .boot-card {
+        width: min(560px, 100%);
+        display: grid;
+        gap: 10px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        background: rgba(21, 23, 25, 0.9);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+      }
+
+      .boot-card strong {
+        font-size: 15px;
+      }
+
+      .boot-card span,
+      .boot-card code,
+      .boot-card pre {
+        color: rgba(255, 255, 255, 0.62);
+        font-size: 13px;
+      }
+
+      .boot-card code,
+      .boot-card pre {
+        width: fit-content;
+        max-width: 100%;
+        overflow: auto;
+        margin: 0;
+        padding: 7px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <section class="boot-screen" aria-live="polite">
+        <div class="boot-card">
+          <strong>Starting Nomici Console</strong>
+          <span>
+            If this stays visible, rebuild and reopen the local Console.
+          </span>
+          <code>scripts/install.sh --from-source . && nomici gateway open</code>
+        </div>
+      </section>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
