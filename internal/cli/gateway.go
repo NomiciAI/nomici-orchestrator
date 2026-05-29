@@ -86,7 +86,7 @@ func newGatewayStartCommand(version string) *cobra.Command {
 			}
 			fmt.Fprintf(command.OutOrStdout(), "Gateway %s pid=%d log=%s\n", state.Status, state.PID, state.LogPath)
 			fmt.Fprintf(command.OutOrStdout(), "Console: http://%s:%d\n", host, port)
-			fmt.Fprintf(command.OutOrStdout(), "Token:   %s\n", gatewayTokenCommand(dbPath))
+			fmt.Fprintf(command.OutOrStdout(), "Open:    nomici gateway open --db-path %s\n", dbPath)
 			return nil
 		},
 	}
@@ -95,10 +95,6 @@ func newGatewayStartCommand(version string) *cobra.Command {
 	command.Flags().StringVar(&host, "host", gateway.DefaultHost, "Gateway bind host")
 	command.Flags().IntVar(&port, "port", gateway.DefaultPort, "Gateway bind port")
 	return command
-}
-
-func gatewayTokenCommand(dbPath string) string {
-	return fmt.Sprintf("nomici gateway token show --db-path %s", dbPath)
 }
 
 func newGatewayStopCommand() *cobra.Command {
@@ -171,6 +167,7 @@ func newGatewayLogsCommand() *cobra.Command {
 
 func newGatewayOpenCommand() *cobra.Command {
 	var gatewayURL string
+	var dbPath string
 	command := &cobra.Command{
 		Use:   "open",
 		Short: "Open Nomici Console in the default browser",
@@ -178,7 +175,11 @@ func newGatewayOpenCommand() *cobra.Command {
 			if envURL := os.Getenv("NOMICI_GATEWAY_URL"); envURL != "" && gatewayURL == defaultGatewayURL {
 				gatewayURL = envURL
 			}
-			if err := openBrowser(gatewayURL); err != nil {
+			openURL, err := authenticatedConsoleURL(gatewayURL, dbPath)
+			if err != nil {
+				return err
+			}
+			if err := openBrowser(openURL); err != nil {
 				return err
 			}
 			fmt.Fprintf(command.OutOrStdout(), "Opened %s\n", gatewayURL)
@@ -186,6 +187,7 @@ func newGatewayOpenCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&gatewayURL, "gateway-url", defaultGatewayURL, "Nomici Gateway URL")
+	command.Flags().StringVar(&dbPath, "db-path", store.DefaultDBPath, "SQLite database path")
 	return command
 }
 
@@ -268,6 +270,21 @@ func getGatewayHealth(gatewayURL string) (*gateway.HealthResponse, error) {
 		return nil, fmt.Errorf("decode Gateway health response: %w", err)
 	}
 	return &health, nil
+}
+
+func authenticatedConsoleURL(gatewayURL string, dbPath string) (string, error) {
+	bootstrap, err := gatewayauth.CreateBootstrap(gatewayauth.BootstrapPathForDB(dbPath), 5*time.Minute)
+	if err != nil {
+		return "", fmt.Errorf("create Console bootstrap token: %w", err)
+	}
+	parsed, err := url.Parse(gatewayURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid Gateway URL: %w", err)
+	}
+	values := url.Values{}
+	values.Set("bootstrap_token", bootstrap.Token)
+	parsed.Fragment = values.Encode()
+	return parsed.String(), nil
 }
 
 func openBrowser(target string) error {
