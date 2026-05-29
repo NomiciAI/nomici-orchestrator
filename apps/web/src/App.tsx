@@ -159,9 +159,18 @@ export function App() {
               type="password"
               value={state.tokenInput}
             />
-            <button className="button" type="submit">
-              Connect
-            </button>
+            <div className="auth-actions">
+              <button className="button" type="submit">
+                Connect
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={() => void state.reconnectLocalGateway()}
+              >
+                Reconnect local Gateway
+              </button>
+            </div>
           </form>
         ) : null}
         {state.status === "failed" ? (
