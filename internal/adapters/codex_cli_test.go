@@ -68,6 +68,10 @@ func installCodexAdapterFixture(t *testing.T, dir string) string {
 	script := `#!/bin/sh
 out=""
 while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--ask-for-approval" ]; then
+    echo "unexpected approval flag" >&2
+    exit 2
+  fi
   if [ "$1" = "--output-last-message" ]; then
     shift
     out="$1"

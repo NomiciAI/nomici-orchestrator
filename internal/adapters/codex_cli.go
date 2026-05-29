@@ -55,7 +55,6 @@ func (adapter *CodexCLIAdapter) Invoke(ctx context.Context, model string, reques
 		"exec",
 		"--model", model,
 		"--sandbox", "read-only",
-		"--ask-for-approval", "never",
 		"--skip-git-repo-check",
 		"--ephemeral",
 		"--color", "never",
