@@ -10,7 +10,7 @@
     "test": "tsc --noEmit && node scripts/check-frontend-boundaries.mjs && node scripts/check-ui-reality.mjs"
   },
   "dependencies": {
-    "@xyflow/react": "^12.9.3",
+    "@xyflow/react": "^12.11.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
